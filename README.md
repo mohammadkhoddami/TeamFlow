@@ -51,6 +51,21 @@ form-encoded, then use the returned access token as Bearer).
 
 Run everything in Docker: `docker compose up` (api, worker, beat, db, redis, minio).
 
+### Frontend (development)
+
+A React SPA lives in `frontend/` (Vite + TypeScript + Tailwind + TanStack
+Query). It covers auth, workspaces, projects, a realtime kanban board, tasks,
+comments, attachments, labels, notifications, members/invitations, webhooks,
+audit logs and the dashboard.
+
+```bash
+cd frontend
+npm install
+npm run dev            # http://localhost:3000 (matches default CORS_ORIGINS)
+```
+
+See `frontend/README.md` for details.
+
 ## Tests
 
 Functional API/security/worker tests require the dev services (postgres, redis):
