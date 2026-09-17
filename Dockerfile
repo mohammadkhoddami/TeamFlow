@@ -24,6 +24,12 @@ RUN useradd --create-home --shell /usr/sbin/nologin appuser
 
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
+
+# uv is needed at runtime by the development compose file, whose command is
+# `uv sync --frozen && uv run ...` against the bind-mounted source tree.
+COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
+COPY --from=builder /usr/local/bin/uvx /usr/local/bin/uvx
+
 COPY pyproject.toml uv.lock ./
 COPY app ./app
 COPY migrations ./migrations

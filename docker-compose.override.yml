@@ -1,0 +1,63 @@
+# Local-development override (auto-merged by `docker compose up`).
+#
+# Purpose: run the backend containers with host networking so they talk to
+# Postgres/Redis/MinIO over the host's published ports (localhost) instead of
+# Docker service DNS. Use this when dockerd's embedded DNS cannot resolve
+# service names (`Temporary failure in name resolution`).
+#
+# Bonus: S3 presigned URLs are generated with host `localhost:9000`, so the
+# browser can upload/download attachments without /etc/hosts entries.
+#
+# Delete this file to go back to normal compose bridge networking.
+#
+# The host already runs its own Postgres on 127.0.0.1:5432 and Redis on
+# 127.0.0.1:6379, so the containers publish on 15432/16379 instead and the
+# host-networked app containers connect to those.
+services:
+  db:
+    ports: !override ["127.0.0.1:15432:5432"]
+
+  redis:
+    ports: !override ["127.0.0.1:16379:6379"]
+
+  api:
+    network_mode: host
+    ports: !reset []
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teamflow:teamflow@localhost:15432/teamflow
+      REDIS_URL: redis://localhost:16379/0
+      CELERY_BROKER_URL: redis://localhost:16379/1
+      CELERY_RESULT_BACKEND: redis://localhost:16379/1
+      S3_ENDPOINT: localhost:9000
+      S3_SECURE: "false"
+      S3_BUCKET: teamflow-attachments
+
+  worker:
+    network_mode: host
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teamflow:teamflow@localhost:15432/teamflow
+      DATABASE_URL_SYNC: postgresql+psycopg://teamflow:teamflow@localhost:15432/teamflow
+      REDIS_URL: redis://localhost:16379/0
+      CELERY_BROKER_URL: redis://localhost:16379/1
+      CELERY_RESULT_BACKEND: redis://localhost:16379/1
+      S3_ENDPOINT: localhost:9000
+      S3_SECURE: "false"
+      S3_BUCKET: teamflow-attachments
+
+  beat:
+    network_mode: host
+    environment:
+      DATABASE_URL: postgresql+asyncpg://teamflow:teamflow@localhost:15432/teamflow
+      DATABASE_URL_SYNC: postgresql+psycopg://teamflow:teamflow@localhost:15432/teamflow
+      REDIS_URL: redis://localhost:16379/0
+      CELERY_BROKER_URL: redis://localhost:16379/1
+      CELERY_RESULT_BACKEND: redis://localhost:16379/1
+
+  minio-setup:
+    network_mode: host
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://localhost:9000 teamflow teamflow-secret &&
+      mc mb --ignore-existing local/teamflow-attachments &&
+      echo 'MinIO bucket ready';
+      exit 0"
