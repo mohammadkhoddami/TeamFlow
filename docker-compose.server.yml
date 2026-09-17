@@ -1,0 +1,111 @@
+# Self-hosted production stack for a host with a native nginx in front
+# (arsene.ir/flow). The API binds to 127.0.0.1:8020 and MinIO to
+# 127.0.0.1:9010; nginx routing lives in deploy/nginx-flow.conf.
+#
+# Images are built by CI and pushed to GHCR; the server pulls them:
+#   export IMAGE_TAG=sha-<short>
+#   docker compose -f docker-compose.server.yml pull
+#   docker compose -f docker-compose.server.yml run --rm api alembic upgrade head
+#   docker compose -f docker-compose.server.yml up -d
+#
+# `build:` is kept as a fallback for local runs without a registry.
+# Secrets and URLs come from .env (see .env.example).
+name: teamflow
+
+x-app: &app
+  image: ghcr.io/arsene-ir/teamflow:${IMAGE_TAG:-latest}
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file: .env
+  restart: unless-stopped
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+    volumes:
+      - teamflow_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - teamflow_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  minio:
+    image: quay.io/minio/minio:latest
+    command: server /data --address ":9000"
+    env_file: .env
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+    volumes:
+      - teamflow_miniodata:/data
+    ports:
+      - "127.0.0.1:9010:9000"
+    restart: unless-stopped
+
+  minio-setup:
+    image: quay.io/minio/mc:latest
+    env_file: .env
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 $${S3_ACCESS_KEY} $${S3_SECRET_KEY}; do
+        echo 'waiting for minio...'; sleep 2;
+      done;
+      mc mb --ignore-existing local/$${S3_BUCKET} &&
+      echo 'MinIO bucket ready'"
+    restart: "no"
+
+  api:
+    <<: *app
+    environment:
+      # Trust the CDN/nginx X-Forwarded-For chain so rate limits and audit
+      # entries use the real client IP instead of the proxy socket peer.
+      FORWARDED_ALLOW_IPS: "*"
+    ports:
+      - "127.0.0.1:8020:8000"
+
+  worker:
+    <<: *app
+    command:
+      ["celery", "-A", "app.workers.celery_app:celery_app", "worker",
+       "-l", "info", "-Q", "default,emails,webhooks", "--concurrency", "2"]
+    healthcheck:
+      disable: true
+
+  beat:
+    <<: *app
+    command:
+      ["celery", "-A", "app.workers.celery_app:celery_app", "beat",
+       "-l", "info", "--schedule", "/tmp/celerybeat-schedule"]
+    healthcheck:
+      disable: true
+
+volumes:
+  teamflow_pgdata:
+  teamflow_redisdata:
+  teamflow_miniodata:
