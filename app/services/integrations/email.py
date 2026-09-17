@@ -1,0 +1,72 @@
+"""Email sending: console (dev mock) or SMTP (aiosmtplib).
+
+Templates are tiny string builders — enough for transactional email without
+adding a template engine. Used by Celery tasks; never called inline from
+request handlers (email I/O must not block the API).
+"""
+
+import logging
+
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+TEMPLATES: dict[str, tuple[str, str]] = {
+    # kind -> (subject, body template with {placeholders})
+    "password_reset": (
+        "Reset your TeamFlow password",
+        "Use the link below to reset your password (valid for 30 minutes):\n\n{reset_link}\n\n"
+        "If you did not request this, ignore this email.",
+    ),
+    "organization_invite": (
+        "You have been invited to a TeamFlow organization",
+        "You have been invited to join '{organization}' as {role}.\n\n"
+        "Log in to TeamFlow and open Invitations to accept or decline.",
+    ),
+    "task_assigned": (
+        "A task was assigned to you",
+        "Task '{task_title}' was assigned to you in project '{project_name}'.\n"
+        "Open it at {task_url}",
+    ),
+}
+
+
+def render(kind: str, ctx: dict[str, str]) -> tuple[str, str]:
+    subject, body = TEMPLATES[kind]
+    return subject, body.format(**ctx)
+
+
+def send_sync(to: str, subject: str, body: str) -> None:
+    """Runs inside a Celery worker thread. Retries are the task's concern."""
+    if settings.email_backend == "smtp":
+        _send_smtp(to, subject, body)
+        return
+    # Console backend: development/mock provider.
+    logger.info(
+        "EMAIL(to=%s subject=%r)\n%s", to, subject, body,
+    )
+
+
+def _send_smtp(to: str, subject: str, body: str) -> None:
+    import asyncio
+
+    async def _send() -> None:
+        from email.message import EmailMessage
+
+        import aiosmtplib
+
+        message = EmailMessage()
+        message["From"] = settings.email_from
+        message["To"] = to
+        message["Subject"] = subject
+        message.set_content(body)
+        await aiosmtplib.send(
+            message,
+            hostname=settings.smtp_host,
+            port=settings.smtp_port,
+            username=settings.smtp_username or None,
+            password=settings.smtp_password or None,
+            start_tls=settings.smtp_use_tls,
+        )
+
+    asyncio.run(_send())

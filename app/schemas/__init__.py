@@ -1,0 +1,110 @@
+"""Public schema surface: routers import from here only."""
+
+from app.schemas.attachment import (
+    AttachmentCreate,
+    AttachmentRead,
+    DownloadGrant,
+    UploadGrant,
+)
+from app.schemas.auth import (
+    PasswordForgot,
+    PasswordReset,
+    RefreshedToken,
+    Token,
+    TokenRefresh,
+    UserCreate,
+    UserRead,
+    UserUpdate,
+)
+from app.schemas.comment import CommentCreate, CommentRead, CommentUpdate
+from app.schemas.common import Page
+from app.schemas.dashboard import (
+    AuditLogRead,
+    DashboardStats,
+    TasksByStatus,
+    TasksPerMember,
+)
+from app.schemas.label import LabelCreate, LabelRead, LabelUpdate
+from app.schemas.notification import NotificationRead, UnreadCount
+from app.schemas.organization import (
+    InvitationCreate,
+    InvitationRead,
+    MembershipCreate,
+    MembershipRead,
+    MembershipUpdate,
+    OrganizationCreate,
+    OrganizationMemberRead,
+    OrganizationRead,
+    OrganizationUpdate,
+)
+from app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
+from app.schemas.task import (
+    PriorityLiteral,
+    SortableField,
+    StatusLiteral,
+    TaskCreate,
+    TaskMove,
+    TaskRead,
+    TaskUpdate,
+)
+from app.schemas.webhook import (
+    WebhookCreate,
+    WebhookCreated,
+    WebhookDeliveryRead,
+    WebhookEventLiteral,
+    WebhookRead,
+    WebhookUpdate,
+)
+
+__all__ = [
+    "AttachmentCreate",
+    "AttachmentRead",
+    "AuditLogRead",
+    "CommentCreate",
+    "CommentRead",
+    "CommentUpdate",
+    "DashboardStats",
+    "DownloadGrant",
+    "InvitationCreate",
+    "InvitationRead",
+    "LabelCreate",
+    "LabelRead",
+    "LabelUpdate",
+    "MembershipCreate",
+    "MembershipRead",
+    "MembershipUpdate",
+    "NotificationRead",
+    "OrganizationCreate",
+    "OrganizationMemberRead",
+    "OrganizationRead",
+    "OrganizationUpdate",
+    "Page",
+    "PasswordForgot",
+    "PasswordReset",
+    "PriorityLiteral",
+    "ProjectCreate",
+    "ProjectRead",
+    "ProjectUpdate",
+    "RefreshedToken",
+    "SortableField",
+    "StatusLiteral",
+    "TasksByStatus",
+    "TasksPerMember",
+    "TaskCreate",
+    "TaskMove",
+    "TaskRead",
+    "TaskUpdate",
+    "Token",
+    "TokenRefresh",
+    "UnreadCount",
+    "UploadGrant",
+    "UserCreate",
+    "UserRead",
+    "UserUpdate",
+    "WebhookCreate",
+    "WebhookCreated",
+    "WebhookDeliveryRead",
+    "WebhookEventLiteral",
+    "WebhookRead",
+    "WebhookUpdate",
+]
