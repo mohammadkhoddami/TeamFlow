@@ -8,15 +8,13 @@
 #   docker compose -f docker-compose.server.yml run --rm api alembic upgrade head
 #   docker compose -f docker-compose.server.yml up -d
 #
-# `build:` is kept as a fallback for local runs without a registry.
+# `pull`-only: the image is built by CI and published to GHCR. The host needs
+# only this file and .env — no source checkout, Dockerfile, or build.
 # Secrets and URLs come from .env (see .env.example).
 name: teamflow
 
 x-app: &app
   image: ghcr.io/arsene-ir/teamflow:${IMAGE_TAG:-latest}
-  build:
-    context: .
-    dockerfile: Dockerfile
   env_file: .env
   restart: unless-stopped
   depends_on:
