@@ -59,10 +59,12 @@ async def register_user(db: AsyncSession, data: UserCreate, ip: str | None = Non
     repo = UserRepository(db)
     if await repo.get_by_email(data.email):
         raise ConflictError("A user with this email already exists")
+    # bcrypt is CPU-bound and blocking; run it off the event loop.
+    hashed = await run_in_threadpool(security.hash_password, data.password)
     user = User(
         email=data.email,
         full_name=data.full_name,
-        hashed_password=security.hash_password(data.password),
+        hashed_password=hashed,
     )
     user = await repo.add(user)
     await audit.log(
@@ -83,7 +85,11 @@ async def login(
     )
 
     user = await UserRepository(db).get_by_email(email)
-    if not user or not security.verify_password(password, user.hashed_password):
+    # bcrypt verify is blocking: offload it so one login cannot stall the worker.
+    password_ok = user is not None and await run_in_threadpool(
+        security.verify_password, password, user.hashed_password
+    )
+    if not password_ok:
         await audit.log(
             db, AuditAction.USER_LOGIN_FAILED, ip=ip, meta={"email": email},
         )
@@ -199,7 +205,9 @@ async def reset_password(db: AsyncSession, redis: Redis, data: PasswordReset, ip
     if not user:
         raise NotFoundError("User not found")
 
-    user.hashed_password = security.hash_password(data.new_password)
+    user.hashed_password = await run_in_threadpool(
+        security.hash_password, data.new_password
+    )
     await UserRepository(db).update(user)
     # Every session dies with the password: best-practice defense.
     await token_store.revoke_all_refresh_tokens(redis, user_id)

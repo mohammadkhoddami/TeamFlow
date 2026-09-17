@@ -38,9 +38,10 @@ Client -> FastAPI -> Router -> Dependencies -> Service -> Repository -> SQLModel
 ```bash
 cp .env.example .env          # adjust secrets
 uv sync                       # install dependencies
-docker compose up -d db redis minio minio-setup
+docker compose up -d db redis
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
+# attachments/S3 locally: docker compose --profile minio up -d
 # optional background workers:
 uv run celery -A app.workers.celery_app:celery_app worker -l info -Q default,emails,webhooks
 uv run celery -A app.workers.celery_app:celery_app beat -l info
@@ -49,7 +50,9 @@ uv run celery -A app.workers.celery_app:celery_app beat -l info
 API docs: http://localhost:8000/docs (login via `POST /api/v1/auth/login`,
 form-encoded, then use the returned access token as Bearer).
 
-Run everything in Docker: `docker compose up` (api, worker, beat, db, redis, minio).
+Run the full stack in Docker: `docker compose up -d --build` (db, redis, api,
+worker, beat, nginx; add `--profile minio` for local S3). One compose file,
+production-shaped by default.
 
 ### Mock data
 
@@ -120,7 +123,8 @@ rate limiting, notifications, audit trail, dashboard aggregation, WebSockets.
 ## Production
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose up -d --build
+uv run alembic upgrade head   # run migrations as an explicit deploy step
 ```
 
 Set `POSTGRES_USER/PASSWORD/DB`, `SECRET_KEY`, `CORS_ORIGINS`, `S3_*`,
