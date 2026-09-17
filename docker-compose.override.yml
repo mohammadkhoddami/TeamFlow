@@ -25,6 +25,7 @@ services:
     ports: !reset []
     environment:
       DATABASE_URL: postgresql+asyncpg://teamflow:teamflow@localhost:15432/teamflow
+      DATABASE_URL_SYNC: postgresql+psycopg://teamflow:teamflow@localhost:15432/teamflow
       REDIS_URL: redis://localhost:16379/0
       CELERY_BROKER_URL: redis://localhost:16379/1
       CELERY_RESULT_BACKEND: redis://localhost:16379/1

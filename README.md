@@ -51,6 +51,21 @@ form-encoded, then use the returned access token as Bearer).
 
 Run everything in Docker: `docker compose up` (api, worker, beat, db, redis, minio).
 
+### Mock data
+
+Load realistic, fully wired mock data (users, orgs, projects, labels, tasks,
+comments, watchers, attachments, notifications, audit logs, webhooks) with
+PostgreSQL COPY:
+
+```bash
+docker compose exec api uv run python scripts/seed_mock_data.py            # ~1M rows, ~3 min
+docker compose exec api uv run python scripts/seed_mock_data.py --preset extreme
+docker compose exec api uv run python scripts/seed_mock_data.py --reset    # truncate first
+```
+
+All generated users share the password `Password123!` (override with
+`--password`); the script prints a sample login email at the end.
+
 ### Frontend (development)
 
 A React SPA lives in `frontend/` (Vite + TypeScript + Tailwind + TanStack
