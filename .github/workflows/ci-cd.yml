@@ -1,0 +1,84 @@
+name: ci-cd
+
+# Build-only on every PR/push (CI), then deploy to the server on main (CD).
+# No lint, type-check, or test steps by request.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: teamflow:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to production
+    needs: build
+    # Runs on main only, and only once DEPLOY_ENABLED is set to 'true'
+    # (so the first pushes do not fail before secrets exist).
+    if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ vars.DEPLOY_HOST }}
+          username: ${{ vars.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ vars.DEPLOY_PORT || 22 }}
+          command_timeout: 15m
+          script_stop: true
+          script: |
+            set -e
+            cd "${{ vars.DEPLOY_PATH }}"
+
+            echo "==> Syncing source"
+            git fetch --prune origin main
+            git reset --hard origin/main
+
+            # Always name the file explicitly: this ignores the local
+            # docker-compose.override.yml (host-networking dev tweaks).
+            COMPOSE="docker compose -f docker-compose.yml"
+
+            echo "==> Building"
+            $COMPOSE build
+
+            echo "==> Waiting for db/redis"
+            $COMPOSE up -d --wait db redis
+
+            echo "==> Applying migrations"
+            $COMPOSE run --rm api alembic upgrade head
+
+            echo "==> Rolling out"
+            $COMPOSE up -d --remove-orphans
+
+            echo "==> Health check"
+            for i in $(seq 1 30); do
+              if curl -fsS http://localhost/api/v1/health/ready; then
+                echo
+                echo "deploy OK (${{ github.sha }})"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "health check failed" >&2
+            exit 1
