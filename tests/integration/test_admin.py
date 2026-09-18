@@ -10,7 +10,7 @@ import pytest_asyncio
 from sqlmodel import select
 
 from app.core.security import hash_password, verify_password
-from app.models import AuditLog, Label, Organization, User
+from app.models import AuditLog, Label, Organization, Project, Task, User
 
 ADMIN_EMAIL = "admin@example.com"
 ADMIN_PASSWORD = "admin-password-123"
@@ -185,3 +185,53 @@ async def test_admin_cannot_delete_own_account(client, db, admin_user):
     admin_id = admin_user.id
     db.expire_all()
     assert await db.get(User, admin_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_relation_labels_are_human_readable_and_hide_hashes(admin_user):
+    label = str(admin_user)
+    assert label == "Admin User <admin@example.com>"
+    assert "hashed_password" not in label
+    assert admin_user.hashed_password not in label
+    assert admin_user.hashed_password not in repr(admin_user)
+
+
+@pytest.mark.asyncio
+async def test_user_details_never_leaks_password_hash(client, admin_user):
+    r = await _login(client)
+    assert r.status_code == 302
+
+    r = await client.get(f"/admin/user/details/{admin_user.id}")
+    assert r.status_code == 200, r.text
+    assert admin_user.hashed_password not in r.text
+    assert "hashed_password" not in r.text
+
+
+@pytest.mark.asyncio
+async def test_project_details_renders_tasks_inline(client, db, admin_user):
+    org = Organization(name="Acme", slug="acme", created_by_id=admin_user.id)
+    project = Project(
+        name="Inline Project", organization_id=org.id, owner_id=admin_user.id
+    )
+    task = Task(
+        organization_id=org.id,
+        project_id=project.id,
+        title="Inline Task",
+        created_by_id=admin_user.id,
+    )
+    db.add(org)
+    db.add(project)
+    db.add(task)
+    await db.commit()
+    project_id = project.id
+
+    r = await _login(client)
+    assert r.status_code == 302
+
+    r = await client.get(f"/admin/project/details/{project_id}")
+    assert r.status_code == 200, r.text
+    assert "Tasks" in r.text
+    assert "Inline Task" in r.text
+    # The relationship label (owner) must be readable, not a field dump.
+    assert "hashed_password" not in r.text
+    assert "created_at=datetime" not in r.text

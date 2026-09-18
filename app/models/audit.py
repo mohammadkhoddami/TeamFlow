@@ -93,3 +93,6 @@ class AuditLog(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
 
     def __repr__(self) -> str:
         return f"{self.action} ({self.target_type or '-'}:{self.target_id or '-'})"
+
+    def __str__(self) -> str:
+        return self.__repr__()

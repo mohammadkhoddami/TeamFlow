@@ -72,6 +72,9 @@ class Webhook(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     def __repr__(self) -> str:
         return self.url
 
+    def __str__(self) -> str:
+        return self.__repr__()
+
 
 class DeliveryStatus:
     PENDING = "pending"

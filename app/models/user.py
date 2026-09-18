@@ -26,3 +26,6 @@ class User(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
 
     def __repr__(self) -> str:
         return f"{self.full_name} <{self.email}>"
+
+    def __str__(self) -> str:
+        return self.__repr__()

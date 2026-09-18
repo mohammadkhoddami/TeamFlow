@@ -1,0 +1,45 @@
+{% extends "sqladmin/details.html" %}
+{% block content %}
+{{ super() }}
+{% for inline, rows in inlines %}
+<div class="col-12 mt-3">
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">
+        {{ inline.title }}
+        <span class="badge bg-blue-lt ms-2">{{ rows | length }}</span>
+      </h3>
+      <div class="card-actions">
+        <a href="{{ url_for('admin:list', identity=inline.identity) }}">{{ _("View all") }}</a>
+      </div>
+    </div>
+    {% if rows %}
+    <div class="table-responsive">
+      <table class="table card-table table-vcenter">
+        <thead>
+          <tr>
+            {% for _attr, label, _formatter in inline.columns %}
+            <th>{{ label }}</th>
+            {% endfor %}
+            <th class="w-1"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            {% for cell in row.cells %}
+            <td>{{ cell }}</td>
+            {% endfor %}
+            <td><a href="{{ row.url }}">{{ _("Open") }}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body text-muted">{{ _("No records") }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

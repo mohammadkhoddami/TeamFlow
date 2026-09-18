@@ -59,6 +59,9 @@ class Organization(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     def __repr__(self) -> str:
         return f"{self.name} ({self.slug})"
 
+    def __str__(self) -> str:
+        return self.__repr__()
+
 
 class Membership(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     __tablename__ = "memberships"

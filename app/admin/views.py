@@ -2,14 +2,22 @@
 
 Conventions:
 - `TeamFlowModelView` holds shared defaults (CSV export, page sizes, hidden
-  timestamps); `ReadOnlyModelView` removes create/edit for append-only or
-  derived data (audit logs, deliveries, idempotency keys).
+  timestamps, human-friendly type formatters); `ReadOnlyModelView` removes
+  create/edit for append-only or derived data (audit logs, deliveries,
+  idempotency keys).
 - Foreign keys are edited through relationships with AJAX lookups
   (`form_ajax_refs`) instead of loading every row of the target table.
+- Details pages can add read-only related tables via `inlines`
+  (`app.admin.inlines`).
 - Writes funnel through `on_model_change`/`on_model_delete` for business
   invariants (password hashing, secret generation, self-lockout guards) and
   are persisted to `audit_logs` by `AdminAuditBackend`.
 """
+
+import json
+import uuid
+from datetime import datetime
+from functools import partial
 
 from sqladmin import ModelView
 from sqladmin.fields import SelectField
@@ -18,6 +26,11 @@ from sqladmin.filters import (
     BooleanFilter,
     StaticValuesFilter,
 )
+from sqladmin.formatters import (
+    BASE_FORMATTERS,
+    copy_to_clipboard_formatter,
+    datetime_formatter,
+)
 from sqlalchemy import func
 from sqlmodel import select
 from starlette.concurrency import run_in_threadpool
@@ -25,6 +38,7 @@ from starlette.requests import Request
 
 from app.admin.auth import SESSION_USER_KEY
 from app.admin.forms import UserAdminForm
+from app.admin.inlines import Inline, InlineDetailsMixin, human_size, truncate
 from app.core import security
 from app.core.db import AsyncSessionLocal
 from app.models import (
@@ -91,13 +105,30 @@ _IDEMPOTENCY_STATUS_CHOICES = [
 ]
 
 
+def _json_formatter(value: object) -> str:
+    """Compact, escaped JSON for JSON columns (events, data, meta, payload)."""
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        text = ", ".join(value)
+    else:
+        text = json.dumps(value, default=str, ensure_ascii=False)
+    return text if len(text) <= 120 else f"{text[:117]}..."
+
+
+_TYPE_FORMATTERS = {
+    **BASE_FORMATTERS,
+    datetime: datetime_formatter,
+    dict: _json_formatter,
+    list: _json_formatter,
+}
+
+_DETAIL_TYPE_FORMATTERS = {
+    **_TYPE_FORMATTERS,
+    uuid.UUID: copy_to_clipboard_formatter,
+}
+
+
 def _format_size(model: Attachment, attr: str) -> str:
-    size = getattr(model, attr) or 0
-    for unit in ("B", "KB", "MB", "GB"):
-        if size < 1024 or unit == "GB":
-            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
-        size /= 1024
-    return f"{size:.1f} GB"
+    return human_size(getattr(model, attr))
 
 
 def _format_body(model: Comment, attr: str) -> str:
@@ -112,7 +143,10 @@ class TeamFlowModelView(ModelView):
     page_size = 25
     page_size_options = [25, 50, 100, 200]
     save_as = False
+    search_auto_submit = True
     form_excluded_columns = ["created_at", "updated_at"]
+    column_type_formatters = _TYPE_FORMATTERS
+    column_type_formatters_detail = _DETAIL_TYPE_FORMATTERS
 
 
 class ReadOnlyModelView(TeamFlowModelView):
@@ -120,12 +154,26 @@ class ReadOnlyModelView(TeamFlowModelView):
     can_edit = False
 
 
-class UserAdmin(TeamFlowModelView, model=User):
+class UserAdmin(InlineDetailsMixin, TeamFlowModelView, model=User):
     name = "User"
     name_plural = "Users"
     icon = "fa-solid fa-users"
     category = "Access"
     form = UserAdminForm
+    inlines = [
+        Inline(
+            title="Memberships",
+            model=Membership,
+            columns=(
+                ("organization", "Organization", None),
+                ("role", "Role", None),
+                ("is_active", "Active", None),
+                ("created_at", "Created", None),
+            ),
+            fk_field="user_id",
+            identity="membership",
+        ),
+    ]
     column_list = [User.email, User.full_name, User.is_active, User.is_superuser, User.created_at]
     column_searchable_list = [User.email, User.full_name]
     column_sortable_list = [User.email, User.full_name, User.is_active, User.created_at]
@@ -175,11 +223,37 @@ class UserAdmin(TeamFlowModelView, model=User):
                 raise ValueError("The last superuser cannot be deleted.")
 
 
-class OrganizationAdmin(TeamFlowModelView, model=Organization):
+class OrganizationAdmin(InlineDetailsMixin, TeamFlowModelView, model=Organization):
     name = "Organization"
     name_plural = "Organizations"
     icon = "fa-solid fa-building"
     category = "Access"
+    inlines = [
+        Inline(
+            title="Projects",
+            model=Project,
+            columns=(
+                ("name", "Name", None),
+                ("status", "Status", None),
+                ("owner", "Owner", None),
+                ("created_at", "Created", None),
+            ),
+            fk_field="organization_id",
+            identity="project",
+        ),
+        Inline(
+            title="Memberships",
+            model=Membership,
+            columns=(
+                ("user", "User", None),
+                ("role", "Role", None),
+                ("is_active", "Active", None),
+                ("created_at", "Created", None),
+            ),
+            fk_field="organization_id",
+            identity="membership",
+        ),
+    ]
     column_list = [
         Organization.name,
         Organization.slug,
@@ -241,11 +315,27 @@ class InvitationAdmin(TeamFlowModelView, model=Invitation):
     form_ajax_refs = {"organization": ORGANIZATION_REF, "invited_by": USER_REF}
 
 
-class ProjectAdmin(TeamFlowModelView, model=Project):
+class ProjectAdmin(InlineDetailsMixin, TeamFlowModelView, model=Project):
     name = "Project"
     name_plural = "Projects"
     icon = "fa-solid fa-diagram-project"
     category = "Work"
+    inlines = [
+        Inline(
+            title="Tasks",
+            model=Task,
+            columns=(
+                ("title", "Title", None),
+                ("status", "Status", None),
+                ("priority", "Priority", None),
+                ("assignee", "Assignee", None),
+                ("due_date", "Due", None),
+                ("created_at", "Created", None),
+            ),
+            fk_field="project_id",
+            identity="task",
+        ),
+    ]
     column_list = [
         Project.name,
         Project.organization,
@@ -261,11 +351,36 @@ class ProjectAdmin(TeamFlowModelView, model=Project):
     form_ajax_refs = {"organization": ORGANIZATION_REF, "owner": USER_REF}
 
 
-class TaskAdmin(TeamFlowModelView, model=Task):
+class TaskAdmin(InlineDetailsMixin, TeamFlowModelView, model=Task):
     name = "Task"
     name_plural = "Tasks"
     icon = "fa-solid fa-list-check"
     category = "Work"
+    inlines = [
+        Inline(
+            title="Comments",
+            model=Comment,
+            columns=(
+                ("author", "Author", None),
+                ("body", "Comment", partial(truncate, limit=60)),
+                ("created_at", "Created", None),
+            ),
+            fk_field="task_id",
+            identity="comment",
+        ),
+        Inline(
+            title="Attachments",
+            model=Attachment,
+            columns=(
+                ("filename", "File", None),
+                ("size", "Size", human_size),
+                ("status", "Status", None),
+                ("created_at", "Created", None),
+            ),
+            fk_field="task_id",
+            identity="attachment",
+        ),
+    ]
     form_overrides = {"status": SelectField, "priority": SelectField}
     form_args = {
         "status": {"choices": _TASK_STATUS_CHOICES},
