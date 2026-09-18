@@ -33,6 +33,7 @@ COPY --from=builder /usr/local/bin/uvx /usr/local/bin/uvx
 COPY pyproject.toml uv.lock ./
 COPY app ./app
 COPY migrations ./migrations
+COPY scripts ./scripts
 COPY alembic.ini ./
 
 USER appuser
