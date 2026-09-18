@@ -23,3 +23,6 @@ class User(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         kwargs.setdefault("is_active", True)
         kwargs.setdefault("is_superuser", False)
         super().__init__(**kwargs)
+
+    def __repr__(self) -> str:
+        return f"{self.full_name} <{self.email}>"

@@ -1,12 +1,17 @@
 """Project model."""
 
 import uuid
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Column, ForeignKey, Index, String, Text
 from sqlalchemy import Uuid as SAUuid
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.base import TimeStampedMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.organization import Organization
+    from app.models.user import User
 
 
 class ProjectStatus:
@@ -40,6 +45,12 @@ class Project(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         ),
     )
 
+    organization: Optional["Organization"] = Relationship()
+    owner: Optional["User"] = Relationship()
+
     def __init__(self, **kwargs: object) -> None:
         kwargs.setdefault("status", ProjectStatus.ACTIVE)
         super().__init__(**kwargs)
+
+    def __repr__(self) -> str:
+        return self.name

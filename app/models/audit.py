@@ -1,12 +1,17 @@
 """Audit log model: immutable record of important business actions."""
 
 import uuid
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import JSON, Column, ForeignKey, Index, String
 from sqlalchemy import Uuid as SAUuid
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.base import TimeStampedMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.organization import Organization
+    from app.models.user import User
 
 
 class AuditAction:
@@ -43,6 +48,13 @@ class AuditAction:
     ATTACHMENT_DELETED = "attachment.deleted"
     WEBHOOK_CREATED = "webhook.created"
     WEBHOOK_DELETED = "webhook.deleted"
+    # admin panel (session-authenticated superusers)
+    ADMIN_LOGIN = "admin.login"
+    ADMIN_LOGIN_FAILED = "admin.login_failed"
+    ADMIN_LOGOUT = "admin.logout"
+    ADMIN_CREATE = "admin.create"
+    ADMIN_UPDATE = "admin.update"
+    ADMIN_DELETE = "admin.delete"
 
 
 class AuditLog(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
@@ -75,3 +87,9 @@ class AuditLog(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     target_id: str | None = Field(default=None, sa_column=Column(String(64), nullable=True))
     ip: str | None = Field(default=None, sa_column=Column(String(64), nullable=True))
     meta: dict | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    actor: Optional["User"] = Relationship()
+    organization: Optional["Organization"] = Relationship()
+
+    def __repr__(self) -> str:
+        return f"{self.action} ({self.target_type or '-'}:{self.target_id or '-'})"

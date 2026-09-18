@@ -1,0 +1,280 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<div class="container-fluid">
+  <div class="page-header mb-3">
+    <div class="row align-items-center">
+      <div class="col">
+        <h2 class="page-title">{{ admin.title }}</h2>
+        <div class="text-muted">Live database overview · generated {{ stats.generated_at.strftime("%Y-%m-%d %H:%M:%S UTC") }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row row-deck row-cards mb-1">
+    <div class="col-sm-6 col-lg-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="d-flex align-items-center">
+            <div class="subheader">Users</div>
+          </div>
+          <div class="h1 mb-3">{{ stats.users.total }}</div>
+          <div class="d-flex">
+            <div class="me-3"><span class="badge bg-green-lt">{{ stats.users.active }} active</span></div>
+            <div><span class="badge bg-purple-lt">{{ stats.users.superusers }} superusers</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="d-flex align-items-center">
+            <div class="subheader">Organizations</div>
+          </div>
+          <div class="h1 mb-3">{{ stats.organizations.total }}</div>
+          <div class="d-flex">
+            <div class="me-3"><span class="badge bg-green-lt">{{ stats.organizations.active }} active</span></div>
+            <div><span class="badge bg-blue-lt">{{ stats.memberships }} memberships</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="d-flex align-items-center">
+            <div class="subheader">Projects</div>
+          </div>
+          <div class="h1 mb-3">{{ stats.projects.total }}</div>
+          <div class="d-flex">
+            <div class="me-3"><span class="badge bg-green-lt">{{ stats.projects.active }} active</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-6 col-lg-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="d-flex align-items-center">
+            <div class="subheader">Tasks</div>
+          </div>
+          <div class="h1 mb-3">{{ stats.tasks.total }}</div>
+          <div class="d-flex">
+            {% if stats.tasks.overdue %}
+            <div class="me-3"><span class="badge bg-red-lt">{{ stats.tasks.overdue }} overdue</span></div>
+            {% else %}
+            <div class="me-3"><span class="badge bg-green-lt">no overdue tasks</span></div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row row-deck row-cards mb-3">
+    <div class="col-md-6 col-lg-3">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Tasks by status</h3>
+        </div>
+        <div class="card-body">
+          {% for status in stats.tasks.statuses %}
+          <div class="d-flex justify-content-between border-bottom py-2">
+            <span>{{ status.replace("_", " ").title() }}</span>
+            <strong>{{ stats.tasks.by_status.get(status, 0) }}</strong>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6 col-lg-3">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Content</h3>
+        </div>
+        <div class="card-body">
+          <div class="d-flex justify-content-between border-bottom py-2">
+            <span>Comments</span><strong>{{ stats.comments }}</strong>
+          </div>
+          <div class="d-flex justify-content-between border-bottom py-2">
+            <span>Attachments</span><strong>{{ stats.attachments }}</strong>
+          </div>
+          <div class="d-flex justify-content-between py-2">
+            <span>Unread notifications</span><strong>{{ stats.notifications_unread }}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6 col-lg-3">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Automation</h3>
+        </div>
+        <div class="card-body">
+          <div class="d-flex justify-content-between border-bottom py-2">
+            <span>Active webhooks</span><strong>{{ stats.webhooks_active }}</strong>
+          </div>
+          <div class="d-flex justify-content-between py-2">
+            <span>Audit events (24h)</span><strong>{{ stats.audit_24h }}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6 col-lg-3">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Quick actions</h3>
+        </div>
+        <div class="card-body d-grid gap-2">
+          <a class="btn btn-primary" href="{{ url_for('admin:create', identity='user') }}">
+            <i class="fa-solid fa-user-plus me-1"></i> New user
+          </a>
+          <a class="btn btn-outline-primary" href="{{ url_for('admin:create', identity='organization') }}">
+            <i class="fa-solid fa-building me-1"></i> New organization
+          </a>
+          <a class="btn btn-outline-secondary" href="{{ url_for('admin:list', identity='audit-log') }}">
+            <i class="fa-solid fa-clipboard-list me-1"></i> View audit logs
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row row-deck row-cards">
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Newest users</h3>
+          <div class="card-actions">
+            <a href="{{ url_for('admin:list', identity='user') }}">View all</a>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table card-table table-vcenter">
+            <thead>
+              <tr><th>Email</th><th>Name</th><th>Status</th><th>Created</th></tr>
+            </thead>
+            <tbody>
+              {% for user in stats.recent_users %}
+              <tr>
+                <td>
+                  <a href="{{ url_for('admin:details', identity='user', pk=user.id) }}">{{ user.email }}</a>
+                </td>
+                <td>{{ user.full_name }}</td>
+                <td>
+                  {% if user.is_active %}
+                  <span class="badge bg-green-lt">active</span>
+                  {% else %}
+                  <span class="badge bg-red-lt">disabled</span>
+                  {% endif %}
+                </td>
+                <td class="text-muted">{{ user.created_at.strftime("%Y-%m-%d") }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-muted">No users yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Newest organizations</h3>
+          <div class="card-actions">
+            <a href="{{ url_for('admin:list', identity='organization') }}">View all</a>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table card-table table-vcenter">
+            <thead>
+              <tr><th>Name</th><th>Slug</th><th>Status</th><th>Created</th></tr>
+            </thead>
+            <tbody>
+              {% for org in stats.recent_organizations %}
+              <tr>
+                <td>
+                  <a href="{{ url_for('admin:details', identity='organization', pk=org.id) }}">{{ org.name }}</a>
+                </td>
+                <td class="text-muted">{{ org.slug }}</td>
+                <td>
+                  {% if org.is_active %}
+                  <span class="badge bg-green-lt">active</span>
+                  {% else %}
+                  <span class="badge bg-red-lt">disabled</span>
+                  {% endif %}
+                </td>
+                <td class="text-muted">{{ org.created_at.strftime("%Y-%m-%d") }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-muted">No organizations yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Newest tasks</h3>
+          <div class="card-actions">
+            <a href="{{ url_for('admin:list', identity='task') }}">View all</a>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table card-table table-vcenter">
+            <thead>
+              <tr><th>Title</th><th>Status</th><th>Priority</th><th>Created</th></tr>
+            </thead>
+            <tbody>
+              {% for task in stats.recent_tasks %}
+              <tr>
+                <td>
+                  <a href="{{ url_for('admin:details', identity='task', pk=task.id) }}">{{ task.title }}</a>
+                </td>
+                <td>{{ task.status.replace("_", " ").title() }}</td>
+                <td>{{ task.priority.title() }}</td>
+                <td class="text-muted">{{ task.created_at.strftime("%Y-%m-%d") }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-muted">No tasks yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Recent audit activity</h3>
+          <div class="card-actions">
+            <a href="{{ url_for('admin:list', identity='audit-log') }}">View all</a>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table card-table table-vcenter">
+            <thead>
+              <tr><th>When</th><th>Action</th><th>Actor</th><th>Target</th></tr>
+            </thead>
+            <tbody>
+              {% for entry in stats.recent_audit %}
+              <tr>
+                <td class="text-muted">{{ entry.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+                <td><span class="badge bg-blue-lt">{{ entry.action }}</span></td>
+                <td>{{ entry.actor.email if entry.actor else "-" }}</td>
+                <td class="text-muted">{{ entry.target_type or "-" }}{% if entry.target_id %}:{{ entry.target_id }}{% endif %}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-muted">No audit entries yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

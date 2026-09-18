@@ -2,16 +2,17 @@
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy import Uuid as SAUuid
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.base import TimeStampedMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    pass
+    from app.models.organization import Organization
+    from app.models.user import User
 
 
 class NotificationType:
@@ -60,3 +61,6 @@ class Notification(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
     )
+
+    user: Optional["User"] = Relationship()
+    organization: Optional["Organization"] = Relationship()

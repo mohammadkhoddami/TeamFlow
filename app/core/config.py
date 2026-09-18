@@ -95,6 +95,12 @@ class Settings(BaseSettings):
     # --- Idempotency ---
     idempotency_ttl_hours: int = 24
 
+    # --- Admin panel (server-rendered, superuser-only) ---
+    admin_enabled: bool = True
+    admin_base_url: str = "/admin"
+    admin_title: str = "TeamFlow Admin"
+    admin_session_max_age_seconds: int = 8 * 3600
+
     # --- Webhooks ---
     webhook_timeout_seconds: float = 5.0
     webhook_max_retries: int = 5

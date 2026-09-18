@@ -10,7 +10,7 @@ inside an organization.
 """
 
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Boolean, Column, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy import Uuid as SAUuid
@@ -50,9 +50,14 @@ class Organization(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         ),
     )
 
+    created_by: Optional["User"] = Relationship()
+
     def __init__(self, **kwargs: object) -> None:
         kwargs.setdefault("is_active", True)
         super().__init__(**kwargs)
+
+    def __repr__(self) -> str:
+        return f"{self.name} ({self.slug})"
 
 
 class Membership(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
@@ -81,6 +86,7 @@ class Membership(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     is_active: bool = Field(sa_column=Column(Boolean, nullable=False))
 
     user: "User" = Relationship(sa_relationship_kwargs={"lazy": "joined"})
+    organization: Optional["Organization"] = Relationship()
 
     def __init__(self, **kwargs: object) -> None:
         kwargs.setdefault("role", MembershipRole.MEMBER)
@@ -122,6 +128,9 @@ class Invitation(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
             nullable=True,
         ),
     )
+
+    organization: Optional["Organization"] = Relationship()
+    invited_by: Optional["User"] = Relationship()
 
     def __init__(self, **kwargs: object) -> None:
         kwargs.setdefault("role", MembershipRole.MEMBER)

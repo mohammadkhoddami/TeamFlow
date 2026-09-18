@@ -10,6 +10,8 @@ from sqlmodel import Field, Relationship, SQLModel
 from app.models.base import TimeStampedMixin, UUIDMixin
 
 if TYPE_CHECKING:
+    from app.models.organization import Organization
+    from app.models.task import Task
     from app.models.user import User
 
 
@@ -43,4 +45,6 @@ class Comment(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     )
     body: str = Field(sa_column=Column(Text, nullable=False))
 
+    organization: Optional["Organization"] = Relationship()
+    task: Optional["Task"] = Relationship()
     author: Optional["User"] = Relationship(sa_relationship_kwargs={"lazy": "joined"})

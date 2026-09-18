@@ -22,6 +22,8 @@ from app.models.base import TimeStampedMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.models.label import Label
+    from app.models.organization import Organization
+    from app.models.project import Project
     from app.models.user import User
 
 
@@ -148,6 +150,8 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     creator: Optional["User"] = Relationship(
         sa_relationship_kwargs={"lazy": "joined", "foreign_keys": "Task.created_by_id"}
     )
+    organization: Optional["Organization"] = Relationship()
+    project: Optional["Project"] = Relationship()
     labels: list["Label"] = Relationship(
         link_model=TaskLabelLink, sa_relationship_kwargs={"lazy": "selectin"}
     )
@@ -159,3 +163,6 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         kwargs.setdefault("status", TaskStatus.TODO)
         kwargs.setdefault("priority", TaskPriority.MEDIUM)
         super().__init__(**kwargs)
+
+    def __repr__(self) -> str:
+        return self.title

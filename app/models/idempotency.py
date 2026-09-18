@@ -7,6 +7,7 @@ Rows expire after `settings.idempotency_ttl_hours` (cleanup via Celery Beat).
 """
 
 import uuid
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
     Column,
@@ -17,9 +18,12 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy import Uuid as SAUuid
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.base import TimeStampedMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class IdempotencyStatus:
@@ -54,6 +58,8 @@ class IdempotencyKey(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     response_body: str | None = Field(
         default=None, sa_column=Column(Text, nullable=True)
     )
+
+    user: Optional["User"] = Relationship()
 
     def __init__(self, **kwargs: object) -> None:
         kwargs.setdefault("status", IdempotencyStatus.IN_PROGRESS)

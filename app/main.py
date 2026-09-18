@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.admin import setup_admin
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.db import engine
@@ -83,6 +84,9 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router, prefix=settings.api_v1_prefix)
     app.include_router(ws_router)  # /ws/projects/{project_id}
+
+    # Server-rendered admin panel at settings.admin_base_url (superuser-only).
+    setup_admin(app)
 
     return app
 

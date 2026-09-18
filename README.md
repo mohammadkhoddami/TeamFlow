@@ -14,6 +14,7 @@ SQLModel, PostgreSQL, Redis, Celery, and MinIO.
 | Background jobs    | Celery + Celery Beat (Redis broker), sync psycopg sessions    |
 | Realtime           | WebSockets with Redis pub/sub fan-out (multi-worker safe)     |
 | Object storage     | S3-compatible (MinIO in dev), presigned PUT/GET URLs          |
+| Admin panel        | sqladmin (server-rendered CRUD + dashboard, superuser session auth) |
 | HTTP client        | HTTPX (shared per worker process via lifespan/worker signal)  |
 
 ## Architecture
@@ -31,6 +32,7 @@ Client -> FastAPI -> Router -> Dependencies -> Service -> Repository -> SQLModel
 - `app/core/` - config, db, logging, exceptions, middleware, idempotency
 - `app/websocket/` - connection manager + Redis listener + WS endpoint
 - `app/workers/` - Celery app + tasks (email, webhooks, cleanup, stats)
+- `app/admin/` - sqladmin views, superuser session auth, dashboard, audit backend
 - `migrations/` - Alembic (async env)
 
 ## Quick start (development)
@@ -49,6 +51,9 @@ uv run celery -A app.workers.celery_app:celery_app beat -l info
 
 API docs: http://localhost:8000/docs (login via `POST /api/v1/auth/login`,
 form-encoded, then use the returned access token as Bearer).
+
+Admin panel: http://localhost:8000/admin (server-rendered, session-cookie
+auth). Only active **superusers** can sign in; see [Admin panel](#admin-panel).
 
 Run the full stack in Docker: `docker compose up -d --build` (db, redis, api,
 worker, beat, nginx; add `--profile minio` for local S3). One compose file,
@@ -84,6 +89,49 @@ npm run dev            # http://localhost:3000 (matches default CORS_ORIGINS)
 
 See `frontend/README.md` for details.
 
+## Admin panel
+
+A server-rendered operations UI (sqladmin, mounted at `/admin`) manages every
+table without a separate frontend build:
+
+- **Dashboard** (`/admin`): live counts (users/orgs/projects/tasks), task status
+  breakdown, overdue tasks, recent users/organizations/tasks and audit activity.
+- **CRUD** for users, organizations, memberships, invitations, projects, tasks,
+  labels, comments, attachments, notifications and webhooks - with search,
+  filters, sorting, pagination and CSV export.
+- **Password management**: the user form has a write-only password field; the
+  raw value is bcrypt-hashed server-side and never stored in the audit trail.
+- **Guards**: admins cannot deactivate/demote/delete their own account and the
+  last superuser cannot be deleted; webhook signing secrets are never rendered
+  back and are auto-generated when omitted.
+- **Audit trail**: every admin create/update/delete is appended to
+  `audit_logs` (`actor`, target, IP, sanitized changes); logins/failures and
+  logouts are audited too. Phishing-resistant by design: same-site session
+  cookie, `Secure` in production, bcrypt timing equalized on unknown emails,
+  login rate-limited per (IP, email).
+- **Read-only views**: audit logs, webhook deliveries and idempotency keys.
+
+```text
+/admin            dashboard
+/admin/user/list  any model list (identity = model slug, e.g. task -> /admin/task/list)
+```
+
+Access is session-based, not JWT: navigate to `/admin`, log in with a
+superuser's email + password. Configure via `ADMIN_ENABLED`, `ADMIN_BASE_URL`,
+`ADMIN_TITLE`, `ADMIN_SESSION_MAX_AGE_SECONDS` (see `.env.example`); the
+session cookie is signed with a key derived from `SECRET_KEY`.
+
+Bootstrap the first superuser (API registration never grants the flag):
+
+```bash
+uv run python scripts/create_superuser.py --email admin@example.com --password 'change-me-please'
+# inside containers:
+# docker compose exec api uv run python scripts/create_superuser.py \
+#   --email admin@example.com --password 'change-me-please'
+```
+
+After that, promote/demote users from the admin panel itself.
+
 ## Tests
 
 Functional API/security/worker tests require the dev services (postgres, redis):
@@ -96,7 +144,8 @@ uv run pytest tests -q
 Test suite covers: auth flows (rotation, reuse detection, logout), RBAC and
 tenant isolation (IDOR -> 404), task transitions/query filters, idempotency
 replay, attachments (fake storage), webhook signing + retries + idempotency,
-rate limiting, notifications, audit trail, dashboard aggregation, WebSockets.
+rate limiting, notifications, audit trail, dashboard aggregation, WebSockets,
+and the admin panel (superuser-only login, CRUD, audit redaction, guards).
 
 ## Key behaviors
 

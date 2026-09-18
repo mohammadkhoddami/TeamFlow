@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
     JSON,
@@ -15,9 +16,13 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy import Uuid as SAUuid
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.base import TimeStampedMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.models.organization import Organization
+    from app.models.user import User
 
 
 class WebhookEvent:
@@ -57,9 +62,15 @@ class Webhook(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         ),
     )
 
+    organization: Optional["Organization"] = Relationship()
+    created_by: Optional["User"] = Relationship()
+
     def __init__(self, **kwargs: object) -> None:
         kwargs.setdefault("is_active", True)
         super().__init__(**kwargs)
+
+    def __repr__(self) -> str:
+        return self.url
 
 
 class DeliveryStatus:
@@ -96,6 +107,8 @@ class WebhookDelivery(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
     )
+
+    webhook: Optional["Webhook"] = Relationship()
 
     def __init__(self, **kwargs: object) -> None:
         kwargs.setdefault("status", DeliveryStatus.PENDING)
