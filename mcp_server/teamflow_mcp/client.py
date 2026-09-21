@@ -21,12 +21,13 @@ import base64
 import json
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Literal
 
 import httpx
 from mcp.server.mcpserver.exceptions import ToolError
 
-from .config import Settings, get_settings
+from .config import Settings, get_settings, project_env_file, shared_env_file
 
 HttpMethod = Literal["GET", "POST", "PATCH", "DELETE"]
 _FALSY_PARAMS = (None, "", False, [], {})
@@ -109,6 +110,7 @@ class TeamFlowClient:
             base_url=self._settings.base_url,
             timeout=httpx.Timeout(self._settings.timeout),
             verify=self._settings.verify_ssl,
+            trust_env=self._settings.trust_env,
             headers={"User-Agent": "teamflow-mcp/0.1.0"},
         )
         self._access_token: str | None = None
@@ -167,10 +169,18 @@ class TeamFlowClient:
             self._expires_at = 0.0
 
     async def login(self) -> None:
+        if self._settings.credentials_are_placeholders:
+            raise TeamFlowError(
+                "TEAMFLOW_EMAIL / TEAMFLOW_PASSWORD are still template placeholders. "
+                f"Put your real TeamFlow account in the project env file "
+                f"({project_env_file() or 'the project .env'}) and retry."
+            )
         if not self._settings.credentials_configured:
             raise TeamFlowError(
                 "TEAMFLOW_EMAIL and TEAMFLOW_PASSWORD are not set. Add them to the "
-                "MCP server's environment (or a .env file) so the server can log in."
+                "project's .env (the workspace this MCP server was launched in), to "
+                f"{shared_env_file()}, or to the server's environment. "
+                f"Working directory: {Path.cwd()}"
             )
         response = await self._send(
             "POST",

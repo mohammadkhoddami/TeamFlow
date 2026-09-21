@@ -204,8 +204,9 @@ uv tool install .              # provides the `teamflow-mcp` command
 uv run teamflow-mcp --check    # verify credentials end to end
 ```
 
-Then register the server in `opencode.json` - in the project where you want the
-board, or globally in `~/.config/opencode/opencode.json` to have it everywhere:
+Register the server **once, globally**, in `~/.config/opencode/opencode.jsonc`.
+`cwd` is `"."`, which OpenCode resolves to the current workspace root, so the
+server reads *that project's* `.env`:
 
 ```json
 {
@@ -214,45 +215,80 @@ board, or globally in `~/.config/opencode/opencode.json` to have it everywhere:
     "teamflow": {
       "type": "local",
       "command": ["teamflow-mcp"],
-      "environment": {
-        "TEAMFLOW_API_URL": "https://arsene.ir/flow",
-        "TEAMFLOW_EMAIL": "{env:TEAMFLOW_EMAIL}",
-        "TEAMFLOW_PASSWORD": "{env:TEAMFLOW_PASSWORD}",
-        "TEAMFLOW_ORG": "your-org",
-        "TEAMFLOW_PROJECT": "Your Board"
-      }
+      "cwd": ".",
+      "enabled": true
     }
   }
 }
+```
+
+Every project keeps its own identity, and no credentials appear in the config
+file. Values layer per key, in increasing precedence: shared defaults at
+`~/.config/teamflow/.env`, then the project's `.env`, then real environment
+variables.
+
+### Per-project credentials
+
+Set up the shared defaults once per machine - the API URL, no identity:
+
+```bash
+mkdir -p ~/.config/teamflow
+printf 'TEAMFLOW_API_URL=https://arsene.ir/flow\n' > ~/.config/teamflow/.env
+```
+
+Then each project declares only its own account in its `.env` (which must be
+gitignored), for example `C:/repos/Arsen/.env`:
+
+```env
+TEAMFLOW_EMAIL=arsen@example.com
+TEAMFLOW_PASSWORD=secret
+TEAMFLOW_ORG=arsen
+```
+
+and `C:/repos/AiIdentity/.env`:
+
+```env
+TEAMFLOW_EMAIL=other@example.com
+TEAMFLOW_PASSWORD=other-secret
+TEAMFLOW_ORG=other-org
 ```
 
 Give `TEAMFLOW_API_URL` the base URL only (`https://arsene.ir/flow`) - `/api/v1`
-is appended automatically. `{env:...}` reads the value from your shell
-environment, which keeps the password out of the config file. `TEAMFLOW_ORG` and
-`TEAMFLOW_PROJECT` are optional defaults so prompts can omit them.
+is appended automatically. `TEAMFLOW_ORG` is only needed when the account
+belongs to more than one organization. The project file is found as
+`<cwd>/.env`, falling back to the nearest ancestor `.env` up to the git root
+that actually defines `TEAMFLOW_*` keys, so a project's unrelated keys
+(`DATABASE_URL`, `SECRET_KEY`, ...) are ignored. `TEAMFLOW_ENV_FILE` pins an
+explicit path.
+
+Verify from inside a project - the account is masked and secrets are never
+printed:
+
+```bash
+cd /path/to/the/project
+uv run --project /path/to/TeamFlow/mcp_server teamflow-mcp --check
+# Working dir: /path/to/the/project
+#   project env: /path/to/the/project/.env
+#   shared env : /home/you/.config/teamflow/.env
+#   default org: arsen
+# API        : https://arsene.ir/flow/api/v1
+# User       : a***n@example.com (...)
+# Orgs       : arsen [owner], other-org [member]
+# OK: credentials work, the MCP server can log in.
+```
+
+If the API runs on `localhost` on a machine with a system proxy, add
+`TEAMFLOW_TRUST_ENV=false` to the project's `.env`.
 
 To run straight from a checkout instead of installing, replace `command` with:
 
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "teamflow": {
-      "type": "local",
-      "command": [
-        "uv", "run",
-        "--directory", "/path/to/TeamFlow/mcp_server",
-        "teamflow-mcp"
-      ],
-      "environment": {
-        "TEAMFLOW_API_URL": "https://arsene.ir/flow",
-        "TEAMFLOW_EMAIL": "{env:TEAMFLOW_EMAIL}",
-        "TEAMFLOW_PASSWORD": "{env:TEAMFLOW_PASSWORD}"
-      }
-    }
-  }
-}
+```jsonc
+"command": ["uv", "run", "--project", "/path/to/TeamFlow/mcp_server", "teamflow-mcp"]
 ```
+
+Use `--project`, not `--directory`: `--directory` makes uv `chdir` into the MCP
+server's folder first, so the workspace stops being the current directory and the
+project's `.env` would never be found.
 
 Restart opencode and the tools appear prefixed with the server name -
 `teamflow_get_board`, `teamflow_create_task`, and so on. Then ask in plain

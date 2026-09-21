@@ -19,7 +19,7 @@ from typing import Any, Literal
 from mcp.server.mcpserver import MCPServer
 
 from .client import TeamFlowError, get_client
-from .config import get_settings
+from .config import describe_sources, get_settings
 from .formatting import (
     STATUS_LABELS,
     STATUS_ORDER,
@@ -687,12 +687,38 @@ def board_triage(project: str = "", org_slug: str = "") -> str:
 # ----------------------------------------------------------------------- main
 
 
+def _mask_email(value: str) -> str:
+    """Keep the domain (useful for diagnosis) but not the full local part."""
+    local, _, domain = value.partition("@")
+    if not domain:
+        return "***"
+    if len(local) <= 2:
+        masked = f"{local[:1]}***"
+    else:
+        masked = f"{local[0]}***{local[-1]}"
+    return f"{masked}@{domain}"
+
+
 async def _check() -> None:
+    sources = describe_sources()
+    print(f"Working dir: {sources['cwd']}")
+    print(f"  project env: {sources['project_env_file'] or '(none found)'}"
+          f"{'' if sources['project_env_file_exists'] else '  [does not exist]'}")
+    print(f"  shared env : {sources['shared_env_file'] or '(none)'}")
+    if sources["env_file_override"]:
+        print(f"  override   : {sources['env_file_override']}")
+    if sources["credentials_from_process_env"]:
+        print("  credentials: from process environment (not from a file)")
+
+    settings = get_settings()
+    if settings.org:
+        print(f"  default org: {settings.org}")
+
     client = get_client()
     user = await client.me()
     listing = await client.organizations()
     print(f"API        : {client.base_url}")
-    print(f"User       : {user['email']} ({user['id']})")
+    print(f"User       : {_mask_email(user['email'])} ({user['id']})")
     print(f"Orgs       : {', '.join(o['organization']['slug'] for o in listing) or 'none'}")
     for item in listing:
         slug = item["organization"]["slug"]
