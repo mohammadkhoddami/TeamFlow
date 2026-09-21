@@ -26,6 +26,10 @@ React 19 + TypeScript + Vite single-page app for the TeamFlow API.
   work items of each type, pick a parent (a child may nest under any higher
   level), switch the project between board and tree views, and track
   progress via child counters and progress bars.
+- Markdown: task descriptions and comments use a Jira-style editor with a
+  Write/Preview toggle, formatting toolbar (bold, italic, code, links,
+  headings, lists, quotes, code blocks) and keyboard shortcuts; rendered
+  output is React elements only (no raw HTML).
 - Realtime: project sockets with reconnect/backoff; board and open task
   refresh on `task.*` / `comment.*` events.
 - Notifications: bell with unread badge (polled), inbox page, mark read/all.

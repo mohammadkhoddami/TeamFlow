@@ -18,7 +18,8 @@ import {
   type TaskType,
 } from '../../lib/types'
 import { fromDateTimeLocal } from '../../lib/utils'
-import { Button, ErrorState, Field, Input, Modal, Select, Textarea } from '../ui'
+import { Button, ErrorState, Field, Input, Modal, Select } from '../ui'
+import { MarkdownEditor } from '../MarkdownEditor'
 import { LabelPicker } from './LabelPicker'
 
 export function TaskCreateDialog({
@@ -159,11 +160,12 @@ export function TaskCreateDialog({
             placeholder="Ship the release notes"
           />
         </Field>
-        <Field label="Description">
-          <Textarea
+        <Field label="Description" hint="Markdown supported — headings, lists, code, links">
+          <MarkdownEditor
             value={description}
+            onChange={setDescription}
             maxLength={20_000}
-            onChange={(event) => setDescription(event.target.value)}
+            minRows={5}
             placeholder="Add context, acceptance criteria, links…"
           />
         </Field>

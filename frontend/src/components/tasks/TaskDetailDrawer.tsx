@@ -33,8 +33,8 @@ import {
   Field,
   Input,
   Select,
-  Textarea,
 } from '../ui'
+import { MarkdownEditor } from '../MarkdownEditor'
 import { AttachmentsSection } from './AttachmentsSection'
 import { CommentsSection } from './CommentsSection'
 import { LabelPicker } from './LabelPicker'
@@ -363,11 +363,12 @@ export function TaskDetailDrawer({
               </Button>
             )}
           </div>
-          <Textarea
+          <MarkdownEditor
             value={description}
+            onChange={setDescription}
             maxLength={20_000}
+            minRows={6}
             placeholder="Add context, acceptance criteria, links…"
-            onChange={(event) => setDescription(event.target.value)}
           />
         </section>
 

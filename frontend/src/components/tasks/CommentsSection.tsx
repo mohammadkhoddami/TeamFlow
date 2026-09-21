@@ -7,9 +7,11 @@ import { useToast } from '../../contexts/toast'
 import { ApiError, commentsApi } from '../../lib/api'
 import { qk } from '../../lib/hooks'
 import { canManage } from '../../lib/types'
-import { cn, relativeTime } from '../../lib/utils'
+import { relativeTime } from '../../lib/utils'
 import { useOrg } from '../OrgLayout'
-import { Avatar, Button, Spinner, Textarea } from '../ui'
+import { Markdown } from '../Markdown'
+import { MarkdownEditor } from '../MarkdownEditor'
+import { Avatar, Button, Spinner } from '../ui'
 
 export function CommentsSection({ taskId }: { taskId: string }) {
   const { user } = useAuth()
@@ -63,22 +65,24 @@ export function CommentsSection({ taskId }: { taskId: string }) {
         Comments{comments.data ? ` (${comments.data.length})` : ''}
       </h3>
 
-      <div className="flex items-start gap-2">
-        <Textarea
-          className="min-h-16 flex-1"
+      <div className="space-y-2">
+        <MarkdownEditor
           value={body}
+          onChange={setBody}
+          minRows={3}
           maxLength={20_000}
-          placeholder="Write a comment…"
-          onChange={(event) => setBody(event.target.value)}
+          placeholder="Write a comment… (Markdown supported)"
         />
-        <Button
-          size="sm"
-          onClick={() => create.mutate()}
-          disabled={body.trim().length === 0}
-          loading={create.isPending}
-        >
-          <Send className="h-3.5 w-3.5" />
-        </Button>
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            onClick={() => create.mutate()}
+            disabled={body.trim().length === 0}
+            loading={create.isPending}
+          >
+            <Send className="h-3.5 w-3.5" /> Comment
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -126,10 +130,12 @@ export function CommentsSection({ taskId }: { taskId: string }) {
 
               {editingId === comment.id ? (
                 <div className="mt-1.5 space-y-2">
-                  <Textarea
-                    className="min-h-14 bg-white"
+                  <MarkdownEditor
+                    className="bg-white"
                     value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
+                    onChange={setDraft}
+                    minRows={3}
+                    maxLength={20_000}
                   />
                   <div className="flex justify-end gap-2">
                     <Button size="sm" variant="secondary" onClick={() => setEditingId(null)}>
@@ -146,9 +152,7 @@ export function CommentsSection({ taskId }: { taskId: string }) {
                   </div>
                 </div>
               ) : (
-                <p className={cn('mt-0.5 whitespace-pre-wrap text-sm text-slate-700')}>
-                  {comment.body}
-                </p>
+                <Markdown text={comment.body} className="mt-0.5" emptyText="" />
               )}
             </div>
           </div>
