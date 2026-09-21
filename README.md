@@ -179,3 +179,107 @@ uv run alembic upgrade head   # run migrations as an explicit deploy step
 Set `POSTGRES_USER/PASSWORD/DB`, `SECRET_KEY`, `CORS_ORIGINS`, `S3_*`,
 `EMAIL_*` in the environment (see `.env.example`). Nginx terminates traffic and
 proxies WebSocket upgrades (`deploy/nginx.conf`).
+
+## MCP server (agent integration)
+
+`mcp_server/` is a standalone [Model Context Protocol](https://modelcontextprotocol.io)
+server that turns TeamFlow into a project board any MCP-capable coding agent can
+use - read the board, create and move cards, assign work, comment. It is a pure
+API client with no database access, so the same package works against localhost
+or the deployed instance.
+
+Tools include `get_board` (kanban columns with accurate counts), `list_tasks`,
+`get_task`, `create_task`, `update_task`, `move_task`, `delete_task`, `my_work`,
+`add_comment`, `list_members`, `list_labels`, `create_label` and
+`get_dashboard`. See `mcp_server/README.md` for the full list, argument
+conventions and troubleshooting.
+
+### Add it to opencode
+
+Install the package once (Python 3.10+):
+
+```bash
+cd mcp_server
+uv tool install .              # provides the `teamflow-mcp` command
+uv run teamflow-mcp --check    # verify credentials end to end
+```
+
+Then register the server in `opencode.json` - in the project where you want the
+board, or globally in `~/.config/opencode/opencode.json` to have it everywhere:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "teamflow": {
+      "type": "local",
+      "command": ["teamflow-mcp"],
+      "environment": {
+        "TEAMFLOW_API_URL": "https://arsene.ir/flow",
+        "TEAMFLOW_EMAIL": "{env:TEAMFLOW_EMAIL}",
+        "TEAMFLOW_PASSWORD": "{env:TEAMFLOW_PASSWORD}",
+        "TEAMFLOW_ORG": "your-org",
+        "TEAMFLOW_PROJECT": "Your Board"
+      }
+    }
+  }
+}
+```
+
+Give `TEAMFLOW_API_URL` the base URL only (`https://arsene.ir/flow`) - `/api/v1`
+is appended automatically. `{env:...}` reads the value from your shell
+environment, which keeps the password out of the config file. `TEAMFLOW_ORG` and
+`TEAMFLOW_PROJECT` are optional defaults so prompts can omit them.
+
+To run straight from a checkout instead of installing, replace `command` with:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "teamflow": {
+      "type": "local",
+      "command": [
+        "uv", "run",
+        "--directory", "/path/to/TeamFlow/mcp_server",
+        "teamflow-mcp"
+      ],
+      "environment": {
+        "TEAMFLOW_API_URL": "https://arsene.ir/flow",
+        "TEAMFLOW_EMAIL": "{env:TEAMFLOW_EMAIL}",
+        "TEAMFLOW_PASSWORD": "{env:TEAMFLOW_PASSWORD}"
+      }
+    }
+  }
+}
+```
+
+Restart opencode and the tools appear prefixed with the server name -
+`teamflow_get_board`, `teamflow_create_task`, and so on. Then ask in plain
+language:
+
+```text
+Use the teamflow tools: show me the board for "Payments API", then move the
+checkout bug to in_review and assign it to alice@example.com.
+```
+
+### Teammates on the deployed instance
+
+Every teammate uses their **own** TeamFlow account - never share one login, since
+attribution, audit logs, comments and notifications all key off the account:
+
+1. Register at `https://arsene.ir/flow/register` (password >= 10 characters).
+2. An owner or admin invites them from `/org/<slug>/members`, choosing a role.
+3. They accept the invitation at `https://arsene.ir/flow/invitations`.
+4. They install the package and reuse the config above with their own
+   `TEAMFLOW_EMAIL` / `TEAMFLOW_PASSWORD`.
+
+Tenant isolation applies: an agent can only see the organizations its account
+belongs to. To distribute the package, share the built wheel (`uv build` inside
+`mcp_server/`, then `uv tool install ./teamflow_mcp-0.1.0-py3-none-any.whl`),
+clone the repo, or publish to an index - `mcp_server/README.md` documents each
+option, Docker included.
+
+Note that login is rate limited to 5 attempts/minute/IP; the MCP server logs in
+once per session and then rotates its refresh token, so normal use never hits
+the limit.

@@ -1,0 +1,23 @@
+[project]
+name = "teamflow-mcp"
+version = "0.1.0"
+description = "MCP server that exposes a TeamFlow board (projects, tasks, comments, labels) as agent tools"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "mcp>=2.0",
+    "httpx>=0.28",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.6",
+]
+
+[project.scripts]
+teamflow-mcp = "teamflow_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["teamflow_mcp"]
