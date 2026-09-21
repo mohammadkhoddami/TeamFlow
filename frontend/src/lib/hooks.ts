@@ -1,0 +1,204 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback } from 'react'
+
+import type {
+  DashboardStats,
+  InvitationRead,
+  LabelRead,
+  NotificationRead,
+  Page,
+  ProjectRead,
+  TaskRead,
+  TaskTreeNode,
+  WebhookDeliveryRead,
+  WebhookRead,
+} from './types'
+import {
+  auditApi,
+  dashboardApi,
+  invitationsApi,
+  labelsApi,
+  membersApi,
+  notificationsApi,
+  organizationsApi,
+  projectsApi,
+  tasksApi,
+  webhooksApi,
+} from './api'
+import type { TaskFilters } from './api'
+
+export const qk = {
+  orgs: ['orgs'] as const,
+  org: (slug: string) => ['orgs', slug] as const,
+  members: (slug: string) => ['orgs', slug, 'members'] as const,
+  invitationsOrg: (slug: string) => ['orgs', slug, 'invitations'] as const,
+  dashboard: (slug: string) => ['orgs', slug, 'dashboard'] as const,
+  labels: (slug: string) => ['orgs', slug, 'labels'] as const,
+  projects: (slug: string, status?: string) =>
+    ['orgs', slug, 'projects', status ?? 'all'] as const,
+  project: (projectId: string) => ['projects', projectId] as const,
+  tasks: (slug: string, filters: TaskFilters) =>
+    ['orgs', slug, 'tasks', filters] as const,
+  task: (taskId: string) => ['tasks', taskId] as const,
+  taskChildren: (taskId: string) => ['tasks', taskId, 'children'] as const,
+  taskTree: (projectId: string) => ['projects', projectId, 'task-tree'] as const,
+  comments: (taskId: string) => ['tasks', taskId, 'comments'] as const,
+  attachments: (taskId: string) => ['tasks', taskId, 'attachments'] as const,
+  notifications: (unreadOnly?: boolean) => ['notifications', unreadOnly ?? false] as const,
+  unreadCount: ['notifications', 'unread-count'] as const,
+  invitationsMine: ['invitations', 'me'] as const,
+  audit: (slug: string, action: string, offset: number, limit: number) =>
+    ['orgs', slug, 'audit', { action, offset, limit }] as const,
+  webhooks: (slug: string) => ['orgs', slug, 'webhooks'] as const,
+  webhookDeliveries: (slug: string, webhookId: string) =>
+    ['orgs', slug, 'webhooks', webhookId, 'deliveries'] as const,
+}
+
+const NOTIFICATION_POLL_MS = 30_000
+
+export function useOrganizations() {
+  return useQuery({
+    queryKey: qk.orgs,
+    queryFn: () => organizationsApi.list(),
+  })
+}
+
+export function useOrgMembers(slug: string | undefined) {
+  return useQuery({
+    queryKey: qk.members(slug ?? ''),
+    queryFn: () => membersApi.list(slug as string),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useDashboard(slug: string) {
+  return useQuery<DashboardStats>({
+    queryKey: qk.dashboard(slug),
+    queryFn: () => dashboardApi.get(slug),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useProjects(slug: string, status?: string) {
+  return useQuery<ProjectRead[]>({
+    queryKey: qk.projects(slug, status),
+    queryFn: () => projectsApi.list(slug, status || undefined),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useProject(projectId: string | undefined) {
+  return useQuery<ProjectRead>({
+    queryKey: qk.project(projectId ?? ''),
+    queryFn: () => projectsApi.get(projectId as string),
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useTasks(slug: string, filters: TaskFilters) {
+  return useQuery<Page<TaskRead>>({
+    queryKey: qk.tasks(slug, filters),
+    queryFn: () => tasksApi.list(slug, filters),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useTaskChildren(taskId: string | null | undefined) {
+  return useQuery<TaskRead[]>({
+    queryKey: qk.taskChildren(taskId ?? ''),
+    queryFn: () => tasksApi.children(taskId as string),
+    enabled: Boolean(taskId),
+  })
+}
+
+export function useTaskTree(projectId: string | undefined) {
+  return useQuery<TaskTreeNode[]>({
+    queryKey: qk.taskTree(projectId ?? ''),
+    queryFn: () => tasksApi.tree(projectId as string),
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useLabels(slug: string) {
+  return useQuery<LabelRead[]>({
+    queryKey: qk.labels(slug),
+    queryFn: () => labelsApi.list(slug),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useNotifications(unreadOnly: boolean) {
+  return useQuery<Page<NotificationRead>>({
+    queryKey: qk.notifications(unreadOnly),
+    queryFn: () => notificationsApi.list({ unread_only: unreadOnly, limit: 50 }),
+    refetchInterval: NOTIFICATION_POLL_MS,
+  })
+}
+
+export function useUnreadCount() {
+  return useQuery<{ unread: number }>({
+    queryKey: qk.unreadCount,
+    queryFn: () => notificationsApi.unreadCount(),
+    refetchInterval: NOTIFICATION_POLL_MS,
+  })
+}
+
+export function useMyInvitations() {
+  return useQuery<InvitationRead[]>({
+    queryKey: qk.invitationsMine,
+    queryFn: () => invitationsApi.listMine(),
+  })
+}
+
+export function useOrgInvitations(slug: string) {
+  return useQuery<InvitationRead[]>({
+    queryKey: qk.invitationsOrg(slug),
+    queryFn: () => invitationsApi.listOrg(slug),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useAuditLogs(
+  slug: string,
+  action: string,
+  offset: number,
+  limit: number,
+) {
+  return useQuery({
+    queryKey: qk.audit(slug, action, offset, limit),
+    queryFn: () =>
+      auditApi.list(slug, { action: action || undefined, offset, limit }),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useWebhooks(slug: string) {
+  return useQuery<WebhookRead[]>({
+    queryKey: qk.webhooks(slug),
+    queryFn: () => webhooksApi.list(slug),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useWebhookDeliveries(slug: string, webhookId: string | undefined) {
+  return useQuery<WebhookDeliveryRead[]>({
+    queryKey: qk.webhookDeliveries(slug, webhookId ?? ''),
+    queryFn: () => webhooksApi.deliveries(slug, webhookId as string),
+    enabled: Boolean(slug && webhookId),
+  })
+}
+
+export function useInvalidateTasks() {
+  const queryClient = useQueryClient()
+  return useCallback(
+    (slug: string, taskId?: string) => {
+      void queryClient.invalidateQueries({ queryKey: ['orgs', slug, 'tasks'] })
+      if (taskId) {
+        void queryClient.invalidateQueries({ queryKey: qk.task(taskId) })
+        void queryClient.invalidateQueries({ queryKey: qk.comments(taskId) })
+        void queryClient.invalidateQueries({ queryKey: qk.attachments(taskId) })
+      }
+    },
+    [queryClient],
+  )
+}

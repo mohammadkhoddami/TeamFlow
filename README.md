@@ -78,8 +78,9 @@ All generated users share the password `Password123!` (override with
 
 A React SPA lives in `frontend/` (Vite + TypeScript + Tailwind + TanStack
 Query). It covers auth, workspaces, projects, a realtime kanban board, tasks,
-comments, attachments, labels, notifications, members/invitations, webhooks,
-audit logs and the dashboard.
+an epic > story > task hierarchy (board and tree views, parent/subtask
+navigation, progress roll-ups), comments, attachments, labels, notifications,
+members/invitations, webhooks, audit logs and the dashboard.
 
 ```bash
 cd frontend

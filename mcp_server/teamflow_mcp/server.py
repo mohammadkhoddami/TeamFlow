@@ -32,6 +32,7 @@ from .formatting import (
 
 Status = Literal["todo", "in_progress", "in_review", "done"]
 Priority = Literal["low", "medium", "high", "urgent"]
+TaskType = Literal["epic", "story", "task"]
 
 TRANSITIONS = {
     "todo": "in_progress",
@@ -53,6 +54,9 @@ mcp = MCPServer(
         "- `org_slug` defaults to TEAMFLOW_ORG, or your only organization.\n"
         "- `assignee` accepts 'me', an email address, or a user UUID.\n"
         "- `labels` accept label names or UUIDs.\n\n"
+        "Work items form an epic > story > task hierarchy: create_task() takes\n"
+        "`type` and `parent_id`, and get_task_tree() renders the whole project\n"
+        "tree. A parent must be a higher level in the same project.\n\n"
         "Status moves are step-wise only: todo <-> in_progress <-> in_review <-> done "
         "(a task cannot jump from todo straight to done)."
     ),
@@ -225,6 +229,9 @@ async def list_tasks(
     org_slug: str | None = None,
     status: list[Status] | None = None,
     priority: list[Priority] | None = None,
+    type: list[TaskType] | None = None,
+    parent_id: str | None = None,
+    roots_only: bool = False,
     assignee: str | None = None,
     unassigned: bool = False,
     label: str | None = None,
@@ -243,6 +250,9 @@ async def list_tasks(
         org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
         status: One or more of todo, in_progress, in_review, done.
         priority: One or more of low, medium, high, urgent.
+        type: One or more of epic, story, task.
+        parent_id: Only direct children of this task UUID.
+        roots_only: Only top-level tasks (no parent).
         assignee: 'me', an email address, or a user UUID.
         unassigned: Only tasks with no assignee.
         label: Label name or UUID.
@@ -251,7 +261,7 @@ async def list_tasks(
         due_before: ISO-8601 datetime upper bound on due date.
         due_after: ISO-8601 datetime lower bound on due date.
         sort: Sortable field, prefix '-' for descending. One of created_at,
-            updated_at, title, priority, status, due_date (e.g. '-due_date').
+            updated_at, title, priority, status, due_date, type (e.g. '-due_date').
         limit: Page size (1-100).
         offset: Pagination offset.
     """
@@ -266,6 +276,9 @@ async def list_tasks(
         "project_id": project_data["id"] if project_data else None,
         "status": status,
         "priority": priority,
+        "type": type,
+        "parent_id": parent_id,
+        "roots_only": roots_only,
         "assignee_id": await client.resolve_user_id(assignee, slug),
         "unassigned": unassigned,
         "label_id": (await client.resolve_labels([label], slug) or [None])[0]
@@ -306,11 +319,58 @@ async def get_task(task_id: str, include_comments: bool = True) -> str:
     client = _client()
     task = await client.get(f"/tasks/{task_id}")
     payload: dict[str, Any] = {"task": task_record(task)}
+    children = await client.get(f"/tasks/{task_id}/children") or []
+    payload["children"] = [task_card(child) for child in children]
     if include_comments:
         comments = await client.get(f"/tasks/{task_id}/comments", limit=100) or []
         payload["comments"] = [comment_item(c) for c in comments]
     payload["allowed_next_status"] = TRANSITIONS.get(task.get("status"), "")
     return json_text(payload)
+
+
+@mcp.tool()
+async def get_task_tree(project: str | None = None, org_slug: str | None = None) -> str:
+    """Show a project's epic > story > task hierarchy as a nested tree.
+
+    Use this to understand how work is broken down: epics contain stories,
+    stories contain tasks (a task may also sit directly under an epic). Each
+    node reports the child progress as `done/total`.
+
+    Args:
+        project: Project name or UUID. Defaults to TEAMFLOW_PROJECT.
+        org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
+    """
+    client = _client()
+    slug, project_data = await client.resolve_project(project, org_slug)
+    roots = await client.get(f"/projects/{project_data['id']}/tasks/tree") or []
+
+    def node(item: dict[str, Any]) -> dict[str, Any]:
+        entry: dict[str, Any] = {
+            "id": item.get("id"),
+            "title": item.get("title"),
+            "type": item.get("type"),
+            "status": item.get("status"),
+            "priority": item.get("priority"),
+        }
+        assignee = item.get("assignee") or {}
+        if assignee:
+            entry["assignee"] = assignee.get("email") or assignee.get("full_name")
+        children = item.get("children") or []
+        if children:
+            entry["progress"] = (
+                f"{item.get('done_child_count', 0)}/{item.get('child_count', 0)} children done"
+            )
+            entry["children"] = [node(child) for child in children]
+        return entry
+
+    return json_text(
+        {
+            "organization": slug,
+            "project": {"id": project_data["id"], "name": project_data["name"]},
+            "roots": len(roots),
+            "tree": [node(root) for root in roots],
+        }
+    )
 
 
 @mcp.tool()
@@ -320,6 +380,8 @@ async def create_task(
     org_slug: str | None = None,
     description: str | None = None,
     priority: Priority = "medium",
+    type: TaskType = "task",
+    parent_id: str | None = None,
     due_date: str | None = None,
     assignee: str | None = None,
     labels: list[str] | None = None,
@@ -332,6 +394,10 @@ async def create_task(
         org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
         description: Markdown body (max 20,000 chars).
         priority: low, medium, high, or urgent.
+        type: epic, story, or task (default).
+        parent_id: UUID of the parent work item. A story nests under an epic;
+            a task nests under a story or directly under an epic. The parent
+            must be in the same project.
         due_date: ISO-8601 datetime, e.g. '2026-10-01T17:00:00Z'.
         assignee: 'me', a member email, or a user UUID. Must be an org member.
         labels: Label names or UUIDs (must already exist - see create_label).
@@ -342,8 +408,11 @@ async def create_task(
         "title": title,
         "description": description,
         "priority": priority,
+        "type": type,
         "due_date": due_date,
     }
+    if parent_id:
+        body["parent_id"] = parent_id
     assignee_id = await client.resolve_user_id(assignee, slug)
     if assignee_id:
         body["assignee_id"] = assignee_id
@@ -367,6 +436,9 @@ async def update_task(
     title: str | None = None,
     description: str | None = None,
     priority: Priority | None = None,
+    type: TaskType | None = None,
+    parent_id: str | None = None,
+    clear_parent: bool = False,
     due_date: str | None = None,
     clear_due_date: bool = False,
     assignee: str | None = None,
@@ -380,6 +452,9 @@ async def update_task(
         title: New title.
         description: New markdown body (replaces the old one).
         priority: low, medium, high, or urgent.
+        type: epic, story, or task. Must keep parents higher-level than children.
+        parent_id: UUID of a new parent work item in the same project.
+        clear_parent: Set true to detach the task from its parent.
         due_date: New ISO-8601 due date, e.g. '2026-10-01T17:00:00Z'.
         clear_due_date: Set true to remove the due date. Overrides due_date.
         assignee: 'me', a member email, a user UUID, or 'unassigned' to clear it.
@@ -398,6 +473,12 @@ async def update_task(
         body["description"] = description
     if priority is not None:
         body["priority"] = priority
+    if type is not None:
+        body["type"] = type
+    if clear_parent:
+        body["parent_id"] = None
+    elif parent_id is not None:
+        body["parent_id"] = parent_id
     if clear_due_date:
         body["due_date"] = None
     elif due_date is not None:

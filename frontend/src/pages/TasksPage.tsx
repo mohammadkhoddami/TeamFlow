@@ -1,4 +1,4 @@
-import { Eye, Plus, Search } from 'lucide-react'
+import { CornerDownRight, Eye, Plus, Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { useOrg } from '../components/OrgLayout'
@@ -22,9 +22,13 @@ import {
   STATUS_BADGE,
   STATUS_LABELS,
   TASK_STATUSES,
+  TASK_TYPES,
+  TYPE_BADGE,
+  TYPE_LABELS,
   type TaskPriority,
   type TaskRead,
   type TaskStatus,
+  type TaskType,
 } from '../lib/types'
 import { useProjects, useTasks } from '../lib/hooks'
 import type { TaskFilters } from '../lib/api'
@@ -49,6 +53,8 @@ export function TasksPage() {
   const [projectId, setProjectId] = useState('')
   const [statuses, setStatuses] = useState<TaskStatus[]>([])
   const [priority, setPriority] = useState('')
+  const [type, setType] = useState('')
+  const [rootsOnly, setRootsOnly] = useState(false)
   const [assigneeId, setAssigneeId] = useState('')
   const [overdue, setOverdue] = useState(false)
   const [sort, setSort] = useState('-created_at')
@@ -69,6 +75,8 @@ export function TasksPage() {
       project_id: projectId || undefined,
       status: statuses.length ? statuses : undefined,
       priority: priority ? [priority as TaskPriority] : undefined,
+      type: type ? [type as TaskType] : undefined,
+      roots_only: rootsOnly || undefined,
       assignee_id: assigneeId || undefined,
       search: search || undefined,
       overdue: overdue || undefined,
@@ -76,7 +84,7 @@ export function TasksPage() {
       offset,
       limit: 25,
     }),
-    [projectId, statuses, priority, assigneeId, search, overdue, sort, offset],
+    [projectId, statuses, priority, type, rootsOnly, assigneeId, search, overdue, sort, offset],
   )
 
   const tasks = useTasks(org.slug, filters)
@@ -106,7 +114,7 @@ export function TasksPage() {
       </div>
 
       <Card className="space-y-3 p-4">
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-5">
           <div className="relative md:col-span-2">
             <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <Input
@@ -127,6 +135,20 @@ export function TasksPage() {
             {projects.data?.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name}
+              </option>
+            ))}
+          </Select>
+          <Select
+            value={type}
+            onChange={(event) => {
+              setType(event.target.value)
+              setOffset(0)
+            }}
+          >
+            <option value="">Any type</option>
+            {TASK_TYPES.map((value) => (
+              <option key={value} value={value}>
+                {TYPE_LABELS[value]}
               </option>
             ))}
           </Select>
@@ -182,6 +204,14 @@ export function TasksPage() {
             checked={overdue}
             onChange={(event) => {
               setOverdue(event.target.checked)
+              setOffset(0)
+            }}
+          />
+          <Checkbox
+            label="Top level only"
+            checked={rootsOnly}
+            onChange={(event) => {
+              setRootsOnly(event.target.checked)
               setOffset(0)
             }}
           />
@@ -242,7 +272,23 @@ export function TasksPage() {
                       onClick={() => setSelectedTask(task)}
                     >
                       <td className="max-w-xs px-4 py-2.5">
-                        <p className="truncate font-medium text-slate-800">{task.title}</p>
+                        <div className="flex items-center gap-1.5">
+                          <Badge className={TYPE_BADGE[task.type]}>{TYPE_LABELS[task.type]}</Badge>
+                          <p className="truncate font-medium text-slate-800">{task.title}</p>
+                          {task.child_count > 0 && (
+                            <span className="shrink-0 text-[10px] text-slate-400">
+                              {task.done_child_count}/{task.child_count}
+                            </span>
+                          )}
+                        </div>
+                        {task.parent && (
+                          <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-slate-400">
+                            <CornerDownRight className="h-3 w-3 shrink-0" />
+                            <span className="truncate">
+                              {TYPE_LABELS[task.parent.type]} · {task.parent.title}
+                            </span>
+                          </p>
+                        )}
                         <div className="mt-0.5 flex gap-1">
                           {task.labels.map((label) => (
                             <span
@@ -328,7 +374,11 @@ export function TasksPage() {
         projectId={projectId}
         projects={projects.data ?? []}
       />
-      <TaskDetailDrawer task={selectedTask} onClose={() => setSelectedTask(null)} />
+      <TaskDetailDrawer
+        task={selectedTask}
+        onClose={() => setSelectedTask(null)}
+        onOpenTask={(next) => setSelectedTask(next)}
+      />
     </div>
   )
 }

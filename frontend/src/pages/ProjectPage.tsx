@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Plus, Settings2 } from 'lucide-react'
+import { ArrowLeft, LayoutGrid, Network, Plus, Settings2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
@@ -7,9 +7,11 @@ import { useOrg } from '../components/OrgLayout'
 import { TaskBoard } from '../components/tasks/TaskBoard'
 import { TaskCreateDialog } from '../components/tasks/TaskCreateDialog'
 import { TaskDetailDrawer } from '../components/tasks/TaskDetailDrawer'
+import { TaskTree } from '../components/tasks/TaskTree'
 import {
   Badge,
   Button,
+  Checkbox,
   ConfirmDialog,
   ErrorState,
   Field,
@@ -21,8 +23,8 @@ import {
 } from '../components/ui'
 import { useToast } from '../contexts/toast'
 import { ApiError, tasksApi, projectsApi } from '../lib/api'
-import { useInvalidateTasks, useProject, useTasks } from '../lib/hooks'
-import { canManage, type TaskRead, type TaskStatus } from '../lib/types'
+import { useInvalidateTasks, useProject, useTasks, useTaskTree } from '../lib/hooks'
+import { canManage, type TaskRead, type TaskStatus, type TaskType } from '../lib/types'
 import { cn, formatDate } from '../lib/utils'
 import { createProjectSocket, type SocketStatus } from '../lib/ws'
 
@@ -36,12 +38,17 @@ export function ProjectPage() {
 
   const project = useProject(projectId)
   const tasks = useTasks(org.slug, { project_id: projectId, limit: 100 })
+  const tree = useTaskTree(projectId)
 
   const [socketStatus, setSocketStatus] = useState<SocketStatus>('connecting')
   const [selectedTask, setSelectedTask] = useState<TaskRead | null>(null)
   const selectedTaskIdRef = useRef<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [createStatus, setCreateStatus] = useState<TaskStatus>('todo')
+  const [createParent, setCreateParent] = useState<TaskRead | null>(null)
+  const [createType, setCreateType] = useState<TaskType>('task')
+  const [view, setView] = useState<'board' | 'tree'>('board')
+  const [showSubtasks, setShowSubtasks] = useState(true)
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -61,6 +68,19 @@ export function ProjectPage() {
     selectedTaskIdRef.current = selectedTask?.id ?? null
   }, [selectedTask])
 
+  const startCreate = (options?: {
+    status?: TaskStatus
+    parent?: TaskRead | null
+    type?: TaskType
+  }) => {
+    setCreateStatus(options?.status ?? 'todo')
+    setCreateParent(options?.parent ?? null)
+    setCreateType(
+      options?.type ?? (options?.parent?.type === 'epic' ? 'story' : 'task'),
+    )
+    setCreating(true)
+  }
+
   useEffect(() => {
     if (!projectId) return
     return createProjectSocket(
@@ -68,6 +88,9 @@ export function ProjectPage() {
       (event) => {
         if (event.type.startsWith('task.') || event.type.startsWith('comment.')) {
           invalidate(org.slug)
+          void queryClient.invalidateQueries({
+            queryKey: ['projects', projectId, 'task-tree'],
+          })
           const openTaskId = selectedTaskIdRef.current
           if (openTaskId && event.data.id === openTaskId) {
             void queryClient.invalidateQueries({ queryKey: ['tasks', openTaskId] })
@@ -168,38 +191,87 @@ export function ProjectPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-slate-200 bg-white p-0.5">
+              <button
+                type="button"
+                onClick={() => setView('board')}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  view === 'board'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" /> Board
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('tree')}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  view === 'tree'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                <Network className="h-3.5 w-3.5" /> Hierarchy
+              </button>
+            </div>
+            {view === 'board' && (
+              <Checkbox
+                label="Subtasks"
+                checked={showSubtasks}
+                onChange={(event) => setShowSubtasks(event.target.checked)}
+              />
+            )}
             {canManage(role) && (
               <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
                 <Settings2 className="h-3.5 w-3.5" /> Project settings
               </Button>
             )}
-            <Button
-              size="sm"
-              onClick={() => {
-                setCreateStatus('todo')
-                setCreating(true)
-              }}
-            >
+            <Button size="sm" onClick={() => startCreate()}>
               <Plus className="h-3.5 w-3.5" /> Add task
             </Button>
           </div>
         </div>
       </div>
 
-      {tasks.isLoading && <PageSpinner label="Loading board…" />}
-      {tasks.isError && (
-        <ErrorState message="Could not load tasks." onRetry={() => void tasks.refetch()} />
-      )}
-      {tasks.data && (
-        <TaskBoard
-          tasks={tasks.data.items}
-          onOpen={setSelectedTask}
-          onMove={(taskId, next) => move.mutate({ taskId, status: next })}
-          onAdd={(next) => {
-            setCreateStatus(next)
-            setCreating(true)
-          }}
-        />
+      {view === 'board' ? (
+        <>
+          {tasks.isLoading && <PageSpinner label="Loading board…" />}
+          {tasks.isError && (
+            <ErrorState message="Could not load tasks." onRetry={() => void tasks.refetch()} />
+          )}
+          {tasks.data && (
+            <TaskBoard
+              tasks={
+                showSubtasks
+                  ? tasks.data.items
+                  : tasks.data.items.filter((task) => !task.parent_id)
+              }
+              onOpen={setSelectedTask}
+              onMove={(taskId, next) => move.mutate({ taskId, status: next })}
+              onAdd={(next) => startCreate({ status: next })}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          {tree.isLoading && <PageSpinner label="Loading hierarchy…" />}
+          {tree.isError && (
+            <ErrorState
+              message="Could not load the hierarchy."
+              onRetry={() => void tree.refetch()}
+            />
+          )}
+          {tree.data && (
+            <TaskTree
+              nodes={tree.data}
+              onOpen={setSelectedTask}
+              onAddChild={(parent) => startCreate({ parent })}
+            />
+          )}
+        </>
       )}
 
       {projectId && (
@@ -208,10 +280,17 @@ export function ProjectPage() {
           onClose={() => setCreating(false)}
           projectId={projectId}
           defaultStatus={createStatus}
+          defaultParentId={createParent?.id ?? null}
+          defaultType={createType}
         />
       )}
 
-      <TaskDetailDrawer task={selectedTask} onClose={() => setSelectedTask(null)} />
+      <TaskDetailDrawer
+        task={selectedTask}
+        onClose={() => setSelectedTask(null)}
+        onOpenTask={(next) => setSelectedTask(next)}
+        onAddChild={(parent) => startCreate({ parent })}
+      />
 
       <Modal
         open={editing}

@@ -19,9 +19,13 @@ React 19 + TypeScript + Vite single-page app for the TeamFlow API.
   (member / manager / admin / owner mirror the backend rules).
 - Projects: list, create, archive, delete.
 - Tasks: kanban board with drag & drop (status transitions enforced by the
-  API), org-wide filtered list (search, status, priority, assignee, overdue,
-  sort, pagination), full task detail drawer with comments, attachments
-  (presigned S3/MinIO upload/download), labels and watchers.
+  API), org-wide filtered list (search, type, status, priority, assignee,
+  overdue, sort, pagination), full task detail drawer with comments,
+  attachments (presigned S3/MinIO upload/download), labels and watchers.
+- Hierarchy: GitHub-Projects-style epic > story > task nesting. Create
+  work items of each type, pick a parent (a child may nest under any higher
+  level), switch the project between board and tree views, and track
+  progress via child counters and progress bars.
 - Realtime: project sockets with reconnect/backoff; board and open task
   refresh on `task.*` / `comment.*` events.
 - Notifications: bell with unread badge (polled), inbox page, mark read/all.

@@ -25,6 +25,7 @@ from app.models.task import (
     TaskLabelLink,
     TaskPriority,
     TaskStatus,
+    TaskType,
     TaskWatcherLink,
 )
 from app.models.user import User
@@ -53,6 +54,7 @@ __all__ = [
     "TaskLabelLink",
     "TaskPriority",
     "TaskStatus",
+    "TaskType",
     "TaskWatcherLink",
     "TimeStampedMixin",
     "UUIDMixin",

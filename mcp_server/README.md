@@ -342,10 +342,11 @@ ENTRYPOINT ["teamflow-mcp"]
 | `list_organizations` | Organizations you belong to, with roles. |
 | `list_projects` | Projects in an organization. |
 | `get_board` | **Kanban board**: each column with accurate counts and top cards. |
-| `list_tasks` | Filter by status, priority, assignee, label, due dates, overdue, free text. |
-| `get_task` | One task in full, with its comment thread. |
-| `create_task` | Create a task on a project (starts in `todo`). |
-| `update_task` | Change title, description, priority, due date, assignee, labels, status. |
+| `list_tasks` | Filter by status, priority, type, parent, assignee, label, due dates, overdue, free text. |
+| `get_task` | One task in full, with its direct children and comment thread. |
+| `get_task_tree` | The project's epic > story > task hierarchy as a nested tree. |
+| `create_task` | Create a task/epic/story on a project (starts in `todo`). |
+| `update_task` | Change title, description, priority, due date, assignee, labels, type, parent, status. |
 | `move_task` | Move a card between columns, optionally with an explanatory comment. |
 | `delete_task` | Permanently delete a task. |
 | `my_work` | Everything assigned to you, grouped by column — ideal for standups. |

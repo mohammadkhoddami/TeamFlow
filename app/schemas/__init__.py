@@ -44,7 +44,10 @@ from app.schemas.task import (
     StatusLiteral,
     TaskCreate,
     TaskMove,
+    TaskParentRef,
     TaskRead,
+    TaskTreeNode,
+    TaskTypeLiteral,
     TaskUpdate,
 )
 from app.schemas.webhook import (
@@ -92,7 +95,10 @@ __all__ = [
     "TasksPerMember",
     "TaskCreate",
     "TaskMove",
+    "TaskParentRef",
     "TaskRead",
+    "TaskTreeNode",
+    "TaskTypeLiteral",
     "TaskUpdate",
     "Token",
     "TokenRefresh",

@@ -4,6 +4,8 @@ Business rules:
   - status transitions follow a whitelist (with reopening); same->same is a
     no-op, unknown paths are 422
   - moving to DONE stamps completed_at; leaving DONE clears it
+  - hierarchy: epic > story > task; a parent must be in the same project and
+    at a strictly higher level, so cycles are structurally impossible
   - assignee must be an active member of the task's org
   - creator + assignee auto-watch; watchers get notified on comments/status
   - members may edit tasks; only managers+ (or the creator) may delete
@@ -34,6 +36,7 @@ from app.models import (
     Task,
     TaskLabelLink,
     TaskStatus,
+    TaskType,
     TaskWatcherLink,
     User,
 )
@@ -54,6 +57,66 @@ def _can_delete(membership: Membership, task: Task, actor: User) -> bool:
     if membership.role != MembershipRole.MEMBER:
         return True
     return task.created_by_id == actor.id
+
+
+def _type_level(task_type: str) -> int:
+    return TaskType.LEVELS.get(task_type, TaskType.LEVELS[TaskType.TASK])
+
+
+async def _assert_parent_valid(
+    db: AsyncSession,
+    org_id: uuid.UUID,
+    project_id: uuid.UUID,
+    parent_id: uuid.UUID,
+    child_type: str,
+    child_id: uuid.UUID | None = None,
+) -> None:
+    """Validates the epic > story > task rule for a proposed parent link.
+
+    A parent must live in the same project and at a strictly higher level
+    than its child; the link must also not close a cycle.
+    """
+    repo = TaskRepository(db)
+    parent = await repo.get_in_org(parent_id, org_id)
+    if not parent:
+        raise ValidationFailedError("Parent task not found in this organization")
+    if parent.project_id != project_id:
+        raise ValidationFailedError("Parent task must belong to the same project")
+    if child_id is not None and parent.id == child_id:
+        raise ValidationFailedError("A task cannot be its own parent")
+    if _type_level(parent.type) >= _type_level(child_type):
+        raise ValidationFailedError(
+            f"'{parent.type}' is not a valid parent for '{child_type}': "
+            "parents must be a higher level (epic > story > task)"
+        )
+    if child_id is None:
+        return
+    # Walk up from the proposed parent; meeting the child means a cycle.
+    seen = {parent.id}
+    current_id = parent.parent_id
+    while current_id is not None and len(seen) <= len(TaskType.ALL) + 1:
+        if current_id == child_id:
+            raise ValidationFailedError("Cannot nest a task under its own descendant")
+        if current_id in seen:
+            raise ValidationFailedError("The parent chain contains a cycle")
+        seen.add(current_id)
+        current_id = await repo.get_parent_id(current_id)
+
+
+async def _assert_type_change_valid(
+    db: AsyncSession, org_id: uuid.UUID, task: Task, new_type: str
+) -> None:
+    """A type change must preserve the level invariant on both ends."""
+    child_types = await TaskRepository(db).children_types(task.id)
+    if any(_type_level(child_type) <= _type_level(new_type) for child_type in child_types):
+        raise ValidationFailedError(
+            f"Cannot change type to '{new_type}': this task already has "
+            "children at the same or a higher level"
+        )
+    if task.parent_id is not None:
+        await _assert_parent_valid(
+            db, org_id, task.project_id, task.parent_id, new_type, task.id
+        )
 
 
 async def _assert_assignee_in_org(
@@ -139,6 +202,8 @@ def task_event_payload(task: Task) -> dict:
         "title": task.title,
         "status": task.status,
         "priority": task.priority,
+        "type": task.type,
+        "parent_id": str(task.parent_id) if task.parent_id else None,
         "assignee_id": str(task.assignee_id) if task.assignee_id else None,
         "due_date": task.due_date.isoformat() if task.due_date else None,
     }
@@ -168,12 +233,19 @@ async def create_task(
     data: TaskCreate,
     ip: str | None = None,
 ) -> Task:
+    if data.parent_id is not None:
+        await _assert_parent_valid(
+            db, org.id, project.id, data.parent_id, data.type
+        )
+
     task = Task(
         organization_id=org.id,
         project_id=project.id,
         title=data.title,
         description=data.description,
         priority=data.priority,
+        type=data.type,
+        parent_id=data.parent_id,
         due_date=data.due_date,
         created_by_id=actor.id,
     )
@@ -233,6 +305,19 @@ async def update_task(
     deletion and project management are the gated actions."""
     changed = data.model_fields_set
     old_status = task.status
+
+    if "type" in changed and data.type is not None and data.type != task.type:
+        await _assert_type_change_valid(db, org.id, task, data.type)
+        task.type = data.type
+
+    if "parent_id" in changed and data.parent_id != task.parent_id:
+        if data.parent_id is None:
+            task.parent_id = None
+        else:
+            await _assert_parent_valid(
+                db, org.id, task.project_id, data.parent_id, task.type, task.id
+            )
+            task.parent_id = data.parent_id
 
     if "assignee_id" in changed and data.assignee_id != task.assignee_id:
         if data.assignee_id is not None:

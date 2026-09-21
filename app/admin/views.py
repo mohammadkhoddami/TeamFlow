@@ -62,6 +62,7 @@ from app.models import (
     Task,
     TaskPriority,
     TaskStatus,
+    TaskType,
     User,
     Webhook,
     WebhookDelivery,
@@ -82,6 +83,9 @@ _TASK_STATUS_CHOICES = [
 ]
 _TASK_PRIORITY_CHOICES = [
     (priority, priority.title()) for priority in TaskPriority.ALL
+]
+_TASK_TYPE_CHOICES = [
+    (task_type, task_type.title()) for task_type in TaskType.ALL
 ]
 _PROJECT_STATUS_CHOICES = [
     (status, status.title()) for status in ProjectStatus.ALL
@@ -381,13 +385,15 @@ class TaskAdmin(InlineDetailsMixin, TeamFlowModelView, model=Task):
             identity="attachment",
         ),
     ]
-    form_overrides = {"status": SelectField, "priority": SelectField}
+    form_overrides = {"status": SelectField, "priority": SelectField, "type": SelectField}
     form_args = {
         "status": {"choices": _TASK_STATUS_CHOICES},
         "priority": {"choices": _TASK_PRIORITY_CHOICES},
+        "type": {"choices": _TASK_TYPE_CHOICES},
     }
     column_list = [
         Task.title,
+        Task.type,
         Task.project,
         Task.organization,
         Task.status,
@@ -397,10 +403,11 @@ class TaskAdmin(InlineDetailsMixin, TeamFlowModelView, model=Task):
         Task.created_at,
     ]
     column_searchable_list = [Task.title, Task.description]
-    column_sortable_list = ["title", "status", "priority", "due_date", "created_at"]
+    column_sortable_list = ["title", "type", "status", "priority", "due_date", "created_at"]
     column_filters = [
         StaticValuesFilter(Task.status, _TASK_STATUS_CHOICES, title="Status"),
         StaticValuesFilter(Task.priority, _TASK_PRIORITY_CHOICES, title="Priority"),
+        StaticValuesFilter(Task.type, _TASK_TYPE_CHOICES, title="Type"),
     ]
     column_default_sort = [("created_at", True)]
     form_ajax_refs = {
@@ -408,6 +415,7 @@ class TaskAdmin(InlineDetailsMixin, TeamFlowModelView, model=Task):
         "project": PROJECT_REF,
         "creator": USER_REF,
         "assignee": USER_REF,
+        "parent": TASK_REF,
         "labels": LABEL_REF,
         "watchers": USER_REF,
     }

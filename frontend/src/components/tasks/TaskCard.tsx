@@ -1,8 +1,13 @@
-import { CalendarDays } from 'lucide-react'
+import { CalendarDays, CornerDownRight, GitBranch } from 'lucide-react'
 
 import { Avatar, Badge } from '../ui'
 import type { TaskRead } from '../../lib/types'
-import { PRIORITY_BADGE, PRIORITY_LABELS } from '../../lib/types'
+import {
+  PRIORITY_BADGE,
+  PRIORITY_LABELS,
+  TYPE_BADGE,
+  TYPE_LABELS,
+} from '../../lib/types'
 import { cn, formatDate, isOverdue } from '../../lib/utils'
 
 export function TaskCard({
@@ -17,6 +22,10 @@ export function TaskCard({
   onDragEnd: () => void
 }) {
   const overdue = isOverdue(task.due_date, task.status)
+  const isContainer = task.child_count > 0
+  const progress = isContainer
+    ? Math.round((task.done_child_count / task.child_count) * 100)
+    : 0
 
   return (
     <div
@@ -27,7 +36,10 @@ export function TaskCard({
       className="cursor-pointer rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing"
     >
       <div className="flex items-center justify-between gap-2">
-        <Badge className={PRIORITY_BADGE[task.priority]}>{PRIORITY_LABELS[task.priority]}</Badge>
+        <div className="flex items-center gap-1.5">
+          <Badge className={TYPE_BADGE[task.type]}>{TYPE_LABELS[task.type]}</Badge>
+          <Badge className={PRIORITY_BADGE[task.priority]}>{PRIORITY_LABELS[task.priority]}</Badge>
+        </div>
         {task.labels.length > 0 && (
           <div className="flex flex-wrap justify-end gap-1">
             {task.labels.slice(0, 3).map((label) => (
@@ -49,7 +61,37 @@ export function TaskCard({
         )}
       </div>
 
-      <p className="mt-2 line-clamp-2 text-sm font-medium text-slate-800">{task.title}</p>
+      {task.parent && (
+        <p className="mt-2 flex items-center gap-1 truncate text-[10px] text-slate-400">
+          <CornerDownRight className="h-3 w-3 shrink-0" />
+          <span className="truncate">
+            {TYPE_LABELS[task.parent.type]} · {task.parent.title}
+          </span>
+        </p>
+      )}
+
+      <p className="mt-1.5 line-clamp-2 text-sm font-medium text-slate-800">{task.title}</p>
+
+      {isContainer && (
+        <div className="mt-2 space-y-1">
+          <div className="flex items-center justify-between text-[10px] text-slate-500">
+            <span className="inline-flex items-center gap-1">
+              <GitBranch className="h-3 w-3" />
+              {task.done_child_count}/{task.child_count} done
+            </span>
+            <span>{progress}%</span>
+          </div>
+          <div className="h-1 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className={cn(
+                'h-full rounded-full transition-all',
+                progress === 100 ? 'bg-emerald-500' : 'bg-brand-500',
+              )}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="mt-3 flex items-center justify-between gap-2">
         {task.assignee ? (

@@ -75,14 +75,18 @@ def task_card(task: dict[str, Any], description_chars: int = 240) -> dict[str, A
     card: dict[str, Any] = {
         "id": task.get("id"),
         "title": task.get("title"),
+        "type": task.get("type") or "task",
         "status": task.get("status"),
         "priority": task.get("priority"),
         "project_id": task.get("project_id"),
+        "parent_id": task.get("parent_id"),
         "assignee": _user(task.get("assignee")) or task.get("assignee_id"),
         "due_date": task.get("due_date"),
         "labels": label_names(task),
         "updated_at": task.get("updated_at"),
     }
+    if task.get("child_count"):
+        card["children"] = f"{task.get('done_child_count', 0)}/{task['child_count']} done"
     if is_overdue(task):
         card["overdue"] = True
     snippet = _clip(task.get("description"), description_chars)
@@ -98,6 +102,16 @@ def task_record(task: dict[str, Any]) -> dict[str, Any]:
     record["description"] = task.get("description")
     record["organization_id"] = task.get("organization_id")
     record["creator"] = _user(task.get("creator")) or task.get("created_by_id")
+    parent = task.get("parent")
+    if parent:
+        record["parent"] = {
+            "id": parent.get("id"),
+            "title": parent.get("title"),
+            "type": parent.get("type"),
+            "status": parent.get("status"),
+        }
+    record["child_count"] = task.get("child_count") or 0
+    record["done_child_count"] = task.get("done_child_count") or 0
     record["completed_at"] = task.get("completed_at")
     record["created_at"] = task.get("created_at")
     record["watcher_ids"] = task.get("watcher_ids") or []

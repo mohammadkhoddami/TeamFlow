@@ -12,7 +12,7 @@ collections) so list endpoints never emit N+1 queries from lazy loads.
 
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, ClassVar, Optional
 
 from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy import Uuid as SAUuid
@@ -43,6 +43,22 @@ class TaskPriority:
     URGENT = "urgent"
 
     ALL = (LOW, MEDIUM, HIGH, URGENT)
+
+
+class TaskType:
+    """Work-item level in the epic > story > task hierarchy.
+
+    LEVELS gives each type a depth; a parent must always sit at a strictly
+    lower depth than its child, which is what makes cycles impossible
+    regardless of how many level combinations the API allows.
+    """
+
+    EPIC = "epic"
+    STORY = "story"
+    TASK = "task"
+
+    ALL = (EPIC, STORY, TASK)
+    LEVELS: ClassVar[dict[str, int]] = {EPIC: 0, STORY: 1, TASK: 2}
 
 
 class TaskLabelLink(SQLModel, table=True):
@@ -93,6 +109,8 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         Index("ix_tasks_assignee", "assignee_id"),
         Index("ix_tasks_due_date", "due_date"),
         Index("ix_tasks_created", "created_at"),
+        Index("ix_tasks_org_parent", "organization_id", "parent_id"),
+        Index("ix_tasks_org_type", "organization_id", "type"),
     )
 
     organization_id: uuid.UUID = Field(
@@ -117,9 +135,18 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     )
     status: str = Field(sa_column=Column(String(16), nullable=False))
     priority: str = Field(sa_column=Column(String(16), nullable=False))
+    type: str = Field(sa_column=Column(String(16), nullable=False, server_default="task"))
     due_date: datetime | None = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    parent_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("tasks.id", ondelete="SET NULL", name="fk_tasks_parent_id_tasks"),
+            nullable=True,
+        ),
     )
     created_by_id: uuid.UUID | None = Field(
         default=None,
@@ -150,6 +177,16 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     creator: Optional["User"] = Relationship(
         sa_relationship_kwargs={"lazy": "joined", "foreign_keys": "Task.created_by_id"}
     )
+    # Self-referential many-to-one; join_depth=1 stops the eager load at the
+    # immediate parent (no recursive grandparent joins).
+    parent: Optional["Task"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "joined",
+            "join_depth": 1,
+            "remote_side": "Task.id",
+            "foreign_keys": "Task.parent_id",
+        }
+    )
     organization: Optional["Organization"] = Relationship()
     project: Optional["Project"] = Relationship()
     labels: list["Label"] = Relationship(
@@ -162,6 +199,7 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     def __init__(self, **kwargs: object) -> None:
         kwargs.setdefault("status", TaskStatus.TODO)
         kwargs.setdefault("priority", TaskPriority.MEDIUM)
+        kwargs.setdefault("type", TaskType.TASK)
         super().__init__(**kwargs)
 
     def __repr__(self) -> str:
