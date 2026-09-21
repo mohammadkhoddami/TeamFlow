@@ -17,9 +17,16 @@ const PING_INTERVAL_MS = 25_000
 function socketBaseUrl(): string {
   const explicit = import.meta.env.VITE_WS_BASE_URL as string | undefined
   if (explicit) return explicit.replace(/\/+$/, '')
-  return API_BASE_URL.replace(/^http/, 'ws')
-    .replace(/\/api\/v1\/?$/, '')
-    .replace(/\/+$/, '')
+  // Absolute API base (local development): swap the scheme and drop /api/v1.
+  if (/^https?:\/\//i.test(API_BASE_URL)) {
+    return API_BASE_URL.replace(/^http/, 'ws')
+      .replace(/\/api\/v1\/?$/, '')
+      .replace(/\/+$/, '')
+  }
+  // Relative API base (behind the production proxy): stay same-origin.
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const prefix = API_BASE_URL.replace(/\/api\/v1\/?$/, '').replace(/\/+$/, '')
+  return `${protocol}://${window.location.host}${prefix}`
 }
 
 export function createProjectSocket(

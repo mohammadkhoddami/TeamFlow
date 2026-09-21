@@ -173,14 +173,45 @@ and the admin panel (superuser-only login, CRUD, audit redaction, guards).
 
 ## Production
 
-```bash
-docker compose up -d --build
-uv run alembic upgrade head   # run migrations as an explicit deploy step
+Two ways to run the production stack:
+
+**Self-built** (`docker-compose.yml`): builds the API image locally and runs
+db/redis/api/worker/beat behind the bundled nginx
+(`docker compose up -d --build`, then `uv run alembic upgrade head`). Configure
+`POSTGRES_*`, `SECRET_KEY`, `CORS_ORIGINS`, `S3_*`, `EMAIL_*` via the
+environment (see `.env.example`).
+
+**VPS via CI/CD** (`docker-compose.server.yml` → deployed as
+`docker-compose.yml`): every push to `main` builds and publishes two GHCR
+images — `ghcr.io/arsene-ir/teamflow` (API/worker/beat) and
+`ghcr.io/arsene-ir/teamflow-web` (SPA + nginx) — then deploys them to
+`mkhoddami-vps`. The server directory keeps exactly one file:
+
+```text
+/var/www/teamflow/docker-compose.yml
 ```
 
-Set `POSTGRES_USER/PASSWORD/DB`, `SECRET_KEY`, `CORS_ORIGINS`, `S3_*`,
-`EMAIL_*` in the environment (see `.env.example`). Nginx terminates traffic and
-proxies WebSocket upgrades (`deploy/nginx.conf`).
+Everything else is handled by CI and Docker: images are pulled, migrations run
+before rollout, the host nginx snippet (`deploy/nginx-flow.conf`) is installed
+with a config test and automatic rollback, and the directory is pruned to the
+compose file. The SPA is served at `https://arsene.ir/flow/`; the host nginx
+routes `/flow/api`, `/flow/ws`, `/flow/admin` and `/teamflow-attachments`
+directly to the API/MinIO containers.
+
+Required repository settings (Settings → Secrets and variables → Actions):
+
+| Kind | Name | Purpose |
+| --- | --- | --- |
+| secret | `MKHODDAMI_VPS_SSH_KEY` (or `DEPLOY_SSH_KEY`) | private key for the VPS |
+| secret | `POSTGRES_PASSWORD` | must match the existing database volume |
+| secret | `SECRET_KEY` | JWT signing key |
+| secret | `S3_ACCESS_KEY`, `S3_SECRET_KEY` | MinIO/S3 credentials |
+| variable | `DEPLOY_ENABLED=true` | enables the deploy job |
+| variable | `MKHODDAMI_VPS_HOST` / `_USER` / `_PORT` | optional; default to `DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_PORT` (`5.10.248.185` / `root` / `22`) |
+
+`docker-compose.server.yml` interpolates everything from the deploy environment
+— there is no `.env` on the server. The deploy script also runs
+`alembic upgrade head`, so migrations are not a manual step on this path.
 
 ## MCP server (agent integration)
 

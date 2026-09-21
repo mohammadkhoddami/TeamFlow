@@ -70,7 +70,7 @@ export function LoginPage() {
             to="/forgot-password"
             className="text-xs font-medium text-slate-500 hover:text-slate-700"
           >
-            Forgot password? TEST UPDATES
+            Forgot password?
           </Link>
         </div>
         <Button type="submit" className="w-full" loading={busy}>

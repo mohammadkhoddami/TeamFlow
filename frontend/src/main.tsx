@@ -26,7 +26,8 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      {/* BASE_URL is '/flow/' in production and '/' in local dev. */}
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <ToastProvider>
           <AuthProvider>
             <App />

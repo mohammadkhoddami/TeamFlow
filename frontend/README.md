@@ -60,6 +60,24 @@ Backend must be reachable at `http://localhost:8000` (see the root README for
 | ------------------- | -------------------------------- |
 | `VITE_API_BASE_URL` | `http://localhost:8000/api/v1`   |
 | `VITE_WS_BASE_URL`  | derived from `VITE_API_BASE_URL` |
+| `VITE_BASE_PATH`    | `/` (build-time; `/flow/` in the Docker image) |
+
+## Docker / CI
+
+`Dockerfile` builds the SPA (Vite) and serves it from nginx under the `/flow/`
+prefix. CI publishes it as `ghcr.io/arsene-ir/teamflow-web` and the production
+compose runs it on `127.0.0.1:8030`; the host nginx proxies `/flow/` there while
+`/flow/api` and `/flow/ws` go straight to the API.
+
+```bash
+docker build -t teamflow-web ./frontend
+docker run --rm -p 8080:80 teamflow-web   # http://localhost:8080/flow/
+```
+
+Build args (defaults shown): `VITE_BASE_PATH=/flow/`,
+`VITE_API_BASE_URL=/flow/api/v1`, `VITE_WS_BASE_URL=` (empty = derive from the
+browser location). The container is static-only, so API/WS routing is always
+handled by the edge proxy in front of it.
 
 ## Scripts
 

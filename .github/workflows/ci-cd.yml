@@ -1,7 +1,19 @@
 name: ci-cd
 
-# Build a GHCR image on every push/PR, then deploy to mhkhoddami-vps on main.
-# No lint, type-check, or test steps by request.
+# Build the API and frontend images on every push/PR, then deploy both to
+# mkhoddami-vps on main.
+#
+# The VPS keeps exactly one file, /var/www/teamflow/docker-compose.yml:
+#   * images are pulled from GHCR (built here, no source checkout on the host)
+#   * configuration/secrets are exported at deploy time from GitHub
+#     secrets/vars (the workflow writes a temporary env file on the host and
+#     the deploy script removes it again)
+#   * the host nginx snippet is installed from deploy/nginx-flow.conf
+#
+# Required repository configuration:
+#   secret MKHODDAMI_VPS_SSH_KEY (or DEPLOY_SSH_KEY)  private key for the VPS
+#   secrets POSTGRES_PASSWORD, SECRET_KEY, S3_ACCESS_KEY, S3_SECRET_KEY
+#   vars    DEPLOY_ENABLED=true (gate), optional MKHODDAMI_VPS_HOST/USER/PORT
 on:
   push:
     branches: [main]
@@ -17,14 +29,12 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  build:
-    name: Build and push image
+  build-api:
+    name: Build API image
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    outputs:
-      image_tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
 
@@ -55,60 +65,125 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  build-web:
+    name: Build frontend image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve image name (lowercase) and tag
+        id: meta
+        run: |
+          echo "name=$(echo '${{ github.repository }}-web' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-$(echo '${{ github.sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: frontend
+          push: ${{ github.event_name == 'push' }}
+          build-args: |
+            VITE_BASE_PATH=/flow/
+            VITE_API_BASE_URL=/flow/api/v1
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.name }}:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   deploy:
     name: Deploy to production
-    needs: build
+    needs: [build-api, build-web]
     # main only, and only once DEPLOY_ENABLED is 'true'.
     if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: production
+    env:
+      VPS_HOST: ${{ vars.MKHODDAMI_VPS_HOST || vars.DEPLOY_HOST || '5.10.248.185' }}
+      VPS_USER: ${{ vars.MKHODDAMI_VPS_USER || vars.DEPLOY_USER || 'root' }}
+      VPS_PORT: ${{ vars.MKHODDAMI_VPS_PORT || vars.DEPLOY_PORT || '22' }}
+      SSH_PRIVATE_KEY: ${{ secrets.MKHODDAMI_VPS_SSH_KEY || secrets.DEPLOY_SSH_KEY }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
+      S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
+      CORS_ORIGINS: ${{ vars.CORS_ORIGINS }}
+      FRONTEND_BASE_URL: ${{ vars.FRONTEND_BASE_URL }}
+      ADMIN_BASE_URL: ${{ vars.ADMIN_BASE_URL }}
     steps:
       - uses: actions/checkout@v5
 
-      - name: Sync deploy compose file
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ vars.DEPLOY_HOST }}
-          username: ${{ vars.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ vars.DEPLOY_PORT || 22 }}
-          source: docker-compose.server.yml
-          target: ${{ vars.DEPLOY_PATH }}
-          overwrite: true
+      - name: Resolve image tag
+        run: echo "IMAGE_TAG=sha-$(echo '${{ github.sha }}' | cut -c1-7)" >> "$GITHUB_ENV"
 
-      - name: Pull image, migrate, restart
-        uses: appleboy/ssh-action@v1.2.5
-        with:
-          host: ${{ vars.DEPLOY_HOST }}
-          username: ${{ vars.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ vars.DEPLOY_PORT || 22 }}
-          command_timeout: 15m
-          script: |
-            set -e
-            cd "${{ vars.DEPLOY_PATH }}"
+      - name: Validate deploy configuration
+        run: |
+          missing=0
+          for name in POSTGRES_PASSWORD SECRET_KEY S3_ACCESS_KEY S3_SECRET_KEY; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::GitHub secret $name is required (use the value from the server's current .env before it is removed)"
+              missing=1
+            fi
+          done
+          if [ -z "${SSH_PRIVATE_KEY:-}" ]; then
+            echo "::error::Add the mkhoddami-vps private key as secret MKHODDAMI_VPS_SSH_KEY (or DEPLOY_SSH_KEY)"
+            missing=1
+          fi
+          [ "$missing" -eq 0 ] || exit 1
 
-            IMAGE_TAG=sha-$(echo '${{ github.sha }}' | cut -c1-7)
-            export IMAGE_TAG
-            COMPOSE="docker compose -f docker-compose.server.yml"
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/vps_key
+          chmod 600 ~/.ssh/vps_key
 
-            echo "==> Pulling $IMAGE_TAG"
-            $COMPOSE pull api worker beat
+      - name: Upload compose, deploy script and nginx snippet
+        run: |
+          SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+          scp -q "${SSH_OPTS[@]}" -i ~/.ssh/vps_key -P "$VPS_PORT" \
+            docker-compose.server.yml "$VPS_USER@$VPS_HOST:/var/www/teamflow/docker-compose.yml"
+          scp -q "${SSH_OPTS[@]}" -i ~/.ssh/vps_key -P "$VPS_PORT" \
+            deploy/deploy-vps.sh "$VPS_USER@$VPS_HOST:/tmp/teamflow-deploy.sh"
+          scp -q "${SSH_OPTS[@]}" -i ~/.ssh/vps_key -P "$VPS_PORT" \
+            deploy/nginx-flow.conf "$VPS_USER@$VPS_HOST:/tmp/teamflow-nginx-flow.conf"
 
-            echo "==> Applying migrations"
-            $COMPOSE run --rm api alembic upgrade head
+      - name: Upload deploy environment
+        run: |
+          umask 077
+          emit() { local key="$1" value="${2-}"; [ -n "$value" ] || return 0; printf "%s=%s\n" "$key" "$(printf '%q' "$value")"; }
+          {
+            emit IMAGE_TAG "$IMAGE_TAG"
+            emit POSTGRES_PASSWORD "$POSTGRES_PASSWORD"
+            emit SECRET_KEY "$SECRET_KEY"
+            emit S3_ACCESS_KEY "$S3_ACCESS_KEY"
+            emit S3_SECRET_KEY "$S3_SECRET_KEY"
+            emit CORS_ORIGINS "$CORS_ORIGINS"
+            emit FRONTEND_BASE_URL "$FRONTEND_BASE_URL"
+            emit ADMIN_BASE_URL "$ADMIN_BASE_URL"
+          } > /tmp/teamflow.deploy.env
+          scp -q -o StrictHostKeyChecking=accept-new -i ~/.ssh/vps_key -P "$VPS_PORT" \
+            /tmp/teamflow.deploy.env "$VPS_USER@$VPS_HOST:/tmp/teamflow.deploy.env"
 
-            echo "==> Rolling out"
-            $COMPOSE up -d --remove-orphans
+      - name: Deploy over SSH
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/vps_key -p "$VPS_PORT" \
+            "$VPS_USER@$VPS_HOST" "bash /tmp/teamflow-deploy.sh"
 
-            echo "==> Health check"
-            for i in $(seq 1 30); do
-              if curl -fsS http://127.0.0.1:8020/api/v1/health/ready; then
-                echo
-                echo "deploy OK ($IMAGE_TAG)"
-                exit 0
-              fi
-              sleep 2
-            done
-            echo "health check failed" >&2
-            exit 1
+      - name: Public smoke check
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://arsene.ir/flow/ || true)
+          echo "https://arsene.ir/flow/ -> $code"
+          [ "$code" = "200" ] || echo "::warning::public check returned $code (CDN cache or edge rule?)"

@@ -1,21 +1,60 @@
-# Self-hosted production stack for a host with a native nginx in front
-# (arsene.ir/flow). The API binds to 127.0.0.1:8020 and MinIO to
-# 127.0.0.1:9010; nginx routing lives in deploy/nginx-flow.conf.
+# Self-hosted production stack for the shared VPS (arsene.ir/flow).
 #
-# Images are built by CI and pushed to GHCR; the server pulls them:
-#   export IMAGE_TAG=sha-<short>
-#   docker compose -f docker-compose.server.yml pull
-#   docker compose -f docker-compose.server.yml run --rm api alembic upgrade head
-#   docker compose -f docker-compose.server.yml up -d
+# Deployed by CI as /var/www/teamflow/docker-compose.yml — the ONLY file that
+# lives there. Images come from GHCR (built by .github/workflows/ci-cd.yml);
+# the host needs no source checkout, Dockerfile, or .env.
 #
-# `pull`-only: the image is built by CI and published to GHCR. The host needs
-# only this file and .env — no source checkout, Dockerfile, or build.
-# Secrets and URLs come from .env (see .env.example).
+# All configuration is read from the deploy shell environment (CI exports the
+# GitHub secrets/vars before running `docker compose`). Required values use
+# ${VAR:?} so a misconfigured deploy fails before touching anything.
+#
+# Layout:
+#   api   127.0.0.1:8020  FastAPI (also serves /flow/admin via the host nginx)
+#   web   127.0.0.1:8030  SPA container; host nginx proxies /flow/ here
+#   minio 127.0.0.1:9010  attachments; host nginx proxies /teamflow-attachments
 name: teamflow
+
+x-app-env: &app-env
+  APP_NAME: ${APP_NAME:-TeamFlow API}
+  ENVIRONMENT: ${ENVIRONMENT:-production}
+  DEBUG: "${DEBUG:-false}"
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_JSON: "${LOG_JSON:-true}"
+  SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY (GitHub secret)}
+  ACCESS_TOKEN_EXPIRE_MINUTES: "${ACCESS_TOKEN_EXPIRE_MINUTES:-30}"
+  REFRESH_TOKEN_EXPIRE_DAYS: "${REFRESH_TOKEN_EXPIRE_DAYS:-14}"
+  POSTGRES_USER: ${POSTGRES_USER:-teamflow}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (GitHub secret)}
+  POSTGRES_DB: ${POSTGRES_DB:-teamflow}
+  # Override DATABASE_URL directly if the password is not URL-safe.
+  DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-teamflow}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-teamflow}}
+  DATABASE_URL_SYNC: ${DATABASE_URL_SYNC:-postgresql+psycopg://${POSTGRES_USER:-teamflow}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-teamflow}}
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/1
+  CELERY_RESULT_BACKEND: redis://redis:6379/1
+  RATE_LIMIT_ENABLED: "${RATE_LIMIT_ENABLED:-true}"
+  AUTH_RATE_LIMIT_MAX: "${AUTH_RATE_LIMIT_MAX:-5}"
+  AUTH_RATE_LIMIT_WINDOW: "${AUTH_RATE_LIMIT_WINDOW:-60}"
+  CORS_ORIGINS: '${CORS_ORIGINS:-["https://arsene.ir","https://www.arsene.ir"]}'
+  S3_ENDPOINT: ${S3_ENDPOINT:-arsene.ir}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY (GitHub secret)}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY (GitHub secret)}
+  S3_BUCKET: ${S3_BUCKET:-teamflow-attachments}
+  S3_SECURE: "${S3_SECURE:-true}"
+  EMAIL_BACKEND: ${EMAIL_BACKEND:-console}
+  EMAIL_FROM: ${EMAIL_FROM:-teamflow@arsene.ir}
+  SMTP_HOST: ${SMTP_HOST:-localhost}
+  SMTP_PORT: "${SMTP_PORT:-1025}"
+  FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://arsene.ir/flow}
+  WEBHOOK_HTTPX_TRUST_ENV: "${WEBHOOK_HTTPX_TRUST_ENV:-false}"
+  ADMIN_ENABLED: "${ADMIN_ENABLED:-true}"
+  ADMIN_BASE_URL: ${ADMIN_BASE_URL:-/flow/admin}
+  ADMIN_TITLE: ${ADMIN_TITLE:-TeamFlow Admin}
+  ADMIN_SESSION_MAX_AGE_SECONDS: "${ADMIN_SESSION_MAX_AGE_SECONDS:-28800}"
 
 x-app: &app
   image: ghcr.io/arsene-ir/teamflow:${IMAGE_TAG:-latest}
-  env_file: .env
+  environment: *app-env
   restart: unless-stopped
   depends_on:
     db:
@@ -27,9 +66,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-teamflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD (GitHub secret)}
+      POSTGRES_DB: ${POSTGRES_DB:-teamflow}
     volumes:
       - teamflow_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -54,10 +93,9 @@ services:
   minio:
     image: quay.io/minio/minio:latest
     command: server /data --address ":9000"
-    env_file: .env
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY (GitHub secret)}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY (GitHub secret)}
     volumes:
       - teamflow_miniodata:/data
     ports:
@@ -66,21 +104,25 @@ services:
 
   minio-setup:
     image: quay.io/minio/mc:latest
-    env_file: .env
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY (GitHub secret)}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY (GitHub secret)}
+      S3_BUCKET: ${S3_BUCKET:-teamflow-attachments}
     depends_on:
       - minio
     entrypoint: >
       /bin/sh -c "
-      until mc alias set local http://minio:9000 $${S3_ACCESS_KEY} $${S3_SECRET_KEY}; do
+      until mc alias set local http://minio:9000 $$S3_ACCESS_KEY $$S3_SECRET_KEY; do
         echo 'waiting for minio...'; sleep 2;
       done;
-      mc mb --ignore-existing local/$${S3_BUCKET} &&
+      mc mb --ignore-existing local/$$S3_BUCKET &&
       echo 'MinIO bucket ready'"
     restart: "no"
 
   api:
     <<: *app
     environment:
+      <<: *app-env
       # Trust the CDN/nginx X-Forwarded-For chain so rate limits and audit
       # entries use the real client IP instead of the proxy socket peer.
       FORWARDED_ALLOW_IPS: "*"
@@ -102,6 +144,19 @@ services:
        "-l", "info", "--schedule", "/tmp/celerybeat-schedule"]
     healthcheck:
       disable: true
+
+  web:
+    image: ghcr.io/arsene-ir/teamflow-web:${IMAGE_TAG:-latest}
+    ports:
+      - "127.0.0.1:8030:80"
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
 volumes:
   teamflow_pgdata:
