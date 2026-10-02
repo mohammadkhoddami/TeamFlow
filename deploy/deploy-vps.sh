@@ -7,7 +7,8 @@
 #   /tmp/teamflow-nginx-flow.conf          host nginx snippet
 #
 # After a successful deploy this script removes everything else from
-# /var/www/teamflow, so the directory contains exactly docker-compose.yml.
+# /var/www/teamflow, so the directory contains exactly docker-compose.yml and
+# the persistent .env (real values, chmod 600; read by docker compose).
 set -euo pipefail
 
 APP_DIR=/var/www/teamflow
@@ -89,7 +90,8 @@ else
   echo "    unchanged"
 fi
 
-echo "==> Keeping only docker-compose.yml in $APP_DIR"
-find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name docker-compose.yml -exec rm -rf {} +
+echo "==> Keeping only docker-compose.yml and .env in $APP_DIR"
+find "$APP_DIR" -mindepth 1 -maxdepth 1 \
+  ! -name docker-compose.yml ! -name .env -exec rm -rf {} +
 
 echo "deploy OK ($IMAGE_TAG)"

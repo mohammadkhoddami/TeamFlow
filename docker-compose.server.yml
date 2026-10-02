@@ -1,12 +1,14 @@
 # Self-hosted production stack for the shared VPS (arsene.ir/flow).
 #
-# Deployed by CI as /var/www/teamflow/docker-compose.yml — the ONLY file that
-# lives there. Images come from GHCR (built by .github/workflows/ci-cd.yml);
-# the host needs no source checkout, Dockerfile, or .env.
+# Deployed by CI as /var/www/teamflow/docker-compose.yml. Images come from GHCR
+# (built by .github/workflows/ci-cd.yml); the host needs no source checkout or
+# Dockerfile.
 #
 # All configuration is read from the deploy shell environment (CI exports the
-# GitHub secrets/vars before running `docker compose`). Required values use
-# ${VAR:?} so a misconfigured deploy fails before touching anything.
+# GitHub secrets/vars before running `docker compose`) and from the persistent
+# /var/www/teamflow/.env, which docker compose loads automatically and
+# deploy-vps.sh preserves. Shell environment wins over .env. Required values
+# use ${VAR:?} so a misconfigured deploy fails before touching anything.
 #
 # Layout:
 #   api   127.0.0.1:8020  FastAPI (also serves /flow/admin via the host nginx)
