@@ -96,8 +96,15 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # MinIO removed its official images from Docker Hub and made quay.io pulls
+  # require auth (2025-2026); alpine/minio packages the last community release.
+  # The API creates the bucket at startup (ensure_bucket), so no mc sidecar.
   minio:
-    image: quay.io/minio/minio:latest
+    image: alpine/minio:RELEASE.2025-10-15T17-29-55Z
+    # Official MinIO images ran as root and the data volume is root-owned;
+    # keep that so existing volumes stay writable (alpine/minio defaults to
+    # the non-root `minio` user).
+    user: "0:0"
     command: server /data --address ":9000"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY (GitHub secret)}
@@ -106,24 +113,13 @@ services:
       - teamflow_miniodata:/data
     ports:
       - "127.0.0.1:9010:9000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     restart: unless-stopped
-
-  minio-setup:
-    image: quay.io/minio/mc:latest
-    environment:
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY (GitHub secret)}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY (GitHub secret)}
-      S3_BUCKET: ${S3_BUCKET:-teamflow-attachments}
-    depends_on:
-      - minio
-    entrypoint: >
-      /bin/sh -c "
-      until mc alias set local http://minio:9000 $$S3_ACCESS_KEY $$S3_SECRET_KEY; do
-        echo 'waiting for minio...'; sleep 2;
-      done;
-      mc mb --ignore-existing local/$$S3_BUCKET &&
-      echo 'MinIO bucket ready'"
-    restart: "no"
 
   api:
     <<: *app
@@ -134,6 +130,13 @@ services:
       FORWARDED_ALLOW_IPS: "*"
     ports:
       - "127.0.0.1:8020:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
 
   worker:
     <<: *app

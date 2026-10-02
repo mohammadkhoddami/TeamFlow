@@ -37,11 +37,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     stop = asyncio.Event()
     listener = asyncio.create_task(run_redis_listener(stop), name="ws-redis-listener")
 
-    # Dev bootstrap: the bucket is normally created by minio-setup in compose;
-    # ensure_bucket keeps bare runs working. Production uses pre-provisioned
-    # buckets via IaC.
+    # The API provisions the bucket at startup (compose health-gates MinIO;
+    # the retries also cover bare runs and races). Production may instead use
+    # pre-provisioned buckets via IaC.
     if settings.environment != "testing":
-        await StorageClient.from_settings().ensure_bucket()
+        await StorageClient.from_settings().ensure_bucket(attempts=5, delay_seconds=1.0)
 
     yield
 

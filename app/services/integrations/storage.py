@@ -64,15 +64,26 @@ class StorageClient:
 
             logging.getLogger(__name__).warning("Failed to delete object %s", key)
 
-    async def ensure_bucket(self) -> None:
-        """Startup convenience: create the bucket if missing (dev bootstrap)."""
-        try:
-            exists = await run_in_threadpool(self.client.bucket_exists, self.bucket)
-            if not exists:
-                await run_in_threadpool(self.client.make_bucket, self.bucket)
-        except Exception:
-            import logging
+    async def ensure_bucket(self, attempts: int = 1, delay_seconds: float = 1.0) -> None:
+        """Startup convenience: create the bucket if missing.
 
-            logging.getLogger(__name__).warning(
-                "Object storage unreachable at startup; continuing without it"
-            )
+        Retries briefly so an API container that won the race against a
+        just-started MinIO/S3 endpoint still provisions the bucket; after
+        `attempts` it logs and continues (storage is not startup-critical).
+        """
+        import asyncio
+        import logging
+
+        for attempt in range(1, attempts + 1):
+            try:
+                exists = await run_in_threadpool(self.client.bucket_exists, self.bucket)
+                if not exists:
+                    await run_in_threadpool(self.client.make_bucket, self.bucket)
+                return
+            except Exception:
+                if attempt >= attempts:
+                    logging.getLogger(__name__).warning(
+                        "Object storage unreachable at startup; continuing without it"
+                    )
+                    return
+                await asyncio.sleep(delay_seconds)
