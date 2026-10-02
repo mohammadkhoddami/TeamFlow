@@ -44,9 +44,15 @@ def render(kind: str, ctx: dict[str, str]) -> tuple[str, str]:
 def send_sync(to: str, subject: str, body: str) -> None:
     """Runs inside a Celery worker thread. Retries are the task's concern."""
     if settings.email_backend == "smtp":
+        logger.info(
+            "SMTP send to=%s subject=%r via %s:%s",
+            to, subject, settings.smtp_hostname, settings.smtp_port,
+        )
         _send_smtp(to, subject, body)
+        logger.info("SMTP accepted to=%s subject=%r", to, subject)
         return
-    # Console backend: development/mock provider.
+    # Console backend: development/mock provider. The body is logged verbatim
+    # (including OTP codes) so local flows are testable without a mail server.
     logger.info(
         "EMAIL(to=%s subject=%r)\n%s", to, subject, body,
     )

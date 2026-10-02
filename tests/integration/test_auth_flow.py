@@ -3,16 +3,22 @@
 import jwt as pyjwt
 import pytest
 
-from tests.utils import PASSWORD, auth_headers, make_user
+from tests.utils import OTP_CODE, PASSWORD, auth_headers, make_user, plant_otp
 
 EMAIL = "auth-user@example.com"
 
 
 @pytest.mark.asyncio
 async def test_register_login_me_roundtrip(client):
+    await plant_otp(EMAIL)
     r = await client.post(
         "/api/v1/auth/register",
-        json={"email": EMAIL, "password": PASSWORD, "full_name": "Auth User"},
+        json={
+            "email": EMAIL,
+            "password": PASSWORD,
+            "full_name": "Auth User",
+            "code": OTP_CODE,
+        },
     )
     assert r.status_code == 201
     user = r.json()
@@ -50,18 +56,57 @@ async def test_login_rejects_wrong_password_and_unknown_email(client):
 
 
 @pytest.mark.asyncio
+async def test_register_requires_valid_otp(client):
+    """Regression: registration without a redeemed email code must not create
+    an account (the OTP gate used to be bypassable)."""
+    payload = {
+        "email": "otp-gated@example.com",
+        "password": PASSWORD,
+        "full_name": "Gated",
+    }
+    # No code at all: rejected by schema before the service runs.
+    r = await client.post("/api/v1/auth/register", json=payload)
+    assert r.status_code == 422
+
+    # Unknown/wrong code: rejected and the account stays absent.
+    r = await client.post(
+        "/api/v1/auth/register", json={**payload, "code": "000000"}
+    )
+    assert r.status_code == 401
+    r = await client.post(
+        "/api/v1/auth/login",
+        data={"username": payload["email"], "password": PASSWORD},
+    )
+    assert r.status_code == 401
+
+    # The emailed code unlocks registration exactly once.
+    await plant_otp(payload["email"])
+    r = await client.post(
+        "/api/v1/auth/register", json={**payload, "code": OTP_CODE}
+    )
+    assert r.status_code == 201
+    r = await client.post(
+        "/api/v1/auth/register", json={**payload, "code": OTP_CODE}
+    )
+    assert r.status_code == 409  # code consumed, then duplicate email
+
+
+@pytest.mark.asyncio
 async def test_register_rejects_duplicate_email_and_weak_password(client):
     await make_user(client, email=EMAIL)
     r = await client.post(
-        "/api/v1/auth/register", json={"email": EMAIL, "password": PASSWORD}
+        "/api/v1/auth/register",
+        json={"email": EMAIL, "password": PASSWORD, "code": OTP_CODE},
     )
     assert r.status_code == 409
     r = await client.post(
-        "/api/v1/auth/register", json={"email": "short@example.com", "password": "short"}
+        "/api/v1/auth/register",
+        json={"email": "short@example.com", "password": "short", "code": OTP_CODE},
     )
     assert r.status_code == 422
     r = await client.post(
-        "/api/v1/auth/register", json={"email": "not-an-email", "password": PASSWORD}
+        "/api/v1/auth/register",
+        json={"email": "not-an-email", "password": PASSWORD, "code": OTP_CODE},
     )
     assert r.status_code == 422
 

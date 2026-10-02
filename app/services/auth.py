@@ -93,11 +93,25 @@ async def _unusable_password() -> str:
     )
 
 
-async def register_user(db: AsyncSession, data: UserCreate, ip: str | None = None) -> User:
+async def register_user(
+    db: AsyncSession, redis: Redis, data: UserCreate, ip: str | None = None
+) -> User:
     repo = UserRepository(db)
     email = data.email.lower()
     if await repo.get_by_email(email):
         raise ConflictError("A user with this email already exists")
+    # The account is only created once the code emailed by /auth/otp/request
+    # is redeemed. The check is single-use and wrong-attempt-capped, so a
+    # registration cannot silently claim an address.
+    if not await token_store.verify_otp(
+        redis, email, data.code, settings.otp_max_attempts
+    ):
+        await audit.log(
+            db, AuditAction.USER_OTP_FAILED, ip=ip,
+            meta={"email": email, "context": "register"},
+        )
+        await db.commit()
+        raise UnauthorizedError("Invalid or expired code")
     # bcrypt is CPU-bound and blocking; run it off the event loop.
     hashed = await run_in_threadpool(security.hash_password, data.password)
     user = User(
@@ -111,6 +125,7 @@ async def register_user(db: AsyncSession, data: UserCreate, ip: str | None = Non
     )
     await db.commit()
     await db.refresh(user)
+    logger.info("Registered %s after OTP verification", email)
     return user
 
 
@@ -302,6 +317,12 @@ async def request_otp(
             "otp_code",
             {"code": code, "expires_minutes": max(1, settings.otp_ttl_seconds // 60)},
         ],
+    )
+    logger.info(
+        "Queued OTP email for %s (known_account=%s, expires in %ss)",
+        email,
+        user is not None,
+        settings.otp_ttl_seconds,
     )
 
 

@@ -5,7 +5,27 @@ from typing import Any
 
 from httpx import AsyncClient
 
+from app.core.config import settings
+from app.services import token_store
+
 PASSWORD = "supersecret123"
+OTP_CODE = "123456"
+
+
+async def plant_otp(email: str, code: str = OTP_CODE) -> None:
+    """Plants a known email code directly in Redis (codes are hashed at rest).
+
+    Registration requires a redeemed OTP, so factories plant one first. A
+    fresh client is used because sync tests (WebSocket TestClient) call this
+    from a different event loop than the app's shared async client.
+    """
+    from redis.asyncio import Redis
+
+    client = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        await token_store.store_otp(client, email, code, settings.otp_ttl_seconds)
+    finally:
+        await client.aclose()
 
 
 async def make_user(
@@ -14,9 +34,15 @@ async def make_user(
     password: str = PASSWORD,
     full_name: str = "Test User",
 ) -> dict:
+    await plant_otp(email)
     r = await client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": password, "full_name": full_name},
+        json={
+            "email": email,
+            "password": password,
+            "full_name": full_name,
+            "code": OTP_CODE,
+        },
     )
     assert r.status_code in (201, 409), r.text
     r = await client.post(

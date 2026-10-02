@@ -43,9 +43,11 @@ def send_email_task(self, to: str, kind: str, ctx: dict[str, str]) -> dict:
     """Transactional email via the console (mock) or SMTP backend."""
     from app.services.integrations.email import render, send_sync
 
+    attempt = self.request.retries + 1
+    logger.info("send_email kind=%s to=%s attempt=%s", kind, to, attempt)
     subject, body = render(kind, ctx)
     send_sync(to, subject, body)
-    return {"status": "sent", "to": to, "kind": kind, "attempt": self.request.retries + 1}
+    return {"status": "sent", "to": to, "kind": kind, "attempt": attempt}
 
 
 @shared_task(

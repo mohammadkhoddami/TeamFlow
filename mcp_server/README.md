@@ -100,12 +100,19 @@ uv run --project /path/to/TeamFlow/mcp_server teamflow-mcp --check
 # OK: credentials work, the MCP server can log in.
 ```
 
-Create the account first if you do not have one:
+Create the account first if you do not have one (or use the register page in
+the UI). Registration needs a code emailed to the address, so request one and
+then pass it to `/auth/register`:
 
 ```bash
+curl -X POST http://localhost:8000/api/v1/auth/otp/request \
+  -H "Content-Type: application/json" \
+  -d '{"email":"agent@example.com"}'
+
+# Read the 6-digit code from the mailbox, then:
 curl -X POST http://localhost:8000/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"email":"agent@example.com","password":"a-long-password","full_name":"Agent"}'
+  -d '{"email":"agent@example.com","password":"a-long-password","full_name":"Agent","code":"123456"}'
 ```
 
 Then add it to an organization in the TeamFlow UI (or via

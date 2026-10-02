@@ -85,9 +85,15 @@ async def test_otp_verify_burns_code_after_max_attempts(client):
 async def test_otp_login_for_existing_password_account(client):
     from tests.utils import PASSWORD
 
+    await _plant_code(EMAIL)
     r = await client.post(
         "/api/v1/auth/register",
-        json={"email": EMAIL, "password": PASSWORD, "full_name": "Otp User"},
+        json={
+            "email": EMAIL,
+            "password": PASSWORD,
+            "full_name": "Otp User",
+            "code": "123456",
+        },
     )
     assert r.status_code == 201
     await _plant_code(EMAIL)
@@ -212,9 +218,15 @@ async def test_google_reuses_account_by_subject_across_email_change(client, monk
 async def test_google_links_existing_password_account_by_email(client, monkeypatch):
     from tests.utils import PASSWORD
 
+    await _plant_code("linked@example.com")
     r = await client.post(
         "/api/v1/auth/register",
-        json={"email": "linked@example.com", "password": PASSWORD, "full_name": "Linked"},
+        json={
+            "email": "linked@example.com",
+            "password": PASSWORD,
+            "full_name": "Linked",
+            "code": "123456",
+        },
     )
     assert r.status_code == 201
 

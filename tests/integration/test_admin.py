@@ -11,6 +11,7 @@ from sqlmodel import select
 
 from app.core.security import hash_password, verify_password
 from app.models import AuditLog, Label, Organization, Project, Task, User
+from tests.utils import OTP_CODE, plant_otp
 
 ADMIN_EMAIL = "admin@example.com"
 ADMIN_PASSWORD = "admin-password-123"
@@ -49,12 +50,14 @@ async def test_admin_requires_superuser_session(client):
 
 @pytest.mark.asyncio
 async def test_admin_login_rejects_non_superuser(client, admin_user):
+    await plant_otp("member@example.com")
     r = await client.post(
         "/api/v1/auth/register",
         json={
             "email": "member@example.com",
             "password": "supersecret123",
             "full_name": "Member",
+            "code": OTP_CODE,
         },
     )
     assert r.status_code == 201

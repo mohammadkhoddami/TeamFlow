@@ -130,6 +130,14 @@ from tests.utils import (  # noqa: E402
     make_project,
     make_task,
     make_user,
+    plant_otp,
 )
 
-__all__ = ["auth_headers", "make_org", "make_project", "make_task", "make_user"]
+__all__ = [
+    "auth_headers",
+    "make_org",
+    "make_project",
+    "make_task",
+    "make_user",
+    "plant_otp",
+]

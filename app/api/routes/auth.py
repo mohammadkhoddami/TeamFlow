@@ -46,9 +46,10 @@ async def register(
     data: UserCreate,
     request: Request,
     db: DB,
+    redis_client: RedisDep,
     _rl: None = Depends(ip_rate_limiter("register", settings.register_rate_limit_max, settings.register_rate_limit_window)),
 ) -> UserRead:
-    user = await auth.register_user(db, data, ip=_ip(request))
+    user = await auth.register_user(db, redis_client, data, ip=_ip(request))
     return UserRead.model_validate(user)
 
 

@@ -3,7 +3,7 @@
 import pytest
 
 from app.core.config import settings
-from tests.utils import PASSWORD, make_user
+from tests.utils import OTP_CODE, PASSWORD, make_user, plant_otp
 
 EMAIL = "ratelimited@example.com"
 
@@ -54,9 +54,11 @@ async def test_register_rate_limit_per_ip(client):
     try:
         statuses = []
         for i in range(5):
+            email = f"r{i}@example.com"
+            await plant_otp(email)
             r = await client.post(
                 "/api/v1/auth/register",
-                json={"email": f"r{i}@example.com", "password": PASSWORD},
+                json={"email": email, "password": PASSWORD, "code": OTP_CODE},
             )
             statuses.append(r.status_code)
         assert statuses[:3] == [201, 201, 201]

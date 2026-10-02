@@ -123,6 +123,15 @@ jobs:
       CORS_ORIGINS: ${{ vars.CORS_ORIGINS }}
       FRONTEND_BASE_URL: ${{ vars.FRONTEND_BASE_URL }}
       ADMIN_BASE_URL: ${{ vars.ADMIN_BASE_URL }}
+      # Email delivery (defaults in docker-compose.server.yml: smtp via
+      # mail.arsene.ir:587). SMTP_PASSWORD is required for real sends.
+      EMAIL_BACKEND: ${{ vars.EMAIL_BACKEND }}
+      EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+      SMTP_HOST: ${{ vars.SMTP_HOST }}
+      SMTP_PORT: ${{ vars.SMTP_PORT }}
+      SMTP_USERNAME: ${{ vars.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      MAIL_NETWORK: ${{ vars.MAIL_NETWORK }}
     steps:
       - uses: actions/checkout@v5
 
@@ -143,6 +152,9 @@ jobs:
             missing=1
           fi
           [ "$missing" -eq 0 ] || exit 1
+          if [ -z "${SMTP_PASSWORD:-}" ]; then
+            echo "::warning::SMTP_PASSWORD secret is not set; registration OTP emails will not be delivered"
+          fi
 
       - name: Configure SSH
         run: |
@@ -173,6 +185,13 @@ jobs:
             emit CORS_ORIGINS "$CORS_ORIGINS"
             emit FRONTEND_BASE_URL "$FRONTEND_BASE_URL"
             emit ADMIN_BASE_URL "$ADMIN_BASE_URL"
+            emit EMAIL_BACKEND "$EMAIL_BACKEND"
+            emit EMAIL_FROM "$EMAIL_FROM"
+            emit SMTP_HOST "$SMTP_HOST"
+            emit SMTP_PORT "$SMTP_PORT"
+            emit SMTP_USERNAME "$SMTP_USERNAME"
+            emit SMTP_PASSWORD "$SMTP_PASSWORD"
+            emit MAIL_NETWORK "$MAIL_NETWORK"
           } > /tmp/teamflow.deploy.env
           scp -q -o StrictHostKeyChecking=accept-new -i ~/.ssh/vps_key -P "$VPS_PORT" \
             /tmp/teamflow.deploy.env "$VPS_USER@$VPS_HOST:/tmp/teamflow.deploy.env"

@@ -200,7 +200,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 // ---------------------------------------------------------------- auth api
 
 export const authApi = {
-  register: (data: { email: string; password: string; full_name?: string }) =>
+  register: (data: {
+    email: string
+    password: string
+    full_name?: string
+    code: string
+  }) =>
     request<UserRead>('/auth/register', {
       method: 'POST',
       body: data,

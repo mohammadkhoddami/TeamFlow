@@ -54,6 +54,10 @@ form-encoded, then use the returned access token as Bearer).
 
 Sign-in options beyond email+password:
 
+- **Registration requires email verification**: `POST /api/v1/auth/register`
+  takes the emailed `code` alongside `email`/`password`/`full_name`. The SPA
+  register page requests the code first (`POST /api/v1/auth/otp/request`) and
+  only creates the account once the code is redeemed; codes are single-use.
 - **Email OTP** (passwordless): `POST /api/v1/auth/otp/request` emails a
   6-digit code (SMTP backend), `POST /api/v1/auth/otp/verify` exchanges it for
   a token pair. Codes are single-use, hashed (HMAC) at rest, expire in 10
@@ -356,7 +360,8 @@ checkout bug to in_review and assign it to alice@example.com.
 Every teammate uses their **own** TeamFlow account - never share one login, since
 attribution, audit logs, comments and notifications all key off the account:
 
-1. Register at `https://arsene.ir/flow/register` (password >= 10 characters).
+1. Register at `https://arsene.ir/flow/register` (password >= 10 characters;
+   the form emails a 6-digit code that must be entered to finish).
 2. An owner or admin invites them from `/org/<slug>/members`, choosing a role.
 3. They accept the invitation at `https://arsene.ir/flow/invitations`.
 4. They install the package and reuse the config above with their own

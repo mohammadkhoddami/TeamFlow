@@ -35,6 +35,16 @@ export IMAGE_TAG POSTGRES_PASSWORD SECRET_KEY S3_ACCESS_KEY S3_SECRET_KEY
 
 cd "$APP_DIR"
 
+# Shared mail network: declared `external` by the compose file, so it must
+# exist before `docker compose up` or the deploy fails. The mail stack is
+# expected to join it with the `mail.arsene.ir` alias.
+MAIL_NETWORK="${MAIL_NETWORK:-arsene-mail}"
+export MAIL_NETWORK
+if ! docker network inspect "$MAIL_NETWORK" >/dev/null 2>&1; then
+  echo "==> Creating shared mail network ($MAIL_NETWORK)"
+  docker network create "$MAIL_NETWORK" >/dev/null
+fi
+
 echo "==> Pulling images ($IMAGE_TAG)"
 "${COMPOSE[@]}" pull
 

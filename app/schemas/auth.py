@@ -15,6 +15,9 @@ class UserCreate(SQLModel):
     email: EmailStr
     password: str = Field(min_length=10, max_length=128)
     full_name: str = Field(default="", max_length=255)
+    # One-time code emailed by POST /auth/otp/request. Registration refuses to
+    # create the account without it, so an address cannot be claimed silently.
+    code: str = Field(min_length=4, max_length=10)
 
 
 class UserUpdate(SQLModel):

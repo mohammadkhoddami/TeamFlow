@@ -41,11 +41,14 @@ x-app-env: &app-env
   S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY (GitHub secret)}
   S3_BUCKET: ${S3_BUCKET:-teamflow-attachments}
   S3_SECURE: "${S3_SECURE:-true}"
-  EMAIL_BACKEND: ${EMAIL_BACKEND:-console}
-  EMAIL_FROM: ${EMAIL_FROM:-teamflow@arsene.ir}
-  SMTP_HOST: ${SMTP_HOST:-localhost}
-  SMTP_PORT: "${SMTP_PORT:-1025}"
-  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  # Real delivery by default. The worker joins the external `mail` network
+  # below, where the mail stack publishes the `mail.arsene.ir` alias, so SMTP
+  # resolves over Docker DNS instead of hairpinning through the public IP.
+  EMAIL_BACKEND: ${EMAIL_BACKEND:-smtp}
+  EMAIL_FROM: ${EMAIL_FROM:-no-reply@arsene.ir}
+  SMTP_HOST: ${SMTP_HOST:-mail.arsene.ir}
+  SMTP_PORT: "${SMTP_PORT:-587}"
+  SMTP_USERNAME: ${SMTP_USERNAME:-no-reply@arsene.ir}
   SMTP_PASSWORD: ${SMTP_PASSWORD:-}
   # Email OTP + Google sign-in (empty client id/secret disables Google).
   GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -143,6 +146,11 @@ services:
     command:
       ["celery", "-A", "app.workers.celery_app:celery_app", "worker",
        "-l", "info", "-Q", "default,emails,webhooks", "--concurrency", "2"]
+    # Emails are sent here and nowhere else; this is the only service that
+    # needs the shared mail network.
+    networks:
+      - default
+      - mail
     healthcheck:
       disable: true
 
@@ -166,6 +174,15 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+networks:
+  # Shared with the mail stack (mailcow/Postfix/...): the mail container joins
+  # this network with the `mail.arsene.ir` alias, so the worker can reach SMTP
+  # internally. The network is created by deploy/deploy-vps.sh if it is
+  # missing; the name is overridable for other environments.
+  mail:
+    external: true
+    name: ${MAIL_NETWORK:-arsene-mail}
 
 volumes:
   teamflow_pgdata:

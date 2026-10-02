@@ -22,6 +22,7 @@ interface AuthContextValue {
     email: string
     password: string
     full_name?: string
+    code: string
   }) => Promise<void>
   logout: () => Promise<void>
   updateProfile: (data: { email?: string; full_name?: string }) => Promise<void>
@@ -97,7 +98,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const register = useCallback(
-    async (data: { email: string; password: string; full_name?: string }) => {
+    async (data: {
+      email: string
+      password: string
+      full_name?: string
+      code: string
+    }) => {
       await authApi.register(data)
       await login(data.email, data.password)
     },

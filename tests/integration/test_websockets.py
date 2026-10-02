@@ -6,6 +6,7 @@ the async autouse truncation fixture, this module truncates with a sync
 connection instead (psycopg), keeping tests isolated.
 """
 
+import asyncio
 import json
 import os
 
@@ -17,6 +18,7 @@ from starlette.websockets import WebSocketDisconnect
 from sqlmodel import SQLModel
 
 from app.main import app
+from tests.utils import OTP_CODE, plant_otp
 
 TEST_DSN = (
     make_url(os.environ["DATABASE_URL"])
@@ -41,12 +43,14 @@ def ws_client():
 
 def _seed(ws_client: TestClient) -> tuple[dict, dict, dict]:
     """Creates alice, an org, and a project through the public API."""
+    asyncio.run(plant_otp("ws-alice@example.com"))
     ws_client.post(
         "/api/v1/auth/register",
         json={
             "email": "ws-alice@example.com",
             "password": "supersecret123",
             "full_name": "WS Alice",
+            "code": OTP_CODE,
         },
     )
     token = ws_client.post(
@@ -68,9 +72,14 @@ def _seed(ws_client: TestClient) -> tuple[dict, dict, dict]:
 
 
 def _outsider_token(ws_client: TestClient) -> str:
+    asyncio.run(plant_otp("ws-outsider@example.com"))
     ws_client.post(
         "/api/v1/auth/register",
-        json={"email": "ws-outsider@example.com", "password": "supersecret123"},
+        json={
+            "email": "ws-outsider@example.com",
+            "password": "supersecret123",
+            "code": OTP_CODE,
+        },
     )
     return ws_client.post(
         "/api/v1/auth/login",
