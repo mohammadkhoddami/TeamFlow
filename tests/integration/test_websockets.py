@@ -7,16 +7,22 @@ connection instead (psycopg), keeping tests isolated.
 """
 
 import json
+import os
 
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import make_url
 from starlette.websockets import WebSocketDisconnect
 from sqlmodel import SQLModel
 
 from app.main import app
 
-TEST_DSN = "postgresql://teamflow:teamflow@localhost:5432/teamflow_test"
+TEST_DSN = (
+    make_url(os.environ["DATABASE_URL"])
+    .set(drivername="postgresql")
+    .render_as_string(hide_password=False)
+)
 
 
 def _truncate_all() -> None:

@@ -7,6 +7,9 @@ from app.schemas.attachment import (
     UploadGrant,
 )
 from app.schemas.auth import (
+    OAuthExchange,
+    OtpRequest,
+    OtpVerify,
     PasswordForgot,
     PasswordReset,
     RefreshedToken,
@@ -77,6 +80,9 @@ __all__ = [
     "MembershipRead",
     "MembershipUpdate",
     "NotificationRead",
+    "OAuthExchange",
+    "OtpRequest",
+    "OtpVerify",
     "OrganizationCreate",
     "OrganizationMemberRead",
     "OrganizationRead",

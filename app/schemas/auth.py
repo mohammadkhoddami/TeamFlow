@@ -53,3 +53,16 @@ class PasswordForgot(SQLModel):
 class PasswordReset(SQLModel):
     token: str = Field(min_length=8)
     new_password: str = Field(min_length=10, max_length=128)
+
+
+class OtpRequest(SQLModel):
+    email: EmailStr
+
+
+class OtpVerify(SQLModel):
+    email: EmailStr
+    code: str = Field(min_length=4, max_length=10)
+
+
+class OAuthExchange(SQLModel):
+    code: str = Field(min_length=8, max_length=256)

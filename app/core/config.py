@@ -7,6 +7,7 @@ Secrets are never hardcoded; `SECRET_KEY` must be set in production.
 
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -88,9 +89,38 @@ class Settings(BaseSettings):
     smtp_host: str = "localhost"
     smtp_port: int = 1025
     smtp_username: str = ""
-    smtp_password: str = ""
+    # Accepts both SMTP_PASSWORD and the legacy EMAIL_PASSWORD spelling.
+    smtp_password: str = Field(
+        default="",
+        validation_alias=AliasChoices("SMTP_PASSWORD", "EMAIL_PASSWORD"),
+    )
     smtp_use_tls: bool = False
     frontend_base_url: str = "http://localhost:3000"
+
+    # --- Email OTP (passwordless sign-in codes) ---
+    otp_ttl_seconds: int = 600  # code lifetime, 10 minutes
+    otp_max_attempts: int = 5  # wrong-code tries before the code is burned
+    otp_request_rate_limit_max: int = 5  # sends per email per window
+    otp_request_rate_limit_window: int = 3600
+    otp_request_ip_rate_limit_max: int = 20  # sends per IP per window (NAT-friendly)
+    otp_request_ip_rate_limit_window: int = 3600
+
+    # --- Google OAuth (Gmail sign-in) ---
+    # Accepts GOOGLE_CLIENT_ID/SECRET and the legacy ClientID/Clientsecret.
+    google_client_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("GOOGLE_CLIENT_ID", "ClientID", "GOOGLE_CLIENTID"),
+    )
+    google_client_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices("GOOGLE_CLIENT_SECRET", "Clientsecret", "GOOGLE_CLIENTSECRET"),
+    )
+    # Must match an authorized redirect URI in the Google Cloud console.
+    # Empty = derive from the incoming request (fine for localhost dev).
+    google_redirect_uri: str = ""
+    google_oauth_timeout_seconds: float = 10.0
+    oauth_state_ttl_seconds: int = 600
+    oauth_login_code_ttl_seconds: int = 120
 
     # --- Idempotency ---
     idempotency_ttl_hours: int = 24
@@ -120,6 +150,21 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def smtp_hostname(self) -> str:
+        """Bare SMTP host: tolerates values pasted with a scheme, port, or
+        trailing slash (e.g. "https://mail.example.com/")."""
+        host = self.smtp_host.strip().rstrip("/")
+        for scheme in ("https://", "http://", "smtp://", "smtps://"):
+            if host.lower().startswith(scheme):
+                host = host[len(scheme) :]
+                break
+        return host.split("/")[0].split(":")[0]
+
+    @property
+    def google_oauth_enabled(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret)
 
 
 @lru_cache

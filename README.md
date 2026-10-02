@@ -52,6 +52,21 @@ uv run celery -A app.workers.celery_app:celery_app beat -l info
 API docs: http://localhost:8000/docs (login via `POST /api/v1/auth/login`,
 form-encoded, then use the returned access token as Bearer).
 
+Sign-in options beyond email+password:
+
+- **Email OTP** (passwordless): `POST /api/v1/auth/otp/request` emails a
+  6-digit code (SMTP backend), `POST /api/v1/auth/otp/verify` exchanges it for
+  a token pair. Codes are single-use, hashed (HMAC) at rest, expire in 10
+  minutes, and burn after 5 wrong attempts. First verification creates the
+  account. The SPA route is `/login/otp`.
+- **Google sign-in**: `GET /api/v1/auth/google/start` redirects to Google
+  (authorization code + PKCE); the callback verifies the OIDC ID token against
+  Google's JWKS, finds/creates the user by `google_id`/email, and hands the SPA
+  a single-use exchange code (`POST /api/v1/auth/oauth/exchange`). Set
+  `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` and register
+  `{API_BASE}/api/v1/auth/google/callback` as an authorized redirect URI in the
+  Google Cloud console (`GOOGLE_REDIRECT_URI` overrides the derived value).
+
 Admin panel: http://localhost:8000/admin (server-rendered, session-cookie
 auth). Only active **superusers** can sign in; see [Admin panel](#admin-panel).
 
@@ -156,8 +171,12 @@ and the admin panel (superuser-only login, CRUD, audit redaction, guards).
   non-members so resource IDs cannot be probed across tenants.
 - **Auth**: stateless short-lived access JWTs + stateful refresh tokens in
   Redis (rotation + reuse detection revokes the whole token family); password
-  reset tokens are single-use and hashed at rest. Logout revokes refresh
-  tokens; access tokens expire within their short TTL by design.
+  reset tokens are single-use and hashed at rest. Email OTP codes are
+  HMAC-hashed with a wrong-attempt budget, and Google OAuth state/PKCE values
+  plus the SPA hand-off code are single-use Redis keys; the ID token signature
+  is verified against Google's JWKS. Logout revokes refresh tokens; access
+  tokens expire within their short TTL by design. Accounts created via OTP or
+  Google hold a random password hash until the user sets one via reset.
 - **Idempotency**: `Idempotency-Key` header on POST/PATCH/DELETE; the claim is
   an INSERT with a unique key (race-safe), replay returns the stored response
   with `Idempotency-Replayed: true`, 409 while in flight, 422 on body mismatch.

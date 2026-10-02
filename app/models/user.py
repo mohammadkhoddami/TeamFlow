@@ -14,6 +14,11 @@ class User(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         sa_column=Column(String(255), unique=True, index=True, nullable=False)
     )
     hashed_password: str = Field(sa_column=Column(Text, nullable=False))
+    # Google account subject ("sub") when the user signed in with Gmail.
+    google_id: str | None = Field(
+        default=None,
+        sa_column=Column(String(255), unique=True, index=True, nullable=True),
+    )
     full_name: str = Field(sa_column=Column(String(255), nullable=False))
     is_active: bool = Field(sa_column=Column(Boolean, nullable=False))
     is_superuser: bool = Field(sa_column=Column(Boolean, nullable=False))

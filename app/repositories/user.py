@@ -19,6 +19,10 @@ class UserRepository:
         statement = select(User).where(User.email == email)
         return (await self.db.execute(statement)).scalar_one_or_none()
 
+    async def get_by_google_id(self, google_id: str) -> User | None:
+        statement = select(User).where(User.google_id == google_id)
+        return (await self.db.execute(statement)).scalar_one_or_none()
+
     async def add(self, user: User) -> User:
         """Persists without committing: the service owns the transaction."""
         self.db.add(user)

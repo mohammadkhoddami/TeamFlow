@@ -10,12 +10,14 @@ import {
 
 import { authApi } from '../lib/api'
 import { SESSION_EXPIRED_EVENT, tokens } from '../lib/tokens'
-import type { UserRead } from '../lib/types'
+import type { TokenPair, UserRead } from '../lib/types'
 
 interface AuthContextValue {
   user: UserRead | null
   loading: boolean
   login: (email: string, password: string) => Promise<void>
+  loginWithOtp: (email: string, code: string) => Promise<void>
+  completeOAuth: (code: string) => Promise<void>
   register: (data: {
     email: string
     password: string
@@ -60,8 +62,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const login = useCallback(async (email: string, password: string) => {
-    const pair = await authApi.login(email, password)
+  // Stores a fresh token pair and hydrates the profile; any failure clears
+  // the half-established session so the app never runs with stale identity.
+  const applyTokens = useCallback(async (pair: TokenPair) => {
     tokens.set(pair)
     try {
       const me = await authApi.me()
@@ -71,6 +74,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw error
     }
   }, [])
+
+  const login = useCallback(
+    async (email: string, password: string) => {
+      await applyTokens(await authApi.login(email, password))
+    },
+    [applyTokens],
+  )
+
+  const loginWithOtp = useCallback(
+    async (email: string, code: string) => {
+      await applyTokens(await authApi.verifyOtp(email, code))
+    },
+    [applyTokens],
+  )
+
+  const completeOAuth = useCallback(
+    async (code: string) => {
+      await applyTokens(await authApi.exchangeOAuthCode(code))
+    },
+    [applyTokens],
+  )
 
   const register = useCallback(
     async (data: { email: string; password: string; full_name?: string }) => {
@@ -108,8 +132,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, loading, login, register, logout, updateProfile, refreshUser }),
-    [user, loading, login, register, logout, updateProfile, refreshUser],
+    () => ({
+      user,
+      loading,
+      login,
+      loginWithOtp,
+      completeOAuth,
+      register,
+      logout,
+      updateProfile,
+      refreshUser,
+    }),
+    [
+      user,
+      loading,
+      login,
+      loginWithOtp,
+      completeOAuth,
+      register,
+      logout,
+      updateProfile,
+      refreshUser,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

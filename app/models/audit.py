@@ -21,6 +21,11 @@ class AuditAction:
     USER_LOGIN_FAILED = "user.login_failed"
     PASSWORD_RESET_REQUESTED = "user.password_reset_requested"
     PASSWORD_RESET = "user.password_reset"
+    USER_OTP_REQUESTED = "user.otp_requested"
+    USER_OTP_FAILED = "user.otp_failed"
+    USER_LOGIN_OTP = "user.login_otp"
+    USER_GOOGLE_LINKED = "user.google_linked"
+    USER_LOGIN_GOOGLE = "user.login_google"
     # organizations
     ORG_CREATED = "organization.created"
     ORG_UPDATED = "organization.updated"

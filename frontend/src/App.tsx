@@ -13,7 +13,9 @@ import { LoginPage } from './pages/LoginPage'
 import { MembersPage } from './pages/MembersPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { NotificationsPage } from './pages/NotificationsPage'
+import { OAuthCallbackPage } from './pages/OAuthCallbackPage'
 import { OrganizationsPage } from './pages/OrganizationsPage'
+import { OtpPage } from './pages/OtpPage'
 import { ProjectPage } from './pages/ProjectPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { RegisterPage } from './pages/RegisterPage'
@@ -27,11 +29,13 @@ export default function App() {
     <Routes>
       <Route element={<GuestRoute />}>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/login/otp" element={<OtpPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       </Route>
-      {/* Reset links must work even when another session is already active. */}
+      {/* Reset / OAuth links must work even when another session is active. */}
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/auth/callback" element={<OAuthCallbackPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<StandaloneLayout />}>

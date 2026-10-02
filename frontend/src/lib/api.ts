@@ -218,6 +218,33 @@ export const authApi = {
     return (await response.json()) as TokenPair
   },
 
+  requestOtp: (email: string) =>
+    request<{ detail: string }>('/auth/otp/request', {
+      method: 'POST',
+      body: { email },
+      auth: false,
+      retryOn401: false,
+    }),
+
+  verifyOtp: (email: string, code: string) =>
+    request<TokenPair>('/auth/otp/verify', {
+      method: 'POST',
+      body: { email, code },
+      auth: false,
+      retryOn401: false,
+    }),
+
+  // Browser navigation target for the Google consent screen.
+  googleStartUrl: (): string => `${API_BASE_URL}/auth/google/start`,
+
+  exchangeOAuthCode: (code: string) =>
+    request<TokenPair>('/auth/oauth/exchange', {
+      method: 'POST',
+      body: { code },
+      auth: false,
+      retryOn401: false,
+    }),
+
   me: () => request<UserRead>('/auth/me'),
 
   updateMe: (data: { email?: string; full_name?: string }) =>

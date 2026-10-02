@@ -18,6 +18,11 @@ TEMPLATES: dict[str, tuple[str, str]] = {
         "Use the link below to reset your password (valid for 30 minutes):\n\n{reset_link}\n\n"
         "If you did not request this, ignore this email.",
     ),
+    "otp_code": (
+        "Your TeamFlow sign-in code",
+        "Your sign-in code is: {code}\n\n"
+        "It expires in {expires_minutes} minutes. If you did not request this, ignore this email.",
+    ),
     "organization_invite": (
         "You have been invited to a TeamFlow organization",
         "You have been invited to join '{organization}' as {role}.\n\n"
@@ -60,13 +65,22 @@ def _send_smtp(to: str, subject: str, body: str) -> None:
         message["To"] = to
         message["Subject"] = subject
         message.set_content(body)
+
+        # Port 465 speaks implicit TLS; 587 (and anything with SMTP_USE_TLS)
+        # upgrades via STARTTLS. aiosmtplib rejects both flags at once.
+        implicit_tls = settings.smtp_port == 465
+        start_tls = not implicit_tls and (
+            settings.smtp_use_tls or settings.smtp_port == 587
+        )
         await aiosmtplib.send(
             message,
-            hostname=settings.smtp_host,
+            hostname=settings.smtp_hostname,
             port=settings.smtp_port,
-            username=settings.smtp_username or None,
+            # Most providers authenticate with the full sender address.
+            username=settings.smtp_username or settings.email_from or None,
             password=settings.smtp_password or None,
-            start_tls=settings.smtp_use_tls,
+            use_tls=implicit_tls,
+            start_tls=start_tls,
         )
 
     asyncio.run(_send())

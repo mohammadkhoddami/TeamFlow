@@ -31,7 +31,7 @@ os.environ.setdefault("RATE_LIMIT_ENABLED", "false")  # per-test opt-in
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import make_url, text
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -39,18 +39,30 @@ from app.core.db import AsyncSessionLocal, engine
 from app.main import app
 
 
+def _test_database_name() -> str:
+    """Guards every destructive schema operation: tests reset the schema, so
+    they must never point at anything but a throwaway `*_test` database."""
+    name = make_url(os.environ["DATABASE_URL"]).database or ""
+    if not name.endswith("_test"):
+        raise RuntimeError(f"Refusing to run tests against non-test database {name!r}")
+    return name
+
+
 def _create_test_database() -> None:
     import psycopg
 
+    url = make_url(os.environ["DATABASE_URL"])
+    name = _test_database_name()
+    admin_url = url.set(drivername="postgresql", database="postgres")
     try:
         with psycopg.connect(
-            "postgresql://teamflow:teamflow@localhost:5432/postgres", autocommit=True
+            admin_url.render_as_string(hide_password=False), autocommit=True
         ) as conn:
             exists = conn.execute(
-                "SELECT 1 FROM pg_database WHERE datname = 'teamflow_test'"
+                "SELECT 1 FROM pg_database WHERE datname = %s", (name,)
             ).fetchone()
             if not exists:
-                conn.execute("CREATE DATABASE teamflow_test")
+                conn.execute(f'CREATE DATABASE "{name}"')
     except Exception:
         pass  # concurrent creation during xdist or already exists
 
@@ -58,10 +70,12 @@ def _create_test_database() -> None:
 @pytest.fixture(scope="session", autouse=True)
 def _database_schema():
     _create_test_database()
+    _test_database_name()
     app  # noqa: B018  (imports routers eagerly)
 
     # Own throwaway engine with NullPool: the app engine must never see
-    # connections from a temporary loop.
+    # connections from a temporary loop. The schema is rebuilt from the models
+    # each session so stale test databases cannot drift from Alembic/models.
     import asyncio
 
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -73,6 +87,7 @@ def _database_schema():
         eng = create_async_engine(os.environ["DATABASE_URL"], poolclass=NullPool)
         try:
             async with eng.begin() as conn:
+                await conn.run_sync(SQLModel.metadata.drop_all)
                 await conn.run_sync(SQLModel.metadata.create_all)
         finally:
             await eng.dispose()

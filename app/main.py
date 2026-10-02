@@ -61,8 +61,10 @@ def create_app() -> FastAPI:
         version="1.0.0",
         description=(
             "TeamFlow API - multi-tenant project management and collaboration.\n\n"
-            "**Auth:** OAuth2 password flow via `/api/v1/auth/login` (form-encoded). "
-            "Use the access token in `Authorization: Bearer <token>`."
+            "**Auth:** OAuth2 password flow via `/api/v1/auth/login` (form-encoded), "
+            "plus passwordless email OTP (`/auth/otp/*`) and Google OAuth "
+            "(`/auth/google/start`). Use the access token in "
+            "`Authorization: Bearer <token>`."
         ),
         debug=settings.debug,
         lifespan=lifespan,

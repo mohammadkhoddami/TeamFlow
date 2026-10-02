@@ -45,6 +45,12 @@ x-app-env: &app-env
   EMAIL_FROM: ${EMAIL_FROM:-teamflow@arsene.ir}
   SMTP_HOST: ${SMTP_HOST:-localhost}
   SMTP_PORT: "${SMTP_PORT:-1025}"
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  # Email OTP + Google sign-in (empty client id/secret disables Google).
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-https://arsene.ir/flow/api/v1/auth/google/callback}
   FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-https://arsene.ir/flow}
   WEBHOOK_HTTPX_TRUST_ENV: "${WEBHOOK_HTTPX_TRUST_ENV:-false}"
   ADMIN_ENABLED: "${ADMIN_ENABLED:-true}"
