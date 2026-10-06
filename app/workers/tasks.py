@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 from celery import shared_task
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy import func as sa_func
 
 from app.core.config import settings
@@ -226,17 +226,19 @@ def _compute_stats_sync(db, organization_id) -> dict:
     by_status = {
         row[0]: row[1]
         for row in db.execute(
-            select(Task.status, sa_func.count(Task.id))
+            select(Task.status_category, sa_func.count(Task.id))
             .where(Task.organization_id == organization_id)
-            .group_by(Task.status)
+            .group_by(Task.status_category)
         ).all()
     }
     now = datetime.now(UTC)
     extra = db.execute(
         select(
-            sa_func.count(Task.id).filter(Task.due_date < now, Task.status != TaskStatus.DONE),
             sa_func.count(Task.id).filter(
-                Task.assignee_id.is_(None), Task.status != TaskStatus.DONE
+                Task.due_date < now, Task.status_category != TaskStatus.DONE
+            ),
+            sa_func.count(Task.id).filter(
+                Task.assignee_id.is_(None), Task.status_category != TaskStatus.DONE
             ),
         ).where(Task.organization_id == organization_id)
     ).one()
@@ -258,7 +260,7 @@ def _compute_stats_sync(db, organization_id) -> dict:
     per_member = db.execute(
         select(User.id, User.full_name, sa_func.count(Task.id))
         .join(Task, Task.assignee_id == User.id)
-        .where(Task.organization_id == organization_id, Task.status != TaskStatus.DONE)
+        .where(Task.organization_id == organization_id, Task.status_category != TaskStatus.DONE)
         .group_by(User.id, User.full_name)
         .order_by(sa_func.count(Task.id).desc())
         .limit(20)
@@ -356,6 +358,108 @@ def send_notification_digests(cadence: str | None = None) -> dict:
     return {"sent": sent}
 
 
+@shared_task(name="teamflow.generate_recurring_tasks")
+def generate_recurring_tasks() -> dict:
+    """Beat job (daily): spawn the next occurrence of overdue recurring tasks.
+
+    Completion-time spawning happens in the API; this sweep covers series
+    whose current occurrence was never completed (or the API was down).
+    """
+    from dateutil.rrule import rrulestr
+
+    from app.models import Project, Task, TaskAssignee, TaskLabelLink, TaskWatcherLink
+
+    now = datetime.now(UTC)
+    generated = 0
+    with session_scope() as db:
+        due_tasks = list(
+            db.execute(
+                select(Task).where(
+                    Task.recurrence_rule.is_not(None),
+                    Task.status_category != "done",
+                    Task.archived_at.is_(None),
+                    Task.due_date.is_not(None),
+                    Task.due_date < now,
+                )
+            ).scalars()
+        )
+        for task in due_tasks:
+            root_id = task.recurrence_source_id or task.id
+            try:
+                rule = rrulestr(task.recurrence_rule, dtstart=task.due_date)
+                next_due = rule.after(now, inc=False)
+            except (ValueError, TypeError):
+                continue
+            if next_due is None:
+                continue
+            exists = db.execute(
+                select(Task.id).where(
+                    Task.recurrence_source_id == root_id,
+                    Task.due_date == next_due,
+                    Task.archived_at.is_(None),
+                )
+            ).scalar_one_or_none()
+            if exists:
+                continue
+            project = db.get(Project, task.project_id)
+            if project is None:
+                continue
+            counter = db.execute(
+                update(Project)
+                .where(Project.id == project.id)
+                .values(issue_counter=Project.issue_counter + 1)
+                .returning(Project.issue_counter)
+            ).scalar_one()
+            prefix = project.key or "PRJ"
+            occurrence = Task(
+                organization_id=task.organization_id,
+                project_id=task.project_id,
+                title=task.title,
+                description=task.description,
+                status=task.status,
+                status_category=task.status_category,
+                priority=task.priority,
+                type=task.type,
+                parent_id=task.parent_id,
+                created_by_id=task.created_by_id,
+                assignee_id=task.assignee_id,
+                number=int(counter),
+                key=f"{prefix}-{int(counter)}",
+                estimate=task.estimate,
+                remaining_estimate=task.remaining_estimate,
+                due_date=next_due,
+                recurrence_rule=task.recurrence_rule,
+                recurrence_source_id=root_id,
+            )
+            db.add(occurrence)
+            db.flush()
+            for link in db.execute(
+                select(TaskLabelLink).where(TaskLabelLink.task_id == task.id)
+            ).scalars():
+                db.add(
+                    TaskLabelLink(task_id=occurrence.id, label_id=link.label_id)
+                )
+            for watcher in db.execute(
+                select(TaskWatcherLink).where(TaskWatcherLink.task_id == task.id)
+            ).scalars():
+                db.add(
+                    TaskWatcherLink(task_id=occurrence.id, user_id=watcher.user_id)
+                )
+            for assignee in db.execute(
+                select(TaskAssignee).where(TaskAssignee.task_id == task.id)
+            ).scalars():
+                db.add(
+                    TaskAssignee(
+                        organization_id=task.organization_id,
+                        task_id=occurrence.id,
+                        user_id=assignee.user_id,
+                        role=assignee.role,
+                    )
+                )
+            generated += 1
+    return {"generated": generated}
+
+
 @shared_task(name="teamflow.notify_due_tasks")
 def notify_due_tasks() -> dict:
     """Beat job (daily): remind watchers about tasks due within 24 hours."""
@@ -369,7 +473,7 @@ def notify_due_tasks() -> dict:
                 select(Task).where(
                     Task.due_date.is_not(None),
                     Task.due_date <= cutoff,
-                    Task.status != TaskStatus.DONE,
+                    Task.status_category != TaskStatus.DONE,
                 )
             ).scalars()
         )

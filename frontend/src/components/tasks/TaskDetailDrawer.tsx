@@ -5,18 +5,24 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../contexts/auth'
 import { useToast } from '../../contexts/toast'
 import { ApiError, tasksApi } from '../../lib/api'
-import { qk, useInvalidateTasks, useLabels, useSprints, useTaskChildren } from '../../lib/hooks'
 import {
+  qk,
+  useInvalidateTasks,
+  useLabels,
+  useSprints,
+  useTaskChildren,
+  useWorkflow,
+} from '../../lib/hooks'
+import {
+  CATEGORY_BADGE,
   PRIORITIES,
   PRIORITY_BADGE,
   PRIORITY_LABELS,
-  STATUS_BADGE,
-  STATUS_LABELS,
-  STATUS_TRANSITIONS,
   TASK_TYPES,
   TYPE_BADGE,
   TYPE_LABELS,
   allowedParentTypes,
+  statusName,
   type TaskPriority,
   type TaskRead,
   type TaskStatus,
@@ -38,6 +44,13 @@ import { MarkdownEditor } from '../MarkdownEditor'
 import { AttachmentsSection } from './AttachmentsSection'
 import { CommentsSection } from './CommentsSection'
 import { LabelPicker } from './LabelPicker'
+import {
+  AssigneesEditor,
+  ChecklistSection,
+  CustomFieldsEditor,
+  LinksSection,
+  WorklogSection,
+} from './TaskExtras'
 
 export function TaskDetailDrawer({
   task,
@@ -76,6 +89,8 @@ export function TaskDetailDrawer({
   const current = detail.data ?? task
   const children = useTaskChildren(current?.id)
   const sprints = useSprints(current?.project_id)
+  const workflow = useWorkflow(current?.project_id)
+  const [customRule, setCustomRule] = useState('')
 
   useEffect(() => {
     if (current) {
@@ -119,7 +134,12 @@ export function TaskDetailDrawer({
 
   const watching = current.watcher_ids.includes(user?.id ?? '')
   const canDelete = role !== 'member' || current.created_by_id === user?.id
-  const statusOptions: TaskStatus[] = [current.status, ...STATUS_TRANSITIONS[current.status]]
+  const workflowMap = new Map((workflow.data ?? []).map((entry) => [entry.key, entry]))
+  const currentWorkflowStatus = workflowMap.get(current.status)
+  const statusOptions: string[] = currentWorkflowStatus
+    ? [current.status, ...currentWorkflowStatus.transitions.filter((key) => workflowMap.has(key))]
+    : [current.status]
+  const RECURRENCE_PRESETS = ['FREQ=DAILY', 'FREQ=WEEKLY', 'FREQ=MONTHLY']
   const watchers = members.filter((membership) => current.watcher_ids.includes(membership.user_id))
   const titleDirty = title.trim() !== current.title && title.trim().length > 0
 
@@ -155,7 +175,12 @@ export function TaskDetailDrawer({
         <div className="min-w-0 pr-2">
           <div className="flex items-center gap-2">
             <Badge className={TYPE_BADGE[current.type]}>{TYPE_LABELS[current.type]}</Badge>
-            <Badge className={STATUS_BADGE[current.status]}>{STATUS_LABELS[current.status]}</Badge>
+            <Badge className={CATEGORY_BADGE[current.status_category]}>
+              {statusName(workflow.data, current.status)}
+            </Badge>
+            {current.is_blocked && (
+              <Badge className="bg-red-100 text-red-700">blocked</Badge>
+            )}
             <Badge className={PRIORITY_BADGE[current.priority]}>
               {PRIORITY_LABELS[current.priority]}
             </Badge>
@@ -207,7 +232,7 @@ export function TaskDetailDrawer({
             >
               {statusOptions.map((status) => (
                 <option key={status} value={status}>
-                  {STATUS_LABELS[status]}
+                  {statusName(workflow.data, status)}
                   {status === current.status ? ' (current)' : ''}
                 </option>
               ))}
@@ -328,6 +353,39 @@ export function TaskDetailDrawer({
               }}
             />
           </Field>
+          <Field label="Recurrence" hint="Completing this task creates the next occurrence">
+            <Select
+              value={
+                current.recurrence_rule == null
+                  ? ''
+                  : RECURRENCE_PRESETS.includes(current.recurrence_rule)
+                    ? current.recurrence_rule
+                    : 'custom'
+              }
+              onChange={(event) => {
+                if (event.target.value === 'custom') {
+                  setCustomRule(current.recurrence_rule ?? '')
+                } else {
+                  patch.mutate({ recurrence_rule: event.target.value || null })
+                }
+              }}
+            >
+              <option value="">Does not repeat</option>
+              <option value="FREQ=DAILY">Daily</option>
+              <option value="FREQ=WEEKLY">Weekly</option>
+              <option value="FREQ=MONTHLY">Monthly</option>
+              <option value="custom">Custom RRULE…</option>
+            </Select>
+            {customRule !== '' && (
+              <Input
+                className="mt-1 font-mono text-xs"
+                value={customRule}
+                placeholder="FREQ=WEEKLY;BYDAY=MO,WE,FR"
+                onChange={(event) => setCustomRule(event.target.value)}
+                onBlur={() => patch.mutate({ recurrence_rule: customRule || null })}
+              />
+            )}
+          </Field>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
@@ -365,6 +423,16 @@ export function TaskDetailDrawer({
           />
         </section>
 
+        <CustomFieldsEditor task={current} />
+
+        <ChecklistSection taskId={current.id} />
+
+        <AssigneesEditor taskId={current.id} />
+
+        <LinksSection task={current} />
+
+        <WorklogSection task={current} />
+
         <section className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-baseline gap-2">
@@ -396,7 +464,9 @@ export function TaskDetailDrawer({
                     {child.done_child_count}/{child.child_count}
                   </span>
                 )}
-                <Badge className={STATUS_BADGE[child.status]}>{STATUS_LABELS[child.status]}</Badge>
+                <Badge className={CATEGORY_BADGE[child.status_category]}>
+                  {statusName(workflow.data, child.status)}
+                </Badge>
               </button>
             ))}
             {children.data?.length === 0 && (

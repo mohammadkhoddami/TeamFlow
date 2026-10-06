@@ -21,6 +21,7 @@ Async-SQLAlchemy note: M2M collections are written through the link tables
 raise MissingGreenlet inside an async session, so we never trigger them.
 """
 
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -33,7 +34,10 @@ from app.core.exceptions import (
     ValidationFailedError,
 )
 from app.models import (
+    AssigneeRole,
     AuditAction,
+    ChecklistItem,
+    CustomFieldValue,
     Membership,
     MembershipRole,
     Organization,
@@ -41,21 +45,44 @@ from app.models import (
     Sprint,
     SprintState,
     Task,
+    TaskAssignee,
     TaskLabelLink,
     TaskStatus,
+    TaskStatusHistory,
     TaskType,
     TaskWatcherLink,
     User,
+    WorkflowStatus,
 )
 from app.repositories import (
+    ChecklistRepository,
     LabelRepository,
     MembershipRepository,
     ProjectRepository,
     SprintRepository,
+    TaskAssigneeRepository,
     TaskRepository,
+    TaskStatusHistoryRepository,
 )
 from app.schemas import TaskCreate, TaskUpdate
-from app.services import audit, cache, events, preferences
+from app.services import audit, cache, events, preferences, recurrence, workflows
+from app.services import custom_fields as custom_field_service
+
+
+async def get_project_workflow(
+    db: AsyncSession, project: Project
+) -> list[WorkflowStatus]:
+    return await workflows.get_workflow(db, project)
+
+
+def initial_status_key(workflow: list[WorkflowStatus]) -> str:
+    return workflows.initial_status_key(workflow)
+
+
+def category_for(workflow: list[WorkflowStatus], status_key: str) -> str:
+    return workflows.category_for(workflow, status_key)
+
+logger = logging.getLogger(__name__)
 
 # Allowed transitions; reopening a done task returns to in_progress.
 STATUS_TRANSITIONS: dict[str, set[str]] = {
@@ -287,13 +314,19 @@ async def _apply_create_fields(
     """Builds a fully validated Task (without persisting it)."""
     if data.parent_id is not None:
         await _assert_parent_valid(db, org.id, project.id, data.parent_id, data.type)
+    if data.recurrence_rule:
+        recurrence.validate_rule(data.recurrence_rule)
 
+    workflow = await workflows.get_workflow(db, project)
+    status_key = workflows.initial_status_key(workflow)
     number, key = await _next_issue_key(db, project)
     task = Task(
         organization_id=org.id,
         project_id=project.id,
         title=data.title,
         description=data.description,
+        status=status_key,
+        status_category=workflows.category_for(workflow, status_key),
         priority=data.priority,
         type=data.type,
         parent_id=data.parent_id,
@@ -307,6 +340,7 @@ async def _apply_create_fields(
         if data.remaining_estimate is not None
         else data.estimate,
         actual_estimate=data.actual_estimate,
+        recurrence_rule=data.recurrence_rule,
     )
     if data.sprint_id is not None:
         await _assert_sprint_in_project(db, org.id, project.id, data.sprint_id)
@@ -327,13 +361,56 @@ async def create_task(
 ) -> Task:
     task = await _apply_create_fields(db, org, project, data, actor)
 
+    # Additional assignees (role-bearing); the primary assignee stays in sync
+    # with `assignee_id` for backwards compatibility.
+    assignee_entries: list[tuple[uuid.UUID, str]] = [
+        (entry.user_id, entry.role) for entry in data.assignees
+    ]
+    if data.assignee_id is not None and all(
+        user_id != data.assignee_id for user_id, _role in assignee_entries
+    ):
+        assignee_entries.insert(0, (data.assignee_id, AssigneeRole.ASSIGNEE))
+    for user_id, _role in assignee_entries:
+        await _assert_assignee_in_org(db, org.id, user_id)
+    if task.assignee_id is None and assignee_entries:
+        task.assignee_id = assignee_entries[0][0]
+
     task = await TaskRepository(db).add(task)
     if data.label_ids:
         valid_ids = await _resolve_label_ids(db, org.id, data.label_ids)
         await _set_task_labels(db, task.id, valid_ids)
 
-    # Creator + assignee auto-watch.
-    watcher_ids = {actor.id} | ({data.assignee_id} if data.assignee_id else set())
+    resolved_values = await custom_field_service.resolve_values(
+        db, project, data.custom_fields
+    )
+    await custom_field_service.set_task_values(db, org.id, task.id, resolved_values)
+    await custom_field_service.assert_required_satisfied(db, project, task.id)
+
+    for position, (user_id, role) in enumerate(assignee_entries):
+        db.add(
+            TaskAssignee(
+                organization_id=org.id,
+                task_id=task.id,
+                user_id=user_id,
+                role=role,
+            )
+        )
+    if assignee_entries:
+        await db.flush()
+
+    for position, text in enumerate(data.checklist):
+        db.add(
+            ChecklistItem(
+                organization_id=org.id,
+                task_id=task.id,
+                text=text[:500],
+                position=position,
+                created_by_id=actor.id,
+            )
+        )
+
+    # Creator + assignees auto-watch.
+    watcher_ids = {actor.id} | {user_id for user_id, _role in assignee_entries}
     await _add_watchers(db, task.id, watcher_ids)
 
     await audit.log(
@@ -341,15 +418,17 @@ async def create_task(
         organization_id=org.id, target_type="task", target_id=task.id, ip=ip,
         meta={"title": task.title, "project_id": str(project.id), "key": task.key},
     )
-    if task.assignee_id and task.assignee_id != actor.id:
+    for user_id, _role in assignee_entries:
+        if user_id == actor.id:
+            continue
         await audit.log(
             db, AuditAction.TASK_ASSIGNED, actor_id=actor.id,
             organization_id=org.id, target_type="task", target_id=task.id, ip=ip,
-            meta={"assignee_id": str(task.assignee_id)},
+            meta={"assignee_id": str(user_id)},
         )
         await events.notify(
             db,
-            user_id=task.assignee_id,
+            user_id=user_id,
             type="task_assigned",
             title=f"You were assigned: {task.title}",
             organization_id=org.id,
@@ -363,10 +442,12 @@ async def create_task(
     await events.dispatch_webhooks(
         db, organization_id=org.id, event="task.created", data=payload
     )
-    if task.assignee_id and task.assignee_id != actor.id:
+    for user_id, _role in assignee_entries:
+        if user_id == actor.id:
+            continue
         await preferences.task_email(
             db,
-            user_id=task.assignee_id,
+            user_id=user_id,
             notification_type="task_assigned",
             kind="task_assigned",
             task=task,
@@ -389,6 +470,7 @@ async def update_task(
     deletion and project management are the gated actions."""
     changed = data.model_fields_set
     old_status = task.status
+    old_category = task.status_category
 
     if "type" in changed and data.type is not None and data.type != task.type:
         await _assert_type_change_valid(db, org.id, task, data.type)
@@ -421,13 +503,43 @@ async def update_task(
         task.actual_estimate = data.actual_estimate
 
     if "status" in changed and data.status and data.status != task.status:
-        allowed = STATUS_TRANSITIONS.get(task.status, set())
-        if data.status not in allowed:
-            raise ValidationFailedError(
-                f"Cannot move task from '{task.status}' to '{data.status}'"
+        project = await ProjectRepository(db).get(task.project_id)
+        if project is None:
+            raise NotFoundError("Project not found")
+        new_category = await workflows.assert_transition(
+            db, project, task.status, data.status
+        )
+        await TaskStatusHistoryRepository(db).add(
+            TaskStatusHistory(
+                organization_id=org.id,
+                task_id=task.id,
+                from_status=task.status,
+                to_status=data.status,
+                from_category=old_category,
+                to_category=new_category,
+                changed_by_id=actor.id,
             )
+        )
         task.status = data.status
-        task.completed_at = datetime.now(UTC) if data.status == TaskStatus.DONE else None
+        task.status_category = new_category
+        task.completed_at = (
+            datetime.now(UTC) if new_category == TaskStatus.DONE else None
+        )
+
+    if "custom_fields" in changed and data.custom_fields is not None:
+        project = await ProjectRepository(db).get(task.project_id)
+        if project is None:
+            raise NotFoundError("Project not found")
+        resolved = await custom_field_service.resolve_values(
+            db, project, data.custom_fields
+        )
+        await custom_field_service.assert_required_not_cleared(db, project, resolved)
+        await custom_field_service.set_task_values(db, org.id, task.id, resolved)
+
+    if "recurrence_rule" in changed:
+        if data.recurrence_rule:
+            recurrence.validate_rule(data.recurrence_rule)
+        task.recurrence_rule = data.recurrence_rule
 
     if "title" in changed and data.title is not None:
         task.title = data.title
@@ -466,7 +578,11 @@ async def update_task(
                 organization_id=org.id,
                 data={"task_id": str(task.id), "project_id": str(task.project_id)},
             )
-    completed_now = task.status == TaskStatus.DONE and old_status != TaskStatus.DONE
+    completed_now = (
+        task.status_category == TaskStatus.DONE
+        and old_status != TaskStatus.DONE
+        and old_category != TaskStatus.DONE
+    )
     if completed_now:
         await _notify_task_completed(db, org, task, actor)
     await db.commit()
@@ -490,6 +606,11 @@ async def update_task(
                 project=project,
                 org_slug=org.slug,
             )
+    if completed_now and task.recurrence_rule:
+        try:
+            await recurrence.spawn_next_occurrence(db, actor, org, task)
+        except Exception:
+            logger.exception("Failed to spawn next occurrence for task %s", task.id)
     await cache.invalidate_dashboard(org.id)
     return task
 
@@ -526,11 +647,8 @@ async def move_task(
 ) -> Task:
     if new_status == task.status:
         return task
-    allowed = STATUS_TRANSITIONS.get(task.status, set())
-    if new_status not in allowed:
-        raise ValidationFailedError(
-            f"Cannot move task from '{task.status}' to '{new_status}'"
-        )
+    # update_task validates the move against the project workflow (which may be
+    # custom), records status history and enforces WIP limits.
     return await update_task(db, actor, org, task, TaskUpdate(status=new_status), ip)
 
 
@@ -586,12 +704,17 @@ async def clone_task(
         parent = await TaskRepository(db).get_in_org(parent_id, org.id)
         if parent is None or parent.project_id != project.id:
             parent_id = None
+    workflow = await workflows.get_workflow(db, project)
+    workflow_keys = {status.key for status in workflow}
+    clone_status = task.status if task.status in workflow_keys else workflows.initial_status_key(workflow)
     number, key = await _next_issue_key(db, project)
     clone = Task(
         organization_id=org.id,
         project_id=project.id,
         title=f"{task.title} (copy)"[:255],
         description=task.description,
+        status=clone_status,
+        status_category=workflows.category_for(workflow, clone_status),
         priority=task.priority,
         type=task.type,
         parent_id=parent_id,
@@ -612,6 +735,38 @@ async def clone_task(
         await _set_task_labels(db, clone.id, label_ids)
     watcher_ids = {w.id for w in task.watchers} | {actor.id}
     await _add_watchers(db, clone.id, watcher_ids)
+
+    # Copy M2 attachments: custom values, assignees and checklist items.
+    values = await custom_field_service.values_for_tasks(db, [task.id], task.project_id)
+    for entry in values.get(task.id, []):
+        db.add(
+            CustomFieldValue(
+                organization_id=org.id,
+                task_id=clone.id,
+                field_id=entry["field_id"],
+                value=entry["value"],
+            )
+        )
+    for entry in await TaskAssigneeRepository(db).list_for_task(task.id):
+        db.add(
+            TaskAssignee(
+                organization_id=org.id,
+                task_id=clone.id,
+                user_id=entry.user_id,
+                role=entry.role,
+            )
+        )
+    for item in await ChecklistRepository(db).list_for_task(task.id):
+        db.add(
+            ChecklistItem(
+                organization_id=org.id,
+                task_id=clone.id,
+                text=item.text,
+                position=item.position,
+                created_by_id=actor.id,
+            )
+        )
+    await db.flush()
     await audit.log(
         db, AuditAction.TASK_CREATED, actor_id=actor.id,
         organization_id=org.id, target_type="task", target_id=clone.id, ip=ip,
@@ -646,12 +801,23 @@ async def move_task_to_project(
     if not target:
         raise ValidationFailedError("Target project not found")
 
+    target_workflow = await workflows.get_workflow(db, target)
+    target_keys = {status.key for status in target_workflow}
+    target_by_category: dict[str, str] = {}
+    for status in sorted(target_workflow, key=lambda entry: entry.position):
+        target_by_category.setdefault(status.category, status.key)
+
     descendants = await _collect_descendants(db, org.id, task.id)
     for node in [task, *descendants]:
         number, key = await _next_issue_key(db, target)
         node.project_id = target.id
         node.number = number
         node.key = key
+        if node.status not in target_keys:
+            node.status = target_by_category.get(
+                node.status_category, workflows.initial_status_key(target_workflow)
+            )
+        node.status_category = workflows.category_for(target_workflow, node.status)
         # Sprint/parent links only survive when they already live in the target.
         if node.sprint_id is not None:
             sprint = await SprintRepository(db).get_in_org(node.sprint_id, org.id)

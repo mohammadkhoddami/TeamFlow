@@ -40,7 +40,7 @@ import {
   PRIORITIES,
   PRIORITY_BADGE,
   PRIORITY_LABELS,
-  STATUS_BADGE,
+  CATEGORY_BADGE,
   STATUS_LABELS,
   TASK_STATUSES,
   TASK_TYPES,
@@ -678,8 +678,8 @@ export function TasksPage() {
                         {projectNames.get(task.project_id) ?? '—'}
                       </td>
                       <td className="px-4 py-2.5">
-                        <Badge className={STATUS_BADGE[task.status]}>
-                          {STATUS_LABELS[task.status]}
+                        <Badge className={CATEGORY_BADGE[task.status_category]}>
+                          {task.status}
                         </Badge>
                       </td>
                       <td className="px-4 py-2.5">

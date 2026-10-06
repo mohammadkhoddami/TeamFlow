@@ -19,8 +19,10 @@ import { OtpPage } from './pages/OtpPage'
 import { ProjectPage } from './pages/ProjectPage'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { RegisterPage } from './pages/RegisterPage'
+import { ReportsPage } from './pages/ReportsPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { TimesheetPage } from './pages/TimesheetPage'
 import { TasksPage } from './pages/TasksPage'
 import { UnsubscribePage } from './pages/UnsubscribePage'
 import { WebhooksPage } from './pages/WebhooksPage'
@@ -52,6 +54,8 @@ export default function App() {
             <Route path="projects" element={<ProjectsPage />} />
             <Route path="projects/:projectId" element={<ProjectPage />} />
             <Route path="tasks" element={<TasksPage />} />
+            <Route path="reports" element={<ReportsPage />} />
+            <Route path="timesheet" element={<TimesheetPage />} />
             <Route path="members" element={<MembersPage />} />
             <Route path="labels" element={<LabelsPage />} />
             <Route path="webhooks" element={<WebhooksPage />} />

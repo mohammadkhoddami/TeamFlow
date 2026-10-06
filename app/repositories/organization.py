@@ -96,7 +96,7 @@ class MembershipRepository:
     async def active_member_ids(self, organization_id: uuid.UUID) -> list[uuid.UUID]:
         statement = select(Membership.user_id).where(
             Membership.organization_id == organization_id,
-            Membership.is_active == True,  # noqa: E712
+            Membership.is_active == True,
         )
         return list((await self.db.execute(statement)).scalars().all())
 

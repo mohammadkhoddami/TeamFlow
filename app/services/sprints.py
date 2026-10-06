@@ -191,7 +191,7 @@ async def complete_sprint(
             )
         target_id = target.id
 
-    unfinished = (Task.status != TaskStatus.DONE) & (Task.sprint_id == sprint.id)
+    unfinished = (Task.status_category != TaskStatus.DONE) & (Task.sprint_id == sprint.id)
     result = await db.execute(
         update(Task)
         .where(

@@ -1,4 +1,4 @@
-import { CalendarDays, CornerDownRight, GitBranch } from 'lucide-react'
+import { CalendarDays, CheckSquare, CornerDownRight, GitBranch, ShieldAlert } from 'lucide-react'
 
 import { Avatar, Badge } from '../ui'
 import type { TaskRead } from '../../lib/types'
@@ -100,6 +100,26 @@ export function TaskCard({
           </div>
         </div>
       )}
+
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+        {task.is_blocked && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-1.5 py-0.5 font-medium text-red-700">
+            <ShieldAlert className="h-3 w-3" /> blocked
+          </span>
+        )}
+        {task.checklist_total > 0 && (
+          <span className="inline-flex items-center gap-1">
+            <CheckSquare className="h-3 w-3" />
+            {task.checklist_done}/{task.checklist_total}
+          </span>
+        )}
+        {task.assignees.length > 1 && <span>+{task.assignees.length - 1} assignee(s)</span>}
+        {task.logged_minutes > 0 && (
+          <span>
+            {Math.floor(task.logged_minutes / 60)}h{task.logged_minutes % 60 ? ` ${task.logged_minutes % 60}m` : ''} logged
+          </span>
+        )}
+      </div>
 
       <div className="mt-3 flex items-center justify-between gap-2">
         {task.assignee ? (

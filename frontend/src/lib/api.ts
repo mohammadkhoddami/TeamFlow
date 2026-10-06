@@ -2,12 +2,20 @@ import { SESSION_EXPIRED_EVENT, tokens } from './tokens'
 import type {
   AttachmentRead,
   AuditLogRead,
+  BoardRead,
   BulkTaskAction,
   BulkTaskResult,
+  BurndownReport,
+  CapacityMemberRead,
+  CfdReport,
+  ChecklistItemRead,
   CommentRead,
+  CustomFieldRead,
+  CycleTimeReport,
   DashboardStats,
   DownloadGrant,
   EstimationUnit,
+  ImportSummary,
   InvitationRead,
   LabelRead,
   MembershipRead,
@@ -18,20 +26,30 @@ import type {
   OrganizationRead,
   Page,
   ProjectRead,
+  ProjectTemplateRead,
   SavedFilterRead,
   SearchResponse,
   SprintRead,
+  SprintReport,
+  TaskAssigneeRead,
+  TaskLinkSummary,
   TaskPriority,
   TaskRead,
   TaskStatus,
+  TaskTemplateRead,
   TaskTreeNode,
   TaskType,
+  TimesheetReport,
   TokenPair,
   UploadGrant,
   UserRead,
+  VelocityReport,
   WebhookCreated,
   WebhookDeliveryRead,
   WebhookRead,
+  WorkflowStatusInput,
+  WorkflowStatusRead,
+  WorklogRead,
 } from './types'
 
 const API_BASE_URL: string =
@@ -69,6 +87,8 @@ export interface TaskFilters {
   backlog_only?: boolean
   include_archived?: boolean
   archived_only?: boolean
+  blocked?: boolean
+  category?: string[]
   sort?: string
   offset?: number
   limit?: number
@@ -87,12 +107,16 @@ export interface TaskCreateInput {
   estimate?: number | null
   remaining_estimate?: number | null
   actual_estimate?: number | null
+  custom_fields?: Record<string, unknown>
+  assignees?: { user_id: string; role: 'assignee' | 'approver' }[]
+  checklist?: string[]
+  recurrence_rule?: string | null
 }
 
 export interface TaskUpdateInput {
   title?: string
   description?: string | null
-  status?: TaskStatus
+  status?: string
   priority?: TaskPriority
   type?: TaskType
   parent_id?: string | null
@@ -103,6 +127,8 @@ export interface TaskUpdateInput {
   estimate?: number | null
   remaining_estimate?: number | null
   actual_estimate?: number | null
+  custom_fields?: Record<string, unknown>
+  recurrence_rule?: string | null
 }
 
 export interface BulkTaskInput {
@@ -429,7 +455,7 @@ export const tasksApi = {
   update: (taskId: string, data: TaskUpdateInput) =>
     request<TaskRead>(`/tasks/${taskId}`, { method: 'PATCH', body: data }),
 
-  move: (taskId: string, status: TaskStatus) =>
+  move: (taskId: string, status: string) =>
     request<TaskRead>(`/tasks/${taskId}/move`, { method: 'POST', body: { status } }),
 
   remove: (taskId: string) =>
@@ -704,4 +730,347 @@ export const auditApi = {
 
 export const dashboardApi = {
   get: (slug: string) => request<DashboardStats>(`/organizations/${slug}/dashboard`),
+}
+
+// ------------------------------------------------------------- workflows api
+
+export const workflowsApi = {
+  get: (projectId: string) =>
+    request<WorkflowStatusRead[]>(`/projects/${projectId}/workflow`),
+
+  save: (
+    projectId: string,
+    data: { statuses: WorkflowStatusInput[]; wip_enforced?: boolean },
+  ) =>
+    request<WorkflowStatusRead[]>(`/projects/${projectId}/workflow`, {
+      method: 'PUT',
+      body: data,
+    }),
+
+  listBoards: (projectId: string) =>
+    request<BoardRead[]>(`/projects/${projectId}/boards`),
+
+  createBoard: (
+    projectId: string,
+    data: {
+      name: string
+      swimlane_by?: string
+      filter_query?: string | null
+      columns?: string[] | null
+      is_default?: boolean
+    },
+  ) => request<BoardRead>(`/projects/${projectId}/boards`, { method: 'POST', body: data }),
+
+  updateBoard: (
+    slug: string,
+    boardId: string,
+    data: {
+      name?: string
+      swimlane_by?: string
+      filter_query?: string | null
+      columns?: string[] | null
+      is_default?: boolean
+    },
+  ) =>
+    request<BoardRead>(`/organizations/${slug}/boards/${boardId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  removeBoard: (slug: string, boardId: string) =>
+    request<void>(`/organizations/${slug}/boards/${boardId}`, { method: 'DELETE' }),
+}
+
+// --------------------------------------------------------- custom fields api
+
+export const customFieldsApi = {
+  list: (projectId: string) =>
+    request<CustomFieldRead[]>(`/projects/${projectId}/custom-fields`),
+
+  create: (
+    projectId: string,
+    data: {
+      name: string
+      key?: string
+      field_type: string
+      options?: string[]
+      is_required?: boolean
+    },
+  ) =>
+    request<CustomFieldRead>(`/projects/${projectId}/custom-fields`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  update: (
+    projectId: string,
+    fieldId: string,
+    data: { name?: string; options?: string[]; is_required?: boolean; position?: number },
+  ) =>
+    request<CustomFieldRead>(`/projects/${projectId}/custom-fields/${fieldId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  remove: (projectId: string, fieldId: string) =>
+    request<void>(`/projects/${projectId}/custom-fields/${fieldId}`, {
+      method: 'DELETE',
+    }),
+}
+
+// ----------------------------------------------------------------- links api
+
+export const linksApi = {
+  list: (taskId: string) => request<TaskLinkSummary>(`/tasks/${taskId}/links`),
+
+  create: (taskId: string, data: { to_task_id: string; link_type: string }) =>
+    request<TaskLinkSummary>(`/tasks/${taskId}/links`, { method: 'POST', body: data }),
+
+  remove: (taskId: string, linkId: string) =>
+    request<void>(`/tasks/${taskId}/links/${linkId}`, { method: 'DELETE' }),
+}
+
+// --------------------------------------------------------------- reports api
+
+export const reportsApi = {
+  burndown: (projectId: string, sprintId: string) =>
+    request<BurndownReport>(
+      `/projects/${projectId}/reports/burndown${buildQuery({ sprint_id: sprintId })}`,
+    ),
+
+  velocity: (projectId: string, limit = 6) =>
+    request<VelocityReport>(
+      `/projects/${projectId}/reports/velocity${buildQuery({ limit })}`,
+    ),
+
+  cumulativeFlow: (projectId: string, days = 30) =>
+    request<CfdReport>(
+      `/projects/${projectId}/reports/cumulative-flow${buildQuery({ days })}`,
+    ),
+
+  cycleTime: (projectId: string, days = 30) =>
+    request<CycleTimeReport>(
+      `/projects/${projectId}/reports/cycle-time${buildQuery({ days })}`,
+    ),
+
+  cycleTimeCsvUrl: (projectId: string, days = 30) =>
+    `${API_BASE_URL}/projects/${projectId}/reports/cycle-time${buildQuery({
+      days,
+      format: 'csv',
+    })}`,
+
+  sprintReport: (sprintId: string) =>
+    request<SprintReport>(`/sprints/${sprintId}/report`),
+}
+
+// -------------------------------------------------------------- capacity api
+
+export const capacityApi = {
+  get: (sprintId: string) =>
+    request<CapacityMemberRead[]>(`/sprints/${sprintId}/capacity`),
+
+  set: (
+    sprintId: string,
+    entries: { user_id: string; capacity: number | null; note?: string | null }[],
+  ) =>
+    request<CapacityMemberRead[]>(`/sprints/${sprintId}/capacity`, {
+      method: 'PUT',
+      body: { entries },
+    }),
+}
+
+// -------------------------------------------------------------- worklogs api
+
+export const worklogsApi = {
+  list: (taskId: string) => request<WorklogRead[]>(`/tasks/${taskId}/worklogs`),
+
+  create: (
+    taskId: string,
+    data: { minutes: number; started_at: string; description?: string | null },
+  ) => request<WorklogRead>(`/tasks/${taskId}/worklogs`, { method: 'POST', body: data }),
+
+  update: (
+    slug: string,
+    worklogId: string,
+    data: { minutes?: number; started_at?: string; description?: string | null },
+  ) =>
+    request<WorklogRead>(`/organizations/${slug}/worklogs/${worklogId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  remove: (slug: string, worklogId: string) =>
+    request<void>(`/organizations/${slug}/worklogs/${worklogId}`, { method: 'DELETE' }),
+
+  timesheet: (
+    slug: string,
+    params?: { date_from?: string; date_to?: string; user_id?: string },
+  ) =>
+    request<TimesheetReport>(
+      `/organizations/${slug}/timesheet${buildQuery(params as Record<string, QueryValue>)}`,
+    ),
+}
+
+// ------------------------------------------------------------- templates api
+
+export const templatesApi = {
+  listProjectTemplates: (slug: string) =>
+    request<ProjectTemplateRead[]>(`/organizations/${slug}/project-templates`),
+
+  createProjectFromTemplate: (
+    slug: string,
+    data: { name: string; template_id: string; key?: string; description?: string | null },
+  ) =>
+    request<ProjectRead>(`/organizations/${slug}/projects/from-template`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  saveProjectAsTemplate: (
+    projectId: string,
+    data: { name: string; description?: string | null },
+  ) =>
+    request<ProjectTemplateRead>(`/projects/${projectId}/save-as-template`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  removeProjectTemplate: (slug: string, templateId: string) =>
+    request<void>(`/organizations/${slug}/project-templates/${templateId}`, {
+      method: 'DELETE',
+    }),
+
+  listTaskTemplates: (slug: string, projectId?: string) =>
+    request<TaskTemplateRead[]>(
+      `/organizations/${slug}/task-templates${buildQuery({ project_id: projectId })}`,
+    ),
+
+  createTaskTemplate: (
+    slug: string,
+    data: {
+      name: string
+      title: string
+      description?: string | null
+      priority?: TaskPriority
+      type?: TaskType
+      estimate?: number | null
+      checklist?: string[]
+      project_id?: string | null
+    },
+  ) =>
+    request<TaskTemplateRead>(`/organizations/${slug}/task-templates`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  applyTaskTemplate: (
+    slug: string,
+    templateId: string,
+    data: { project_id: string; parent_id?: string | null },
+  ) =>
+    request<TaskRead>(`/organizations/${slug}/task-templates/${templateId}/apply`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  removeTaskTemplate: (slug: string, templateId: string) =>
+    request<void>(`/organizations/${slug}/task-templates/${templateId}`, {
+      method: 'DELETE',
+    }),
+}
+
+// ----------------------------------------------------- checklist/assignees
+
+export const checklistApi = {
+  list: (taskId: string) =>
+    request<ChecklistItemRead[]>(`/tasks/${taskId}/checklist`),
+
+  add: (taskId: string, text: string) =>
+    request<ChecklistItemRead>(`/tasks/${taskId}/checklist`, {
+      method: 'POST',
+      body: { text },
+    }),
+
+  update: (
+    taskId: string,
+    itemId: string,
+    data: { text?: string; is_done?: boolean; position?: number },
+  ) =>
+    request<ChecklistItemRead>(`/tasks/${taskId}/checklist/${itemId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  remove: (taskId: string, itemId: string) =>
+    request<void>(`/tasks/${taskId}/checklist/${itemId}`, { method: 'DELETE' }),
+
+  assignees: (taskId: string) =>
+    request<TaskAssigneeRead[]>(`/tasks/${taskId}/assignees`),
+
+  setAssignees: (
+    taskId: string,
+    assignees: { user_id: string; role: 'assignee' | 'approver' }[],
+  ) =>
+    request<TaskAssigneeRead[]>(`/tasks/${taskId}/assignees`, {
+      method: 'PUT',
+      body: { assignees },
+    }),
+}
+
+// ------------------------------------------------------------ import/export
+
+export const dataApi = {
+  importFile: async (
+    slug: string,
+    data: { project_id: string; format: string; dry_run?: boolean; file: File },
+  ): Promise<ImportSummary> => {
+    const form = new FormData()
+    form.append('project_id', data.project_id)
+    form.append('format', data.format)
+    form.append('dry_run', String(data.dry_run ?? false))
+    form.append('file', data.file)
+    const access = tokens.getAccess()
+    const response = await fetch(`${API_BASE_URL}/organizations/${slug}/imports`, {
+      method: 'POST',
+      headers: access ? { Authorization: `Bearer ${access}` } : {},
+      body: form,
+    })
+    if (!response.ok) throw await toApiError(response)
+    return (await response.json()) as ImportSummary
+  },
+
+  exportWorkspaceUrl: (slug: string, attachments = false) =>
+    `${API_BASE_URL}/organizations/${slug}/export${buildQuery({ attachments })}`,
+
+  exportProjectCsvUrl: (projectId: string) =>
+    `${API_BASE_URL}/projects/${projectId}/export`,
+
+  async downloadProjectCsv(projectId: string, filename: string): Promise<void> {
+    const access = tokens.getAccess()
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}/export`, {
+      headers: access ? { Authorization: `Bearer ${access}` } : {},
+    })
+    if (!response.ok) throw await toApiError(response)
+    downloadBlob(await response.text(), filename, 'text/csv')
+  },
+
+  async downloadWorkspace(slug: string, attachments = false): Promise<void> {
+    const access = tokens.getAccess()
+    const response = await fetch(
+      `${API_BASE_URL}/organizations/${slug}/export${buildQuery({ attachments })}`,
+      { headers: access ? { Authorization: `Bearer ${access}` } : {} },
+    )
+    if (!response.ok) throw await toApiError(response)
+    downloadBlob(await response.text(), `teamflow-${slug}-export.json`, 'application/json')
+  },
+}
+
+function downloadBlob(content: string, filename: string, contentType: string): void {
+  const blob = new Blob([content], { type: contentType })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
 }

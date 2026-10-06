@@ -52,6 +52,10 @@ celery_app.conf.update(
             "task": "teamflow.send_notification_digests",
             "schedule": 24 * 3600,
         },
+        "generate-recurring-tasks-daily": {
+            "task": "teamflow.generate_recurring_tasks",
+            "schedule": 24 * 3600,
+        },
     },
 )
 

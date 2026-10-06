@@ -49,6 +49,7 @@ class ProjectRead(SQLModel):
     status: str
     key: str | None = None
     estimation_unit: str = "points"
+    wip_enforced: bool = False
     owner_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime | None

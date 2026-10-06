@@ -201,6 +201,42 @@ Phase 1 of the competitive plan is implemented on top of the existing board:
   Markdown editor, the advertised `member.joined` webhook is now dispatched,
   and `NotificationType.TASK_COMPLETED` is emitted to watchers.
 
+## Planning depth (M2)
+
+Phase 2 adds Jira-class planning while keeping the simple default:
+
+- **Custom workflows & boards** — per-project statuses with categories,
+  transition rules, WIP limits (optional enforcement) and multiple saved boards
+  with TeamQL filters and swimlanes (assignee/priority/label). The classic
+  four-column flow stays the default until a project saves its own workflow.
+  `GET/PUT /projects/{id}/workflow`, `/projects/{id}/boards`, `/organizations/{slug}/boards/{id}`.
+- **Custom fields** — typed fields (text/number/date/select/multi-select/user/
+  checkbox) per project, stored as JSON values; filterable through TeamQL
+  (`cf_<key> = value`). `/projects/{id}/custom-fields`.
+- **Task links & dependencies** — blocks / is blocked by / relates to /
+  duplicates / clones with cycle prevention and a derived `is_blocked` flag
+  (`?blocked=true` filter). `/tasks/{id}/links`.
+- **Agile reports** — burndown, velocity, cumulative flow (status-history
+  aware), cycle/lead time (avg/P50/P85, CSV export) and sprint reports.
+  `/projects/{id}/reports/*`, `/sprints/{id}/report`.
+- **Velocity & capacity** — per-sprint member capacity with overload
+  detection. `GET/PUT /sprints/{id}/capacity`.
+- **Time tracking** — worklogs per task/user, `actual_estimate` kept in sync
+  with logged hours, and an org timesheet with weekly totals.
+  `/tasks/{id}/worklogs`, `/organizations/{slug}/timesheet`.
+- **Templates** — built-in Scrum/Kanban/Bug-triage presets, save any project
+  as a template (workflow, labels, fields, boards, hierarchy) and task
+  templates with checklists. `/organizations/{slug}/project-templates`,
+  `/task-templates/{id}/apply`.
+- **Recurring tasks** — RFC 5545 RRULEs; completing a task (or the daily
+  sweep) spawns the next occurrence idempotently.
+- **Multiple assignees & checklists** — role-bearing assignees
+  (assignee/approver) plus checklist items with progress.
+- **Import & export** — Jira/Asana/generic CSV and Trello JSON importers
+  (dry-run supported) and a full workspace JSON export (optionally with
+  attachment URLs) plus per-project CSV. `POST /organizations/{slug}/imports`,
+  `GET /organizations/{slug}/export`.
+
 ## Key behaviors
 
 - **Tenant isolation**: every tenant row carries `organization_id`; org-scoped

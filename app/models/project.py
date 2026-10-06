@@ -4,6 +4,7 @@ import uuid
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
+    Boolean,
     Column,
     ForeignKey,
     Index,
@@ -71,6 +72,10 @@ class Project(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     estimation_unit: str = Field(
         sa_column=Column(String(16), nullable=False, server_default="points")
     )
+    # When true, moving tasks into a workflow status at its WIP limit is rejected.
+    wip_enforced: bool = Field(
+        sa_column=Column(Boolean, nullable=False, server_default="false")
+    )
     owner_id: uuid.UUID | None = Field(
         default=None,
         sa_column=Column(
@@ -87,6 +92,7 @@ class Project(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         kwargs.setdefault("status", ProjectStatus.ACTIVE)
         kwargs.setdefault("issue_counter", 0)
         kwargs.setdefault("estimation_unit", EstimationUnit.POINTS)
+        kwargs.setdefault("wip_enforced", False)
         super().__init__(**kwargs)
 
     def __repr__(self) -> str:

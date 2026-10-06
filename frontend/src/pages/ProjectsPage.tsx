@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FolderKanban, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -14,10 +14,11 @@ import {
   Input,
   Modal,
   PageSpinner,
+  Select,
   Textarea,
 } from '../components/ui'
 import { useToast } from '../contexts/toast'
-import { ApiError, projectsApi } from '../lib/api'
+import { ApiError, projectsApi, templatesApi } from '../lib/api'
 import { useProjects } from '../lib/hooks'
 import { canManage } from '../lib/types'
 import { cn, formatDate } from '../lib/utils'
@@ -38,16 +39,33 @@ export function ProjectsPage() {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [templateId, setTemplateId] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  const templates = useQuery({
+    queryKey: ['orgs', org.slug, 'project-templates'],
+    queryFn: () => templatesApi.listProjectTemplates(org.slug),
+  })
 
   const create = useMutation({
     mutationFn: () =>
-      projectsApi.create(org.slug, { name: name.trim(), description: description.trim() || undefined }),
+      templateId
+        ? templatesApi.createProjectFromTemplate(org.slug, {
+            name: name.trim(),
+            template_id: templateId,
+            description: description.trim() || null,
+          })
+        : projectsApi.create(org.slug, {
+            name: name.trim(),
+            description: description.trim() || undefined,
+          }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['orgs', org.slug, 'projects'] })
+      void queryClient.invalidateQueries({ queryKey: ['orgs', org.slug, 'labels'] })
       setOpen(false)
       setName('')
       setDescription('')
+      setTemplateId('')
       setError(null)
       toast.success('Project created')
     },
@@ -151,6 +169,20 @@ export function ProjectsPage() {
       >
         <div className="space-y-4">
           {error && <ErrorState message={error} />}
+          <Field
+            label="Template"
+            hint="Scrum/Kanban/Bug triage preset, a saved template, or blank"
+          >
+            <Select value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
+              <option value="">Blank project</option>
+              {(templates.data ?? []).map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.is_builtin ? '★ ' : ''}
+                  {template.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <Field label="Name">
             <Input
               autoFocus

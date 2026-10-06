@@ -16,11 +16,13 @@ from app.services import cache
 
 
 async def compute_stats(db: AsyncSession, organization_id: uuid.UUID) -> dict:
+    # Buckets follow the workflow *category* so custom statuses roll up into
+    # the canonical four columns.
     by_status_rows = (
         await db.execute(
-            select(Task.status, func.count(Task.id))
+            select(Task.status_category, func.count(Task.id))
             .where(Task.organization_id == organization_id)
-            .group_by(Task.status)
+            .group_by(Task.status_category)
         )
     ).all()
     by_status = {row[0]: row[1] for row in by_status_rows}
@@ -31,8 +33,12 @@ async def compute_stats(db: AsyncSession, organization_id: uuid.UUID) -> dict:
     extra = (
         await db.execute(
             select(
-                func.count(Task.id).filter(Task.due_date < now, Task.status != TaskStatus.DONE),
-                func.count(Task.id).filter(Task.assignee_id.is_(None), Task.status != TaskStatus.DONE),
+                func.count(Task.id).filter(
+                    Task.due_date < now, Task.status_category != TaskStatus.DONE
+                ),
+                func.count(Task.id).filter(
+                    Task.assignee_id.is_(None), Task.status_category != TaskStatus.DONE
+                ),
             ).where(Task.organization_id == organization_id)
         )
     ).one()
@@ -56,7 +62,7 @@ async def compute_stats(db: AsyncSession, organization_id: uuid.UUID) -> dict:
         await db.execute(
             select(func.count(Membership.id)).where(
                 Membership.organization_id == organization_id,
-                Membership.is_active == True,  # noqa: E712
+                Membership.is_active == True,
             )
         )
     ).scalar_one()
@@ -67,7 +73,7 @@ async def compute_stats(db: AsyncSession, organization_id: uuid.UUID) -> dict:
             .join(Task, Task.assignee_id == User.id)
             .where(
                 Task.organization_id == organization_id,
-                Task.status != TaskStatus.DONE,
+                Task.status_category != TaskStatus.DONE,
             )
             .group_by(User.id, User.full_name)
             .order_by(func.count(Task.id).desc())

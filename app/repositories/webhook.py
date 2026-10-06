@@ -35,7 +35,7 @@ class WebhookRepository:
         portable across PG/SQLite without JSON-array dialect gymnastics."""
         statement = select(Webhook).where(
             Webhook.organization_id == organization_id,
-            Webhook.is_active == True,  # noqa: E712
+            Webhook.is_active == True,
         )
         webhooks = list((await self.db.execute(statement)).scalars().all())
         return [w for w in webhooks if event in (w.events or [])]

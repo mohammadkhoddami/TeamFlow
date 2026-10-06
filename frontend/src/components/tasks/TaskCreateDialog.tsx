@@ -8,13 +8,11 @@ import { useInvalidateTasks, useLabels, useTasks } from '../../lib/hooks'
 import {
   PRIORITIES,
   PRIORITY_LABELS,
-  STATUS_LABELS,
   TASK_TYPES,
   TYPE_LABELS,
   allowedParentTypes,
   type ProjectRead,
   type TaskPriority,
-  type TaskStatus,
   type TaskType,
 } from '../../lib/types'
 import { fromDateTimeLocal } from '../../lib/utils'
@@ -35,7 +33,7 @@ export function TaskCreateDialog({
   onClose: () => void
   projectId: string
   projects?: ProjectRead[]
-  defaultStatus?: TaskStatus
+  defaultStatus?: string
   defaultParentId?: string | null
   defaultType?: TaskType
 }) {
@@ -119,7 +117,9 @@ export function TaskCreateDialog({
       open={open}
       onClose={onClose}
       title={`New ${TYPE_LABELS[taskType].toLowerCase()}`}
-      description={defaultStatus !== 'todo' ? `Will be placed in ${STATUS_LABELS[defaultStatus]}` : undefined}
+      description={
+        defaultStatus !== 'todo' ? `Will be placed in ${defaultStatus}` : undefined
+      }
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>

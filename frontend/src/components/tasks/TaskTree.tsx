@@ -2,12 +2,12 @@ import { ChevronDown, ChevronRight, Network, Plus } from 'lucide-react'
 import { useState } from 'react'
 
 import { Avatar, Badge, Button, EmptyState } from '../ui'
-import type { TaskRead, TaskTreeNode } from '../../lib/types'
+import type { TaskRead, TaskTreeNode, WorkflowStatusRead } from '../../lib/types'
 import {
   PRIORITY_BADGE,
   PRIORITY_LABELS,
-  STATUS_BADGE,
-  STATUS_LABELS,
+  CATEGORY_BADGE,
+  statusName,
   TYPE_BADGE,
   TYPE_LABELS,
 } from '../../lib/types'
@@ -15,10 +15,12 @@ import { cn } from '../../lib/utils'
 
 export function TaskTree({
   nodes,
+  statuses,
   onOpen,
   onAddChild,
 }: {
   nodes: TaskTreeNode[]
+  statuses?: WorkflowStatusRead[]
   onOpen: (task: TaskRead) => void
   onAddChild?: (task: TaskRead) => void
 }) {
@@ -118,7 +120,9 @@ export function TaskTree({
             <span className="hidden text-[11px] text-slate-400 md:inline">Unassigned</span>
           )}
 
-          <Badge className={STATUS_BADGE[node.status]}>{STATUS_LABELS[node.status]}</Badge>
+          <Badge className={CATEGORY_BADGE[node.status_category]}>
+            {statusName(statuses, node.status)}
+          </Badge>
 
           {onAddChild && node.type !== 'task' && (
             <Button

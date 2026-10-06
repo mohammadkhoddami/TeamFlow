@@ -1,4 +1,6 @@
 import {
+  BarChart3,
+  Clock,
   FolderKanban,
   LayoutDashboard,
   ListTodo,
@@ -28,6 +30,8 @@ const NAV_ITEMS = [
   { to: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: 'projects', label: 'Projects', icon: FolderKanban },
   { to: 'tasks', label: 'Tasks', icon: ListTodo },
+  { to: 'reports', label: 'Reports', icon: BarChart3 },
+  { to: 'timesheet', label: 'Timesheet', icon: Clock },
   { to: 'members', label: 'Members', icon: Users },
   { to: 'labels', label: 'Labels', icon: Tags },
   { to: 'webhooks', label: 'Webhooks', icon: Webhook, adminOnly: true },

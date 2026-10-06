@@ -161,6 +161,7 @@ def parse_teamql(
     members_by_email: dict[str, uuid.UUID] | None = None,
     labels_by_name: dict[str, uuid.UUID] | None = None,
     sprints_by_name: dict[str, uuid.UUID] | None = None,
+    custom_fields_by_key: dict[str, uuid.UUID] | None = None,
 ) -> tuple[TaskFilters, str | None]:
     """Translates a TeamQL string into `(TaskFilters, sort)`.
 
@@ -186,6 +187,9 @@ def parse_teamql(
     members_by_email = {k.lower(): v for k, v in (members_by_email or {}).items()}
     labels_by_name = {k.lower(): v for k, v in (labels_by_name or {}).items()}
     sprints_by_name = {k.lower(): v for k, v in (sprints_by_name or {}).items()}
+    custom_fields_by_key = {
+        k.lower(): v for k, v in (custom_fields_by_key or {}).items()
+    }
 
     kwargs: dict = {}
     for part in _split_and(query):
@@ -336,6 +340,20 @@ def parse_teamql(
                 if parsed is None:
                     raise ValidationFailedError("'parent' expects a task UUID or 'none'")
                 kwargs["parent_id"] = parsed
+        elif field.startswith("cf_"):
+            key = field[3:]
+            field_id = custom_fields_by_key.get(key)
+            if field_id is None:
+                raise ValidationFailedError(f"Unknown custom field '{key}'")
+            if op not in ("=", "!=", "~"):
+                raise ValidationFailedError(
+                    f"Custom fields support =, != and ~ (got '{op}')"
+                )
+            if is_empty:
+                raise ValidationFailedError("Custom fields do not support 'is empty'")
+            kwargs.setdefault("custom_filters", []).append(
+                (field_id, op, " ".join(values))
+            )
         else:
             raise ValidationFailedError(f"Unknown field '{field}'")
 

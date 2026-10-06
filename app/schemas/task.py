@@ -2,12 +2,14 @@
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 from sqlmodel import SQLModel
 
 from app.schemas.auth import UserRead
+from app.schemas.checklist import TaskAssigneeEntry, TaskAssigneeRead
+from app.schemas.custom_field import CustomFieldValueRead
 from app.schemas.label import LabelRead
 
 StatusLiteral = Literal["todo", "in_progress", "in_review", "done"]
@@ -45,12 +47,18 @@ class TaskCreate(SQLModel):
     estimate: float | None = Field(default=None, ge=0, le=100_000)
     remaining_estimate: float | None = Field(default=None, ge=0, le=100_000)
     actual_estimate: float | None = Field(default=None, ge=0, le=100_000)
+    # M2: custom field values keyed by field key or UUID.
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
+    assignees: list[TaskAssigneeEntry] = Field(default_factory=list, max_length=20)
+    checklist: list[str] = Field(default_factory=list, max_length=50)
+    recurrence_rule: str | None = Field(default=None, max_length=255)
 
 
 class TaskUpdate(SQLModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=20_000)
-    status: StatusLiteral | None = None
+    # Any workflow status key for the task's project (custom statuses allowed).
+    status: str | None = Field(default=None, max_length=32)
     priority: PriorityLiteral | None = None
     due_date: datetime | None = None
     assignee_id: uuid.UUID | None = None
@@ -61,6 +69,8 @@ class TaskUpdate(SQLModel):
     estimate: float | None = Field(default=None, ge=0, le=100_000)
     remaining_estimate: float | None = Field(default=None, ge=0, le=100_000)
     actual_estimate: float | None = Field(default=None, ge=0, le=100_000)
+    custom_fields: dict[str, Any] | None = None
+    recurrence_rule: str | None = Field(default=None, max_length=255)
 
 
 class TaskRead(SQLModel):
@@ -72,6 +82,7 @@ class TaskRead(SQLModel):
     title: str
     description: str | None
     status: str
+    status_category: str = "todo"
     priority: str
     type: str
     due_date: datetime | None
@@ -88,11 +99,22 @@ class TaskRead(SQLModel):
     sprint_id: uuid.UUID | None = None
     sprint_name: str | None = None
     archived_at: datetime | None = None
+    recurrence_rule: str | None = None
+    recurrence_source_id: uuid.UUID | None = None
     assignee: UserRead | None = None
     creator: UserRead | None = None
     parent: TaskParentRef | None = None
     labels: list[LabelRead] = Field(default_factory=list)
     watcher_ids: list[uuid.UUID] = Field(default_factory=list)
+    # M2 projections (batched by the route serializer).
+    custom_fields: list[CustomFieldValueRead] = Field(default_factory=list)
+    assignees: list[TaskAssigneeRead] = Field(default_factory=list)
+    checklist_total: int = 0
+    checklist_done: int = 0
+    logged_minutes: int = 0
+    is_blocked: bool = False
+    blocks_count: int = 0
+    blocked_by_count: int = 0
     # Direct children only (roll-ups are derived in the tree endpoint).
     child_count: int = 0
     done_child_count: int = 0
@@ -111,4 +133,5 @@ class TaskTreeNode(TaskRead):
 class TaskMove(SQLModel):
     """Explicit status-transition endpoint body (more API-visible than PATCH)."""
 
-    status: StatusLiteral
+    # Any workflow status key for the task's project (custom statuses allowed).
+    status: str = Field(min_length=1, max_length=32)

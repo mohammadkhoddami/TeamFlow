@@ -35,11 +35,18 @@ async def _validate_query(db: AsyncSession, org_id: uuid.UUID, query: str) -> No
     for sprint, project_name in await SprintRepository(db).list_for_org(org_id):
         sprints[f"{project_name}:{sprint.name}".lower()] = sprint.id
         sprints.setdefault(sprint.name.lower(), sprint.id)
+    custom_fields_by_key: dict[str, uuid.UUID] = {}
+    from app.repositories import CustomFieldRepository
+
+    for project in (await ProjectRepository(db).list_for_org(org_id, limit=200))[0]:
+        for field in await CustomFieldRepository(db).list_for_project(project.id):
+            custom_fields_by_key.setdefault(field.key.lower(), field.id)
     parse_teamql(
         query,
         members_by_email=emails,
         labels_by_name=labels_by_name,
         sprints_by_name=sprints,
+        custom_fields_by_key=custom_fields_by_key,
     )
 
 

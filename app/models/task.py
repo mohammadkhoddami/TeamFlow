@@ -124,6 +124,8 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         Index("ix_tasks_org_type", "organization_id", "type"),
         Index("ix_tasks_org_sprint", "organization_id", "sprint_id"),
         Index("ix_tasks_org_archived", "organization_id", "archived_at"),
+        Index("ix_tasks_org_category", "organization_id", "status_category"),
+        Index("ix_tasks_org_recurrence", "organization_id", "recurrence_rule"),
         UniqueConstraint("project_id", "number", name="uq_tasks_project_number"),
     )
 
@@ -147,7 +149,12 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     description: str | None = Field(
         default=None, sa_column=Column(Text, nullable=True)
     )
-    status: str = Field(sa_column=Column(String(16), nullable=False))
+    status: str = Field(sa_column=Column(String(32), nullable=False))
+    # Denormalized workflow category of `status` (todo/in_progress/in_review/
+    # done) so done-checks, reports and aggregates work with custom statuses.
+    status_category: str = Field(
+        sa_column=Column(String(16), nullable=False, server_default="todo")
+    )
     priority: str = Field(sa_column=Column(String(16), nullable=False))
     type: str = Field(sa_column=Column(String(16), nullable=False, server_default="task"))
     # Human-readable issue key, denormalized for display everywhere tasks are
@@ -177,6 +184,18 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     archived_at: datetime | None = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    # RFC 5545 RRULE for recurring tasks; completion spawns the next occurrence.
+    recurrence_rule: str | None = Field(
+        default=None, sa_column=Column(String(255), nullable=True)
+    )
+    recurrence_source_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("tasks.id", ondelete="SET NULL", name="fk_tasks_recurrence_source"),
+            nullable=True,
+        ),
     )
     due_date: datetime | None = Field(
         default=None,
@@ -241,6 +260,7 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
 
     def __init__(self, **kwargs: object) -> None:
         kwargs.setdefault("status", TaskStatus.TODO)
+        kwargs.setdefault("status_category", kwargs.get("status", TaskStatus.TODO))
         kwargs.setdefault("priority", TaskPriority.MEDIUM)
         kwargs.setdefault("type", TaskType.TASK)
         super().__init__(**kwargs)

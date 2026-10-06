@@ -1,15 +1,31 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, CalendarRange, Download, LayoutGrid, Network, Plus, Settings2 } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  ArrowLeft,
+  CalendarRange,
+  Columns3,
+  Download,
+  FileDown,
+  LayoutGrid,
+  Network,
+  Plus,
+  Save,
+  Settings2,
+  SlidersHorizontal,
+  Workflow,
+} from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { useOrg } from '../components/OrgLayout'
 import { BacklogView } from '../components/tasks/BacklogView'
+import { BoardManager } from '../components/tasks/BoardManager'
+import { CustomFieldsManager } from '../components/tasks/CustomFieldsManager'
 import { SprintManager } from '../components/tasks/SprintManager'
 import { TaskBoard } from '../components/tasks/TaskBoard'
 import { TaskCreateDialog } from '../components/tasks/TaskCreateDialog'
 import { TaskDetailDrawer } from '../components/tasks/TaskDetailDrawer'
 import { TaskTree } from '../components/tasks/TaskTree'
+import { WorkflowManager } from '../components/tasks/WorkflowManager'
 import {
   Badge,
   Button,
@@ -24,10 +40,18 @@ import {
   Textarea,
 } from '../components/ui'
 import { useToast } from '../contexts/toast'
-import { ApiError, tasksApi, projectsApi } from '../lib/api'
-import { useInvalidateTasks, useProject, useSprints, useTasks, useTaskTree } from '../lib/hooks'
+import { ApiError, dataApi, tasksApi, projectsApi, templatesApi } from '../lib/api'
+import {
+  useBoards,
+  useInvalidateTasks,
+  useProject,
+  useSprints,
+  useTasks,
+  useTaskTree,
+  useWorkflow,
+} from '../lib/hooks'
 import { downloadOpenTasksMarkdown } from '../lib/taskExport'
-import { canManage, type TaskRead, type TaskStatus, type TaskType } from '../lib/types'
+import { canManage, type TaskRead, type TaskType } from '../lib/types'
 import { cn, formatDate } from '../lib/utils'
 import { createProjectSocket, type SocketStatus } from '../lib/ws'
 
@@ -41,7 +65,14 @@ export function ProjectPage() {
 
   const project = useProject(projectId)
   const sprints = useSprints(projectId)
+  const workflow = useWorkflow(projectId)
+  const boards = useBoards(projectId)
   const [sprintFilter, setSprintFilter] = useState<string>('')
+  const [boardId, setBoardId] = useState<string>('')
+  const selectedBoard =
+    boards.data?.find((board) => board.id === boardId) ??
+    boards.data?.find((board) => board.is_default)
+  const boardFilter = selectedBoard?.filter_query?.trim() || ''
   const taskFilters = useMemo(
     () => ({
       project_id: projectId,
@@ -51,14 +82,20 @@ export function ProjectPage() {
     }),
     [projectId, sprintFilter],
   )
-  const tasks = useTasks(org.slug, taskFilters)
+  const plainTasks = useTasks(org.slug, taskFilters)
+  const filteredTasks = useQuery({
+    queryKey: ['orgs', org.slug, 'tasks', 'board-filter', boardFilter],
+    queryFn: () => tasksApi.query(org.slug, boardFilter, { limit: 100 }),
+    enabled: Boolean(boardFilter),
+  })
+  const tasks = boardFilter ? filteredTasks : plainTasks
   const tree = useTaskTree(projectId)
 
   const [socketStatus, setSocketStatus] = useState<SocketStatus>('connecting')
   const [selectedTask, setSelectedTask] = useState<TaskRead | null>(null)
   const selectedTaskIdRef = useRef<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const [createStatus, setCreateStatus] = useState<TaskStatus>('todo')
+  const [createStatus, setCreateStatus] = useState<string>('todo')
   const [createParent, setCreateParent] = useState<TaskRead | null>(null)
   const [createType, setCreateType] = useState<TaskType>('task')
   const [view, setView] = useState<'board' | 'tree' | 'backlog'>('board')
@@ -66,6 +103,11 @@ export function ProjectPage() {
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [managingSprints, setManagingSprints] = useState(false)
+  const [managingWorkflow, setManagingWorkflow] = useState(false)
+  const [managingBoards, setManagingBoards] = useState(false)
+  const [managingFields, setManagingFields] = useState(false)
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [templateName, setTemplateName] = useState('')
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -95,7 +137,7 @@ export function ProjectPage() {
   }, [selectedTask])
 
   const startCreate = (options?: {
-    status?: TaskStatus
+    status?: string
     parent?: TaskRead | null
     type?: TaskType
   }) => {
@@ -129,7 +171,7 @@ export function ProjectPage() {
   }, [projectId, org.slug, invalidate, queryClient])
 
   const move = useMutation({
-    mutationFn: ({ taskId, status: next }: { taskId: string; status: TaskStatus }) =>
+    mutationFn: ({ taskId, status: next }: { taskId: string; status: string }) =>
       tasksApi.move(taskId, next),
     onSuccess: () => invalidate(org.slug),
     onError: (err) =>
@@ -152,6 +194,17 @@ export function ProjectPage() {
       toast.success('Project updated')
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not save project'),
+  })
+
+  const saveTemplate = useMutation({
+    mutationFn: () =>
+      templatesApi.saveProjectAsTemplate(projectId!, { name: templateName.trim() }),
+    onSuccess: () => {
+      toast.success('Project template saved')
+      setSavingTemplate(false)
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : 'Could not save template'),
   })
 
   const deleteProject = useMutation({
@@ -259,6 +312,21 @@ export function ProjectPage() {
             </div>
             {view === 'board' && (
               <>
+                {(boards.data ?? []).length > 0 && (
+                  <Select
+                    className="w-auto"
+                    value={selectedBoard?.id ?? ''}
+                    onChange={(event) => setBoardId(event.target.value)}
+                    title="Saved board"
+                  >
+                    {boards.data!.map((board) => (
+                      <option key={board.id} value={board.id}>
+                        {board.name}
+                        {board.is_default ? ' (default)' : ''}
+                      </option>
+                    ))}
+                  </Select>
+                )}
                 <Select
                   className="w-auto"
                   value={sprintFilter}
@@ -303,6 +371,41 @@ export function ProjectPage() {
               </>
             )}
             {canManage(role) && (
+              <>
+                <Button variant="secondary" size="sm" onClick={() => setManagingWorkflow(true)}>
+                  <Workflow className="h-3.5 w-3.5" /> Workflow
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setManagingBoards(true)}>
+                  <Columns3 className="h-3.5 w-3.5" /> Boards
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setManagingFields(true)}>
+                  <SlidersHorizontal className="h-3.5 w-3.5" /> Fields
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setTemplateName(`${project.data.name} template`)
+                    setSavingTemplate(true)
+                  }}
+                >
+                  <Save className="h-3.5 w-3.5" /> Template
+                </Button>
+              </>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              title="Download all project tasks as CSV"
+              onClick={() =>
+                void dataApi
+                  .downloadProjectCsv(project.data.id, `${project.data.name}.csv`)
+                  .catch(() => toast.error('Could not export CSV'))
+              }
+            >
+              <FileDown className="h-3.5 w-3.5" /> CSV
+            </Button>
+            {canManage(role) && (
               <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
                 <Settings2 className="h-3.5 w-3.5" /> Project settings
               </Button>
@@ -323,6 +426,9 @@ export function ProjectPage() {
           {tasks.data && (
             <TaskBoard
               tasks={boardTasks}
+              statuses={workflow.data ?? []}
+              swimlaneBy={selectedBoard?.swimlane_by ?? 'none'}
+              wipEnforced={project.data.wip_enforced}
               onOpen={setSelectedTask}
               onMove={(taskId, next) => move.mutate({ taskId, status: next })}
               onAdd={(next) => startCreate({ status: next })}
@@ -345,6 +451,7 @@ export function ProjectPage() {
           {tree.data && (
             <TaskTree
               nodes={tree.data}
+              statuses={workflow.data}
               onOpen={setSelectedTask}
               onAddChild={(parent) => startCreate({ parent })}
             />
@@ -452,11 +559,57 @@ export function ProjectPage() {
       />
 
       {projectId && (
-        <SprintManager
-          projectId={projectId}
-          open={managingSprints}
-          onClose={() => setManagingSprints(false)}
-        />
+        <>
+          <SprintManager
+            projectId={projectId}
+            open={managingSprints}
+            onClose={() => setManagingSprints(false)}
+          />
+          <WorkflowManager
+            projectId={projectId}
+            open={managingWorkflow}
+            onClose={() => setManagingWorkflow(false)}
+          />
+          <BoardManager
+            projectId={projectId}
+            slug={org.slug}
+            open={managingBoards}
+            onClose={() => setManagingBoards(false)}
+          />
+          <CustomFieldsManager
+            projectId={projectId}
+            open={managingFields}
+            onClose={() => setManagingFields(false)}
+          />
+          <Modal
+            open={savingTemplate}
+            onClose={() => setSavingTemplate(false)}
+            title="Save as project template"
+            description="Snapshots the workflow, labels, custom fields, boards and hierarchy."
+            footer={
+              <>
+                <Button variant="secondary" onClick={() => setSavingTemplate(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => saveTemplate.mutate()}
+                  loading={saveTemplate.isPending}
+                  disabled={!templateName.trim()}
+                >
+                  Save template
+                </Button>
+              </>
+            }
+          >
+            <Field label="Template name">
+              <Input
+                value={templateName}
+                maxLength={128}
+                onChange={(event) => setTemplateName(event.target.value)}
+              />
+            </Field>
+          </Modal>
+        </>
       )}
     </div>
   )

@@ -16,9 +16,14 @@ import {
 } from '../components/ui'
 import { useAuth } from '../contexts/auth'
 import { useToast } from '../contexts/toast'
-import { ApiError, authApi, organizationsApi, preferencesApi } from '../lib/api'
-import { qk, useNotificationPreferences } from '../lib/hooks'
-import { isAdmin, isOwner, type NotificationPreferenceRead } from '../lib/types'
+import { ApiError, authApi, dataApi, organizationsApi, preferencesApi } from '../lib/api'
+import { qk, useNotificationPreferences, useProjects } from '../lib/hooks'
+import {
+  isAdmin,
+  isOwner,
+  type ImportSummary,
+  type NotificationPreferenceRead,
+} from '../lib/types'
 
 export function SettingsPage() {
   const { org, role } = useOrg()
@@ -71,6 +76,33 @@ export function SettingsPage() {
       void logout()
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not revoke sessions'),
+  })
+
+  const projects = useProjects(org.slug)
+  const [importProject, setImportProject] = useState('')
+  const [importFormat, setImportFormat] = useState('csv')
+  const [importDryRun, setImportDryRun] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null)
+
+  const runImport = useMutation({
+    mutationFn: () =>
+      dataApi.importFile(org.slug, {
+        project_id: importProject,
+        format: importFormat,
+        dry_run: importDryRun,
+        file: importFile as File,
+      }),
+    onSuccess: (summary) => {
+      setImportSummary(summary)
+      void queryClient.invalidateQueries({ queryKey: ['orgs', org.slug] })
+      toast.success(
+        summary.dry_run
+          ? `Dry run: would import ${summary.created_tasks} tasks`
+          : `Imported ${summary.created_tasks} tasks`,
+      )
+    },
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Import failed'),
   })
 
   const preferences = useNotificationPreferences()
@@ -140,6 +172,80 @@ export function SettingsPage() {
           >
             Log out everywhere
           </Button>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Import & export"
+          description="Migrate from Jira/Trello/Asana/CSV, or take your whole workspace with you."
+        />
+        <div className="space-y-4 p-5">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Field label="Target project">
+              <Select value={importProject} onChange={(event) => setImportProject(event.target.value)}>
+                <option value="">Select project…</option>
+                {(projects.data ?? []).map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Format">
+              <Select value={importFormat} onChange={(event) => setImportFormat(event.target.value)}>
+                <option value="csv">Generic CSV</option>
+                <option value="jira_csv">Jira CSV</option>
+                <option value="asana_csv">Asana CSV</option>
+                <option value="trello_json">Trello JSON</option>
+              </Select>
+            </Field>
+            <Field label="File" hint="UTF-8, max 10 MB">
+              <Input
+                type="file"
+                accept=".csv,.json,text/csv,application/json"
+                onChange={(event) => setImportFile(event.target.files?.[0] ?? null)}
+              />
+            </Field>
+          </div>
+          <Checkbox
+            label="Dry run (parse and validate without writing)"
+            checked={importDryRun}
+            onChange={(event) => setImportDryRun(event.target.checked)}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => runImport.mutate()}
+              loading={runImport.isPending}
+              disabled={!importProject || !importFile}
+            >
+              Import tasks
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                void dataApi
+                  .downloadWorkspace(org.slug)
+                  .catch(() => toast.error('Could not export workspace'))
+              }
+            >
+              Export workspace (JSON)
+            </Button>
+          </div>
+          {importSummary && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <p className="font-medium text-slate-700">
+                {importSummary.dry_run ? 'Dry run' : 'Import'} — {importSummary.rows} rows,{' '}
+                {importSummary.created_tasks} tasks, {importSummary.created_labels} labels,{' '}
+                {importSummary.skipped} skipped
+              </p>
+              {importSummary.issues.slice(0, 5).map((issue) => (
+                <p key={issue.row} className="mt-0.5 text-amber-700">
+                  Row {issue.row}: {issue.message}
+                </p>
+              ))}
+            </div>
+          )}
         </div>
       </Card>
 

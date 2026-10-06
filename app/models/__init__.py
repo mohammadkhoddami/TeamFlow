@@ -8,7 +8,9 @@ domain modules; this file only wires the public surface.
 from app.models.attachment import Attachment, AttachmentStatus
 from app.models.audit import AuditAction, AuditLog
 from app.models.base import TimeStampedMixin, UUIDMixin, utcnow
+from app.models.checklist import AssigneeRole, ChecklistItem, TaskAssignee
 from app.models.comment import Comment
+from app.models.custom_field import CustomField, CustomFieldType, CustomFieldValue
 from app.models.idempotency import IdempotencyKey, IdempotencyStatus
 from app.models.label import Label
 from app.models.notification import Notification, NotificationType
@@ -27,6 +29,7 @@ from app.models.organization import (
 from app.models.project import EstimationUnit, Project, ProjectStatus
 from app.models.saved_filter import SavedFilter
 from app.models.sprint import Sprint, SprintState
+from app.models.sprint_capacity import SprintCapacity
 from app.models.task import (
     Task,
     TaskLabelLink,
@@ -35,15 +38,25 @@ from app.models.task import (
     TaskType,
     TaskWatcherLink,
 )
+from app.models.task_link import TaskLink, TaskLinkType, TaskStatusHistory
+from app.models.template import ProjectTemplate, TaskTemplate
 from app.models.user import User
 from app.models.webhook import DeliveryStatus, Webhook, WebhookDelivery, WebhookEvent
+from app.models.workflow import Board, SwimlaneBy, WorkflowStatus
+from app.models.worklog import Worklog
 
 __all__ = [
-    "AuditAction",
-    "AuditLog",
+    "AssigneeRole",
     "Attachment",
     "AttachmentStatus",
+    "AuditAction",
+    "AuditLog",
+    "Board",
+    "ChecklistItem",
     "Comment",
+    "CustomField",
+    "CustomFieldType",
+    "CustomFieldValue",
     "DeliveryStatus",
     "DigestCadence",
     "EstimationUnit",
@@ -60,13 +73,21 @@ __all__ = [
     "Organization",
     "Project",
     "ProjectStatus",
+    "ProjectTemplate",
     "SavedFilter",
     "Sprint",
+    "SprintCapacity",
     "SprintState",
+    "SwimlaneBy",
     "Task",
+    "TaskAssignee",
     "TaskLabelLink",
+    "TaskLink",
+    "TaskLinkType",
     "TaskPriority",
     "TaskStatus",
+    "TaskStatusHistory",
+    "TaskTemplate",
     "TaskType",
     "TaskWatcherLink",
     "TimeStampedMixin",
@@ -75,6 +96,8 @@ __all__ = [
     "Webhook",
     "WebhookDelivery",
     "WebhookEvent",
+    "WorkflowStatus",
+    "Worklog",
     "generate_unsubscribe_token",
     "utcnow",
 ]

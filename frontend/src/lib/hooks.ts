@@ -2,6 +2,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 
 import type {
+  BoardRead,
+  ChecklistItemRead,
+  CustomFieldRead,
   DashboardStats,
   InvitationRead,
   LabelRead,
@@ -12,16 +15,23 @@ import type {
   SavedFilterRead,
   SearchResponse,
   SprintRead,
+  TaskAssigneeRead,
+  TaskLinkSummary,
   TaskRead,
   TaskTreeNode,
   WebhookDeliveryRead,
   WebhookRead,
+  WorkflowStatusRead,
+  WorklogRead,
 } from './types'
 import {
   auditApi,
+  checklistApi,
+  customFieldsApi,
   dashboardApi,
   invitationsApi,
   labelsApi,
+  linksApi,
   membersApi,
   notificationsApi,
   organizationsApi,
@@ -32,6 +42,8 @@ import {
   sprintsApi,
   tasksApi,
   webhooksApi,
+  workflowsApi,
+  worklogsApi,
 } from './api'
 import type { TaskFilters } from './api'
 
@@ -66,6 +78,14 @@ export const qk = {
   savedFilters: (slug: string) => ['orgs', slug, 'saved-filters'] as const,
   search: (slug: string, q: string) => ['orgs', slug, 'search', q] as const,
   preferences: ['auth', 'notification-preferences'] as const,
+  workflow: (projectId: string) => ['projects', projectId, 'workflow'] as const,
+  boards: (projectId: string) => ['projects', projectId, 'boards'] as const,
+  customFields: (projectId: string) =>
+    ['projects', projectId, 'custom-fields'] as const,
+  taskLinks: (taskId: string) => ['tasks', taskId, 'links'] as const,
+  taskChecklist: (taskId: string) => ['tasks', taskId, 'checklist'] as const,
+  taskAssignees: (taskId: string) => ['tasks', taskId, 'assignees'] as const,
+  taskWorklogs: (taskId: string) => ['tasks', taskId, 'worklogs'] as const,
 }
 
 const NOTIFICATION_POLL_MS = 30_000
@@ -243,6 +263,62 @@ export function useNotificationPreferences() {
   })
 }
 
+export function useWorkflow(projectId: string | undefined) {
+  return useQuery<WorkflowStatusRead[]>({
+    queryKey: qk.workflow(projectId ?? ''),
+    queryFn: () => workflowsApi.get(projectId as string),
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useBoards(projectId: string | undefined) {
+  return useQuery<BoardRead[]>({
+    queryKey: qk.boards(projectId ?? ''),
+    queryFn: () => workflowsApi.listBoards(projectId as string),
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useCustomFields(projectId: string | undefined) {
+  return useQuery<CustomFieldRead[]>({
+    queryKey: qk.customFields(projectId ?? ''),
+    queryFn: () => customFieldsApi.list(projectId as string),
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useTaskLinks(taskId: string | null | undefined) {
+  return useQuery<TaskLinkSummary>({
+    queryKey: qk.taskLinks(taskId ?? ''),
+    queryFn: () => linksApi.list(taskId as string),
+    enabled: Boolean(taskId),
+  })
+}
+
+export function useTaskChecklist(taskId: string | null | undefined) {
+  return useQuery<ChecklistItemRead[]>({
+    queryKey: qk.taskChecklist(taskId ?? ''),
+    queryFn: () => checklistApi.list(taskId as string),
+    enabled: Boolean(taskId),
+  })
+}
+
+export function useTaskAssignees(taskId: string | null | undefined) {
+  return useQuery<TaskAssigneeRead[]>({
+    queryKey: qk.taskAssignees(taskId ?? ''),
+    queryFn: () => checklistApi.assignees(taskId as string),
+    enabled: Boolean(taskId),
+  })
+}
+
+export function useTaskWorklogs(taskId: string | null | undefined) {
+  return useQuery<WorklogRead[]>({
+    queryKey: qk.taskWorklogs(taskId ?? ''),
+    queryFn: () => worklogsApi.list(taskId as string),
+    enabled: Boolean(taskId),
+  })
+}
+
 export function useInvalidateTasks() {
   const queryClient = useQueryClient()
   return useCallback(
@@ -252,6 +328,10 @@ export function useInvalidateTasks() {
         void queryClient.invalidateQueries({ queryKey: qk.task(taskId) })
         void queryClient.invalidateQueries({ queryKey: qk.comments(taskId) })
         void queryClient.invalidateQueries({ queryKey: qk.attachments(taskId) })
+        void queryClient.invalidateQueries({ queryKey: qk.taskChecklist(taskId) })
+        void queryClient.invalidateQueries({ queryKey: qk.taskLinks(taskId) })
+        void queryClient.invalidateQueries({ queryKey: qk.taskWorklogs(taskId) })
+        void queryClient.invalidateQueries({ queryKey: qk.taskAssignees(taskId) })
       }
     },
     [queryClient],

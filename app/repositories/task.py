@@ -8,12 +8,21 @@ never reaches ORDER BY directly (no column-name injection).
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, ColumnElement, case
+from sqlalchemy import Column, ColumnElement, Text, case
 from sqlalchemy import func as sa_func
+from sqlalchemy.orm import aliased
 from sqlmodel import func, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models import Label, Project, Task, TaskLabelLink, TaskStatus
+from app.models import (
+    CustomFieldValue,
+    Label,
+    Project,
+    Task,
+    TaskLabelLink,
+    TaskLink,
+    TaskStatus,
+)
 
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
@@ -64,6 +73,9 @@ class TaskFilters:
         project_id: uuid.UUID | None = None,
         project_name: str | None = None,
         status: list[str] | None = None,
+        categories: list[str] | None = None,
+        blocked: bool | None = None,
+        custom_filters: list[tuple[uuid.UUID, str, object]] | None = None,
         priority: list[str] | None = None,
         type: list[str] | None = None,
         exclude_status: list[str] | None = None,
@@ -100,6 +112,9 @@ class TaskFilters:
         self.project_id = project_id
         self.project_name = project_name
         self.status = status or None
+        self.categories = categories or None
+        self.blocked = blocked
+        self.custom_filters = custom_filters or None
         self.priority = priority or None
         self.type = type or None
         self.exclude_status = exclude_status or None
@@ -147,6 +162,45 @@ class TaskFilters:
             )
         if self.status:
             conds.append(Task.status.in_(self.status))
+        if self.categories:
+            conds.append(Task.status_category.in_(self.categories))
+        if self.blocked is not None:
+            blocker = aliased(Task, name="blocker")
+            blocked_exists = (
+                select(TaskLink.id)
+                .join(blocker, blocker.id == TaskLink.from_task_id)
+                .where(
+                    TaskLink.to_task_id == Task.id,
+                    TaskLink.link_type == "blocks",
+                    blocker.status_category != TaskStatus.DONE,
+                )
+                .exists()
+            )
+            conds.append(blocked_exists if self.blocked else ~blocked_exists)
+        for field_id, op, value in self.custom_filters or []:
+            matching = select(CustomFieldValue.task_id).where(
+                CustomFieldValue.field_id == field_id
+            )
+            if op in ("=", "!="):
+                candidates = {str(value)}
+                try:
+                    numeric = float(str(value))
+                    candidates.add(str(numeric))
+                    candidates.add(f"{numeric:g}")
+                except ValueError:
+                    pass
+                matching = matching.where(
+                    sa_func.cast(CustomFieldValue.value, Text).in_(candidates)
+                )
+            elif op == "~":
+                matching = matching.where(
+                    sa_func.cast(CustomFieldValue.value, Text).ilike(f"%{value}%")
+                )
+            else:
+                continue
+            conds.append(
+                Task.id.not_in(matching) if op == "!=" else Task.id.in_(matching)
+            )
         if self.priority:
             conds.append(Task.priority.in_(self.priority))
         if self.type:
@@ -223,7 +277,7 @@ class TaskFilters:
             conds.append(Task.due_date.is_(None))
         if self.overdue:
             conds.append(Task.due_date < datetime.now(UTC))
-            conds.append(Task.status != "done")
+            conds.append(Task.status_category != TaskStatus.DONE)
         if self.created_before is not None:
             conds.append(Task.created_at <= self.created_before)
         if self.created_after is not None:
@@ -343,7 +397,7 @@ class TaskRepository:
         """
         if not parent_ids:
             return {}
-        done_expr = func.sum(case((Task.status == TaskStatus.DONE, 1), else_=0))
+        done_expr = func.sum(case((Task.status_category == TaskStatus.DONE, 1), else_=0))
         statement = (
             select(Task.parent_id, func.count(Task.id), done_expr)
             .where(

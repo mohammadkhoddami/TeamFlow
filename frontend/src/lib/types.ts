@@ -64,9 +64,279 @@ export interface ProjectRead {
   status: 'active' | 'archived'
   key: string | null
   estimation_unit: EstimationUnit
+  wip_enforced: boolean
   owner_id: string | null
   created_at: string
   updated_at: string | null
+}
+
+export type TaskCategory = 'todo' | 'in_progress' | 'in_review' | 'done'
+
+export interface WorkflowStatusRead {
+  id: string | null
+  key: string
+  name: string
+  category: TaskCategory
+  wip_limit: number | null
+  transitions: string[]
+  position: number
+}
+
+export interface WorkflowStatusInput {
+  key: string
+  name: string
+  category: TaskCategory
+  wip_limit?: number | null
+  transitions: string[]
+}
+
+export type SwimlaneBy = 'none' | 'assignee' | 'priority' | 'label'
+
+export interface BoardRead {
+  id: string
+  organization_id: string
+  project_id: string
+  name: string
+  is_default: boolean
+  swimlane_by: SwimlaneBy
+  filter_query: string | null
+  columns: string[] | null
+}
+
+export type CustomFieldType =
+  | 'text'
+  | 'number'
+  | 'date'
+  | 'select'
+  | 'multi_select'
+  | 'user'
+  | 'checkbox'
+
+export interface CustomFieldRead {
+  id: string
+  organization_id: string
+  project_id: string
+  name: string
+  key: string
+  field_type: CustomFieldType
+  options: string[]
+  is_required: boolean
+  position: number
+  created_at: string
+}
+
+export interface CustomFieldValueRead {
+  field_id: string
+  key: string
+  name: string
+  field_type: CustomFieldType
+  value: unknown
+}
+
+export interface LinkedTaskRef {
+  id: string
+  key: string | null
+  title: string
+  status: string
+  status_category: TaskCategory
+  project_id: string
+}
+
+export interface TaskLinkRead {
+  id: string
+  link_type: string
+  direction: 'out' | 'in'
+  task: LinkedTaskRef
+  created_at: string
+}
+
+export interface TaskLinkSummary {
+  blocks: TaskLinkRead[]
+  blocked_by: TaskLinkRead[]
+  relates_to: TaskLinkRead[]
+  duplicates: TaskLinkRead[]
+  clones: TaskLinkRead[]
+}
+
+export interface BurndownPoint {
+  day: string
+  remaining_points: number
+  remaining_tasks: number
+  ideal_points: number | null
+}
+
+export interface BurndownReport {
+  sprint_id: string
+  sprint_name: string
+  start_date: string | null
+  end_date: string | null
+  total_points: number
+  total_tasks: number
+  points: BurndownPoint[]
+}
+
+export interface VelocityPoint {
+  sprint_id: string
+  sprint_name: string
+  start_date: string | null
+  end_date: string | null
+  committed_points: number
+  completed_points: number
+  committed_tasks: number
+  completed_tasks: number
+}
+
+export interface VelocityReport {
+  project_id: string
+  average_completed_points: number
+  sprints: VelocityPoint[]
+}
+
+export interface CfdPoint {
+  day: string
+  todo: number
+  in_progress: number
+  in_review: number
+  done: number
+}
+
+export interface CfdReport {
+  project_id: string
+  days: number
+  points: CfdPoint[]
+}
+
+export interface CycleTimeItem {
+  task_id: string
+  key: string | null
+  title: string
+  lead_time_days: number
+  cycle_time_days: number | null
+  completed_at: string | null
+}
+
+export interface CycleTimeReport {
+  project_id: string
+  days: number
+  count: number
+  avg_lead_time_days: number | null
+  p50_lead_time_days: number | null
+  p85_lead_time_days: number | null
+  avg_cycle_time_days: number | null
+  p50_cycle_time_days: number | null
+  p85_cycle_time_days: number | null
+  items: CycleTimeItem[]
+}
+
+export interface SprintMemberBreakdown {
+  user_id: string | null
+  name: string
+  assigned_tasks: number
+  completed_tasks: number
+  completed_points: number
+}
+
+export interface SprintReport {
+  sprint_id: string
+  sprint_name: string
+  state: string
+  start_date: string | null
+  end_date: string | null
+  committed_tasks: number
+  committed_points: number
+  completed_tasks: number
+  completed_points: number
+  added_during_sprint: number
+  carried_over: number
+  scope_change_pct: number
+  members: SprintMemberBreakdown[]
+}
+
+export interface CapacityMemberRead {
+  user_id: string
+  name: string
+  capacity: number | null
+  note: string | null
+  assigned_points: number
+  assigned_tasks: number
+  completed_points: number
+  overloaded: boolean
+}
+
+export interface WorklogRead {
+  id: string
+  task_id: string
+  user_id: string | null
+  user_name: string | null
+  minutes: number
+  started_at: string
+  description: string | null
+  created_at: string
+}
+
+export interface TimesheetRow {
+  day: string
+  user_id: string | null
+  user_name: string
+  task_id: string
+  task_key: string | null
+  task_title: string
+  minutes: number
+}
+
+export interface TimesheetReport {
+  date_from: string
+  date_to: string
+  total_minutes: number
+  rows: TimesheetRow[]
+  totals_by_user: { user_id: string | null; user_name: string; minutes: number }[]
+}
+
+export interface ProjectTemplateRead {
+  id: string
+  name: string
+  description: string | null
+  is_builtin: boolean
+  project_id: string | null
+}
+
+export interface TaskTemplateRead {
+  id: string
+  organization_id: string
+  project_id: string | null
+  name: string
+  title: string
+  description: string | null
+  priority: TaskPriority
+  type: TaskType
+  estimate: number | null
+  label_ids: string[]
+  checklist: string[]
+}
+
+export interface ChecklistItemRead {
+  id: string
+  task_id: string
+  text: string
+  is_done: boolean
+  position: number
+}
+
+export interface TaskAssigneeRead {
+  user_id: string
+  name: string
+  email: string
+  role: 'assignee' | 'approver'
+}
+
+export interface ImportSummary {
+  format: string
+  dry_run: boolean
+  rows: number
+  created_tasks: number
+  created_labels: number
+  skipped: number
+  issues: { row: number; message: string }[]
 }
 
 export type SprintState = 'planned' | 'active' | 'completed'
@@ -191,7 +461,8 @@ export interface TaskRead {
   number: number | null
   title: string
   description: string | null
-  status: TaskStatus
+  status: string
+  status_category: TaskCategory
   priority: TaskPriority
   type: TaskType
   due_date: string | null
@@ -208,11 +479,21 @@ export interface TaskRead {
   sprint_id: string | null
   sprint_name: string | null
   archived_at: string | null
+  recurrence_rule: string | null
+  recurrence_source_id: string | null
   assignee?: UserRead | null
   creator?: UserRead | null
   parent?: TaskParentRef | null
   labels: LabelRead[]
   watcher_ids: string[]
+  custom_fields: CustomFieldValueRead[]
+  assignees: TaskAssigneeRead[]
+  checklist_total: number
+  checklist_done: number
+  logged_minutes: number
+  is_blocked: boolean
+  blocks_count: number
+  blocked_by_count: number
   child_count: number
   done_child_count: number
 }
@@ -368,6 +649,28 @@ export const STATUS_BADGE: Record<TaskStatus, string> = {
   in_progress: 'bg-sky-100 text-sky-700',
   in_review: 'bg-amber-100 text-amber-700',
   done: 'bg-emerald-100 text-emerald-700',
+}
+
+// Category badges keep custom workflow statuses visually comparable.
+export const CATEGORY_BADGE: Record<TaskCategory, string> = {
+  todo: 'bg-slate-100 text-slate-700',
+  in_progress: 'bg-sky-100 text-sky-700',
+  in_review: 'bg-amber-100 text-amber-700',
+  done: 'bg-emerald-100 text-emerald-700',
+}
+
+export function statusName(
+  statuses: { key: string; name: string }[] | undefined,
+  key: string,
+): string {
+  return statuses?.find((entry) => entry.key === key)?.name ?? key
+}
+
+export function statusCategory(
+  statuses: { key: string; category: TaskCategory }[] | undefined,
+  key: string,
+): TaskCategory {
+  return statuses?.find((entry) => entry.key === key)?.category ?? 'todo'
 }
 
 export const PRIORITY_BADGE: Record<TaskPriority, string> = {

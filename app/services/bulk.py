@@ -13,19 +13,29 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.exceptions import NotFoundError, ValidationFailedError
+from app.core.exceptions import (
+    NotFoundError,
+    PermissionDeniedError,
+    ValidationFailedError,
+)
 from app.models import (
     AuditAction,
     Membership,
     MembershipRole,
     Organization,
+    Project,
     Task,
     TaskStatus,
+    TaskStatusHistory,
     User,
 )
-from app.repositories import TaskRepository
+from app.repositories import (
+    ProjectRepository,
+    TaskRepository,
+    TaskStatusHistoryRepository,
+)
 from app.schemas import BulkTaskFailure, BulkTaskRequest, BulkTaskResult
-from app.services import audit, cache, events
+from app.services import audit, cache, events, workflows
 from app.services import tasks as task_service
 
 
@@ -39,8 +49,6 @@ async def bulk_operate(
 ) -> BulkTaskResult:
     if data.action == "move_project":
         if membership.role == MembershipRole.MEMBER:
-            from app.core.exceptions import PermissionDeniedError
-
             raise PermissionDeniedError(
                 "Only managers and above can move tasks between projects"
             )
@@ -67,8 +75,6 @@ async def bulk_operate(
         for task in ordered:
             target = None
             if data.project_id is not None and data.project_id != task.project_id:
-                from app.repositories import ProjectRepository
-
                 target = await ProjectRepository(db).get_in_org(data.project_id, org.id)
                 if target is None:
                     failures.append(
@@ -174,25 +180,45 @@ async def bulk_operate(
         valid_label_ids = await task_service._resolve_label_ids(db, org.id, data.label_ids)
 
     sprint_by_project: dict[uuid.UUID, uuid.UUID | None] = {}
+    projects_cache: dict[uuid.UUID, Project] = {}
     completed_ids: list[uuid.UUID] = []
     updated = 0
     for task in ordered:
         task_changed = False
         if data.status is not None and data.status != task.status:
-            allowed = task_service.STATUS_TRANSITIONS.get(task.status, set())
-            if data.status not in allowed:
-                failures.append(
-                    BulkTaskFailure(
-                        task_id=task.id,
-                        reason=f"Cannot move from '{task.status}' to '{data.status}'",
+            project = projects_cache.get(task.project_id)
+            if project is None:
+                project = await ProjectRepository(db).get(task.project_id)
+                if project is None:
+                    failures.append(
+                        BulkTaskFailure(task_id=task.id, reason="Project not found")
                     )
+                    continue
+                projects_cache[task.project_id] = project
+            try:
+                new_category = await workflows.assert_transition(
+                    db, project, task.status, data.status
                 )
+            except ValidationFailedError as exc:
+                failures.append(BulkTaskFailure(task_id=task.id, reason=str(exc)))
                 continue
-            task.status = data.status
-            task.completed_at = (
-                datetime.now(UTC) if data.status == TaskStatus.DONE else None
+            await TaskStatusHistoryRepository(db).add(
+                TaskStatusHistory(
+                    organization_id=org.id,
+                    task_id=task.id,
+                    from_status=task.status,
+                    to_status=data.status,
+                    from_category=task.status_category,
+                    to_category=new_category,
+                    changed_by_id=actor.id,
+                )
             )
-            if data.status == TaskStatus.DONE:
+            task.status = data.status
+            task.status_category = new_category
+            task.completed_at = (
+                datetime.now(UTC) if new_category == TaskStatus.DONE else None
+            )
+            if new_category == TaskStatus.DONE:
                 completed_ids.append(task.id)
             task_changed = True
         if data.priority is not None and data.priority != task.priority:

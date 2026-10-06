@@ -45,7 +45,7 @@ def parse_dt(value: Any) -> datetime | None:
 
 
 def is_overdue(task: dict[str, Any]) -> bool:
-    if task.get("status") == "done":
+    if task.get("status_category") == "done" or task.get("status") == "done":
         return False
     due = parse_dt(task.get("due_date"))
     return bool(due and due < datetime.now(timezone.utc))

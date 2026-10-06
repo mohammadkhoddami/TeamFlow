@@ -58,9 +58,9 @@ class SprintRepository:
         self, organization_id: uuid.UUID, project_id: uuid.UUID
     ) -> dict[uuid.UUID, dict[str, float]]:
         """`sprint_id -> {task_count, done_task_count, total_estimate, done_estimate}`."""
-        done = func.sum(case((Task.status == TaskStatus.DONE, 1), else_=0))
+        done = func.sum(case((Task.status_category == TaskStatus.DONE, 1), else_=0))
         done_estimate = func.sum(
-            case((Task.status == TaskStatus.DONE, Task.estimate), else_=0)
+            case((Task.status_category == TaskStatus.DONE, Task.estimate), else_=0)
         )
         statement = (
             select(

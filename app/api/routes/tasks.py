@@ -11,19 +11,24 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api.deps import DB, CurrentUser, OrgMembership, ProjectAccess, TaskAccess
 from app.models import Task, TaskStatus, TaskType
 from app.repositories import (
+    ChecklistRepository,
     LabelRepository,
     MembershipRepository,
     SprintRepository,
+    TaskAssigneeRepository,
     TaskFilters,
     TaskRepository,
+    WorklogRepository,
 )
 from app.repositories.task import DEFAULT_PAGE_SIZE
 from app.schemas import (
     BulkTaskRequest,
     BulkTaskResult,
+    CustomFieldValueRead,
     Page,
     PriorityLiteral,
     StatusLiteral,
+    TaskAssigneeRead,
     TaskCreate,
     TaskMove,
     TaskRead,
@@ -80,6 +85,12 @@ async def list_tasks(
     backlog_only: bool = Query(default=False, description="Only sprintless tasks"),
     include_archived: bool = Query(default=False),
     archived_only: bool = Query(default=False, description="Only archived tasks"),
+    blocked: bool | None = Query(
+        default=None, description="true = blocked by an open task, false = not blocked"
+    ),
+    category: list[StatusLiteral] | None = Query(
+        default=None, description="Workflow categories (todo/in_progress/in_review/done)"
+    ),
     sort: str | None = Query(default=None, description="Sortable field, prefix '-' for desc"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=100),
@@ -105,6 +116,8 @@ async def list_tasks(
         backlog_only=backlog_only,
         include_archived=include_archived,
         archived_only=archived_only,
+        blocked=blocked,
+        categories=category,
     )
     items, total = await TaskRepository(db).list_for_org(
         org.id, filters, offset=offset, limit=limit, sort=sort
@@ -153,12 +166,20 @@ async def build_teamql_filters(
     for sprint, project_name in await SprintRepository(db).list_for_org(org_id):
         sprints[f"{project_name}:{sprint.name}".lower()] = sprint.id
         sprints.setdefault(sprint.name.lower(), sprint.id)
+    from app.repositories import CustomFieldRepository, ProjectRepository
+
+    custom_fields_by_key: dict[str, uuid.UUID] = {}
+    projects, _total = await ProjectRepository(db).list_for_org(org_id, limit=200)
+    for project in projects:
+        for field in await CustomFieldRepository(db).list_for_project(project.id):
+            custom_fields_by_key.setdefault(field.key.lower(), field.id)
     return parse_teamql(
         query,
         me_id=me_id,
         members_by_email=members_by_email,
         labels_by_name=labels_by_name,
         sprints_by_name=sprints,
+        custom_fields_by_key=custom_fields_by_key,
     )
 
 
@@ -319,7 +340,13 @@ def _serialize(task: Task) -> TaskRead:
 
 
 async def _serialize_many(db: DB, tasks: list[Task]) -> list[TaskRead]:
-    """Serialize tasks with batched direct-child progress counters."""
+    """Serialize tasks with batched M2 projections (child progress, custom
+    field values, assignees, checklist totals, logged time, dependency flags)."""
+    from app.services import custom_fields as custom_field_service
+    from app.services import task_links as link_service
+
+    if not tasks:
+        return []
     stats: dict[uuid.UUID, tuple[int, int]] = {}
     by_org: dict[uuid.UUID, list[uuid.UUID]] = defaultdict(list)
     for task in tasks:
@@ -327,9 +354,51 @@ async def _serialize_many(db: DB, tasks: list[Task]) -> list[TaskRead]:
     repo = TaskRepository(db)
     for org_id, task_ids in by_org.items():
         stats.update(await repo.child_stats(org_id, task_ids))
+
+    task_ids = [task.id for task in tasks]
+    custom_values: dict[uuid.UUID, list[dict]] = {}
+    by_project: dict[uuid.UUID, list[uuid.UUID]] = defaultdict(list)
+    for task in tasks:
+        by_project[task.project_id].append(task.id)
+    for project_id, ids in by_project.items():
+        custom_values.update(
+            await custom_field_service.values_for_tasks(db, ids, project_id)
+        )
+    assignee_rows = await TaskAssigneeRepository(db).list_for_tasks(task_ids)
+    assignees_by_task: dict[uuid.UUID, list[dict]] = defaultdict(list)
+    for row in assignee_rows:
+        user = row.user
+        assignees_by_task[row.task_id].append(
+            {
+                "user_id": row.user_id,
+                "name": (user.full_name or user.email) if user else "(removed)",
+                "email": user.email if user else "",
+                "role": row.role,
+            }
+        )
+    checklist_stats = await ChecklistRepository(db).stats_for_tasks(task_ids)
+    logged_minutes = await WorklogRepository(db).total_minutes_for_tasks(task_ids)
+    links = await link_service.link_stats(db, task_ids)
+
     reads: list[TaskRead] = []
     for task in tasks:
         read = _serialize(task)
         read.child_count, read.done_child_count = stats.get(task.id, (0, 0))
+        read.custom_fields = [
+            CustomFieldValueRead.model_validate(entry)
+            for entry in custom_values.get(task.id, [])
+        ]
+        read.assignees = [
+            TaskAssigneeRead.model_validate(entry)
+            for entry in assignees_by_task.get(task.id, [])
+        ]
+        total, done = checklist_stats.get(task.id, (0, 0))
+        read.checklist_total = total
+        read.checklist_done = done
+        read.logged_minutes = logged_minutes.get(task.id, 0)
+        is_blocked, blocks_count, blocked_by_count = links.get(task.id, (False, 0, 0))
+        read.is_blocked = is_blocked
+        read.blocks_count = blocks_count
+        read.blocked_by_count = blocked_by_count
         reads.append(read)
     return reads

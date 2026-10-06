@@ -6,20 +6,29 @@ from app.api.routes import (
     attachments,
     audit,
     auth,
+    capacity,
+    checklists,
     comments,
+    custom_fields,
     dashboard,
+    data,
     health,
     invitations,
     labels,
+    links,
     notifications,
     organizations,
     preferences,
     projects,
+    reports,
     saved_filters,
     search,
     sprints,
     tasks,
+    templates,
     webhooks,
+    workflows,
+    worklogs,
 )
 
 api_router = APIRouter()
@@ -40,6 +49,26 @@ api_router.include_router(sprints.sprint_router)
 api_router.include_router(saved_filters.router)
 api_router.include_router(search.router)
 api_router.include_router(preferences.router)
+api_router.include_router(workflows.project_workflow_router)
+api_router.include_router(workflows.project_board_router)
+api_router.include_router(workflows.board_router)
+api_router.include_router(custom_fields.router)
+api_router.include_router(links.task_link_router)
+api_router.include_router(reports.router)
+api_router.include_router(reports.sprint_report_router)
+api_router.include_router(worklogs.task_worklog_router)
+api_router.include_router(worklogs.worklog_router)
+api_router.include_router(worklogs.timesheet_router)
+api_router.include_router(capacity.router)
+api_router.include_router(templates.org_template_router)
+api_router.include_router(templates.project_template_router)
+api_router.include_router(templates.project_from_template_router)
+api_router.include_router(templates.task_template_router)
+api_router.include_router(templates.task_template_apply_router)
+api_router.include_router(checklists.task_checklist_router)
+api_router.include_router(checklists.task_assignees_router)
+api_router.include_router(data.router)
+api_router.include_router(data.project_export_router)
 api_router.include_router(labels.router)
 api_router.include_router(labels.label_router)
 api_router.include_router(labels.task_label_router)
