@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, LayoutGrid, Network, Plus, Settings2 } from 'lucide-react'
+import { ArrowLeft, Download, LayoutGrid, Network, Plus, Settings2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
@@ -24,6 +24,7 @@ import {
 import { useToast } from '../contexts/toast'
 import { ApiError, tasksApi, projectsApi } from '../lib/api'
 import { useInvalidateTasks, useProject, useTasks, useTaskTree } from '../lib/hooks'
+import { downloadOpenTasksMarkdown } from '../lib/taskExport'
 import { canManage, type TaskRead, type TaskStatus, type TaskType } from '../lib/types'
 import { cn, formatDate } from '../lib/utils'
 import { createProjectSocket, type SocketStatus } from '../lib/ws'
@@ -55,6 +56,13 @@ export function ProjectPage() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState<'active' | 'archived'>('active')
+
+  const boardTasks = tasks.data
+    ? showSubtasks
+      ? tasks.data.items
+      : tasks.data.items.filter((task) => !task.parent_id)
+    : []
+  const openBoardTasks = boardTasks.filter((task) => task.status !== 'done').length
 
   useEffect(() => {
     if (project.data && editing) {
@@ -218,11 +226,27 @@ export function ProjectPage() {
               </button>
             </div>
             {view === 'board' && (
-              <Checkbox
-                label="Subtasks"
-                checked={showSubtasks}
-                onChange={(event) => setShowSubtasks(event.target.checked)}
-              />
+              <>
+                <Checkbox
+                  label="Subtasks"
+                  checked={showSubtasks}
+                  onChange={(event) => setShowSubtasks(event.target.checked)}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={openBoardTasks === 0}
+                  title="Download open board tasks as markdown"
+                  onClick={() => {
+                    const count = downloadOpenTasksMarkdown(project.data.name, boardTasks)
+                    toast.success(
+                      `Exported ${count} open task${count === 1 ? '' : 's'} to opening-tasks.md`,
+                    )
+                  }}
+                >
+                  <Download className="h-3.5 w-3.5" /> Export
+                </Button>
+              </>
             )}
             {canManage(role) && (
               <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
@@ -244,11 +268,7 @@ export function ProjectPage() {
           )}
           {tasks.data && (
             <TaskBoard
-              tasks={
-                showSubtasks
-                  ? tasks.data.items
-                  : tasks.data.items.filter((task) => !task.parent_id)
-              }
+              tasks={boardTasks}
               onOpen={setSelectedTask}
               onMove={(taskId, next) => move.mutate({ taskId, status: next })}
               onAdd={(next) => startCreate({ status: next })}
