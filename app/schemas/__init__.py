@@ -19,6 +19,12 @@ from app.schemas.auth import (
     UserRead,
     UserUpdate,
 )
+from app.schemas.bulk import (
+    BulkArchiveRequest,
+    BulkTaskFailure,
+    BulkTaskRequest,
+    BulkTaskResult,
+)
 from app.schemas.comment import CommentCreate, CommentRead, CommentUpdate
 from app.schemas.common import Page
 from app.schemas.dashboard import (
@@ -40,7 +46,31 @@ from app.schemas.organization import (
     OrganizationRead,
     OrganizationUpdate,
 )
+from app.schemas.preference import (
+    DigestLiteral,
+    NotificationPreferenceBase,
+    NotificationPreferenceRead,
+    NotificationPreferenceUpdate,
+)
 from app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
+from app.schemas.saved_filter import (
+    SavedFilterCreate,
+    SavedFilterRead,
+    SavedFilterUpdate,
+)
+from app.schemas.search import (
+    CommentSearchHit,
+    ProjectSearchHit,
+    SearchResponse,
+    TaskSearchHit,
+)
+from app.schemas.sprint import (
+    SprintComplete,
+    SprintCreate,
+    SprintRead,
+    SprintStateLiteral,
+    SprintUpdate,
+)
 from app.schemas.task import (
     PriorityLiteral,
     SortableField,
@@ -66,10 +96,16 @@ __all__ = [
     "AttachmentCreate",
     "AttachmentRead",
     "AuditLogRead",
+    "BulkArchiveRequest",
+    "BulkTaskFailure",
+    "BulkTaskRequest",
+    "BulkTaskResult",
     "CommentCreate",
     "CommentRead",
+    "CommentSearchHit",
     "CommentUpdate",
     "DashboardStats",
+    "DigestLiteral",
     "DownloadGrant",
     "InvitationCreate",
     "InvitationRead",
@@ -79,6 +115,9 @@ __all__ = [
     "MembershipCreate",
     "MembershipRead",
     "MembershipUpdate",
+    "NotificationPreferenceBase",
+    "NotificationPreferenceRead",
+    "NotificationPreferenceUpdate",
     "NotificationRead",
     "OAuthExchange",
     "OtpRequest",
@@ -93,9 +132,19 @@ __all__ = [
     "PriorityLiteral",
     "ProjectCreate",
     "ProjectRead",
+    "ProjectSearchHit",
     "ProjectUpdate",
     "RefreshedToken",
+    "SavedFilterCreate",
+    "SavedFilterRead",
+    "SavedFilterUpdate",
+    "SearchResponse",
     "SortableField",
+    "SprintComplete",
+    "SprintCreate",
+    "SprintRead",
+    "SprintStateLiteral",
+    "SprintUpdate",
     "StatusLiteral",
     "TasksByStatus",
     "TasksPerMember",
@@ -103,6 +152,7 @@ __all__ = [
     "TaskMove",
     "TaskParentRef",
     "TaskRead",
+    "TaskSearchHit",
     "TaskTreeNode",
     "TaskTypeLiteral",
     "TaskUpdate",

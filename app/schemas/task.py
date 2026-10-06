@@ -17,7 +17,8 @@ TaskTypeLiteral = Literal["epic", "story", "task"]
 # Whitelist of sortable columns; the service layer maps these to real columns.
 # `type` sorts alphabetically, which happens to be epic < story < task.
 SortableField = Literal[
-    "created_at", "updated_at", "title", "priority", "status", "due_date", "type"
+    "created_at", "updated_at", "title", "priority", "status", "due_date", "type",
+    "estimate", "number", "key", "backlog_rank",
 ]
 
 
@@ -40,6 +41,10 @@ class TaskCreate(SQLModel):
     label_ids: list[uuid.UUID] = Field(default_factory=list, max_length=20)
     type: TaskTypeLiteral = "task"
     parent_id: uuid.UUID | None = None
+    sprint_id: uuid.UUID | None = None
+    estimate: float | None = Field(default=None, ge=0, le=100_000)
+    remaining_estimate: float | None = Field(default=None, ge=0, le=100_000)
+    actual_estimate: float | None = Field(default=None, ge=0, le=100_000)
 
 
 class TaskUpdate(SQLModel):
@@ -52,12 +57,18 @@ class TaskUpdate(SQLModel):
     label_ids: list[uuid.UUID] | None = Field(default=None, max_length=20)
     type: TaskTypeLiteral | None = None
     parent_id: uuid.UUID | None = None
+    sprint_id: uuid.UUID | None = None
+    estimate: float | None = Field(default=None, ge=0, le=100_000)
+    remaining_estimate: float | None = Field(default=None, ge=0, le=100_000)
+    actual_estimate: float | None = Field(default=None, ge=0, le=100_000)
 
 
 class TaskRead(SQLModel):
     id: uuid.UUID
     organization_id: uuid.UUID
     project_id: uuid.UUID
+    key: str | None = None
+    number: int | None = None
     title: str
     description: str | None
     status: str
@@ -70,6 +81,13 @@ class TaskRead(SQLModel):
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime | None
+    estimate: float | None = None
+    remaining_estimate: float | None = None
+    actual_estimate: float | None = None
+    backlog_rank: float | None = None
+    sprint_id: uuid.UUID | None = None
+    sprint_name: str | None = None
+    archived_at: datetime | None = None
     assignee: UserRead | None = None
     creator: UserRead | None = None
     parent: TaskParentRef | None = None

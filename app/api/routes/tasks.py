@@ -1,16 +1,26 @@
-"""Task routes: CRUD, transitions, watchers, hierarchy, filtered listing."""
+"""Task routes: CRUD, transitions, watchers, hierarchy, filtered listing,
+TeamQL queries, bulk operations and archive/restore."""
 
 import uuid
 from collections import defaultdict
 from datetime import datetime
 
 from fastapi import APIRouter, Query, Request, status
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import DB, CurrentUser, OrgMembership, ProjectAccess, TaskAccess
 from app.models import Task, TaskStatus, TaskType
-from app.repositories import TaskFilters, TaskRepository
+from app.repositories import (
+    LabelRepository,
+    MembershipRepository,
+    SprintRepository,
+    TaskFilters,
+    TaskRepository,
+)
 from app.repositories.task import DEFAULT_PAGE_SIZE
 from app.schemas import (
+    BulkTaskRequest,
+    BulkTaskResult,
     Page,
     PriorityLiteral,
     StatusLiteral,
@@ -22,7 +32,9 @@ from app.schemas import (
     TaskUpdate,
     UserRead,
 )
+from app.services import bulk as bulk_service
 from app.services import tasks as task_service
+from app.services.teamql import parse_teamql
 
 task_router = APIRouter(prefix="/tasks", tags=["tasks"])
 project_task_router = APIRouter(prefix="/projects/{project_id}/tasks", tags=["tasks"])
@@ -64,6 +76,10 @@ async def list_tasks(
     due_before: datetime | None = None,
     due_after: datetime | None = None,
     overdue: bool = False,
+    sprint_id: uuid.UUID | None = Query(default=None, description="Only this sprint"),
+    backlog_only: bool = Query(default=False, description="Only sprintless tasks"),
+    include_archived: bool = Query(default=False),
+    archived_only: bool = Query(default=False, description="Only archived tasks"),
     sort: str | None = Query(default=None, description="Sortable field, prefix '-' for desc"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=100),
@@ -85,12 +101,82 @@ async def list_tasks(
         due_before=due_before,
         due_after=due_after,
         overdue=overdue,
+        sprint_id=sprint_id,
+        backlog_only=backlog_only,
+        include_archived=include_archived,
+        archived_only=archived_only,
     )
     items, total = await TaskRepository(db).list_for_org(
         org.id, filters, offset=offset, limit=limit, sort=sort
     )
     return Page[TaskRead](
         items=await _serialize_many(db, items), total=total, offset=offset, limit=limit
+    )
+
+
+@org_task_router.get(
+    "/query",
+    response_model=Page[TaskRead],
+    summary="Run a TeamQL query (saved filters use the same language)",
+)
+async def query_tasks(
+    membership: OrgMembership,
+    db: DB,
+    current_user: CurrentUser,
+    q: str = Query(min_length=1, max_length=2000),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=100),
+) -> Page[TaskRead]:
+    org, _m = membership
+    filters, sort = await build_teamql_filters(db, org.id, q, current_user.id)
+    items, total = await TaskRepository(db).list_for_org(
+        org.id, filters, offset=offset, limit=limit, sort=sort
+    )
+    return Page[TaskRead](
+        items=await _serialize_many(db, items), total=total, offset=offset, limit=limit
+    )
+
+
+async def build_teamql_filters(
+    db: AsyncSession, org_id: uuid.UUID, query: str, me_id: uuid.UUID
+) -> tuple[TaskFilters, str | None]:
+    """Resolves TeamQL lookups (members/labels/sprints) then parses."""
+    members = await MembershipRepository(db).list_for_org(org_id, limit=1000)
+    members_by_email = {
+        (m.user.email.lower() if m.user else ""): m.user_id
+        for m in members
+        if m.user is not None
+    }
+    labels = await LabelRepository(db).list_for_org(org_id, limit=500)
+    labels_by_name = {label.name.lower(): label.id for label in labels}
+    sprints: dict[str, uuid.UUID] = {}
+    for sprint, project_name in await SprintRepository(db).list_for_org(org_id):
+        sprints[f"{project_name}:{sprint.name}".lower()] = sprint.id
+        sprints.setdefault(sprint.name.lower(), sprint.id)
+    return parse_teamql(
+        query,
+        me_id=me_id,
+        members_by_email=members_by_email,
+        labels_by_name=labels_by_name,
+        sprints_by_name=sprints,
+    )
+
+
+@org_task_router.post(
+    "/bulk",
+    response_model=BulkTaskResult,
+    summary="Multi-select action: update, move, clone, delete, archive, move project",
+)
+async def bulk_tasks(
+    data: BulkTaskRequest,
+    membership: OrgMembership,
+    current_user: CurrentUser,
+    request: Request,
+    db: DB,
+) -> BulkTaskResult:
+    org, m = membership
+    return await bulk_service.bulk_operate(
+        db, current_user, org, m, data, ip=_ip(request)
     )
 
 
@@ -172,6 +258,30 @@ async def move_task(
     return (await _serialize_many(db, [updated]))[0]
 
 
+@task_router.post("/{task_id}/archive", response_model=TaskRead)
+async def archive_task(
+    task_access: TaskAccess,
+    current_user: CurrentUser,
+    request: Request,
+    db: DB,
+) -> TaskRead:
+    task, org, _m = task_access
+    archived = await task_service.archive_task(db, current_user, org, task, ip=_ip(request))
+    return (await _serialize_many(db, [archived]))[0]
+
+
+@task_router.post("/{task_id}/restore", response_model=TaskRead)
+async def restore_task(
+    task_access: TaskAccess,
+    current_user: CurrentUser,
+    request: Request,
+    db: DB,
+) -> TaskRead:
+    task, org, _m = task_access
+    restored = await task_service.restore_task(db, current_user, org, task, ip=_ip(request))
+    return (await _serialize_many(db, [restored]))[0]
+
+
 @task_router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_task(
     task_access: TaskAccess,
@@ -204,6 +314,7 @@ async def list_watchers(task_access: TaskAccess) -> list[UserRead]:
 def _serialize(task: Task) -> TaskRead:
     read = TaskRead.model_validate(task)
     read.watcher_ids = [w.id for w in task.watchers]
+    read.sprint_name = task.sprint.name if task.sprint else None
     return read
 
 

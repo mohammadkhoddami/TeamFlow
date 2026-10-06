@@ -18,8 +18,10 @@ import { useAuth } from '../contexts/auth'
 import { useOrganizations } from '../lib/hooks'
 import { isAdmin } from '../lib/types'
 import { cn } from '../lib/utils'
+import { GlobalSearch } from './GlobalSearch'
 import { NotificationBell } from './NotificationBell'
 import { useOrg } from './OrgLayout'
+import { ThemeToggle } from './ThemeToggle'
 import { Avatar } from './ui'
 
 const NAV_ITEMS = [
@@ -142,6 +144,8 @@ export function AppLayout() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <GlobalSearch />
+            <ThemeToggle />
             <NotificationBell />
           </div>
         </header>

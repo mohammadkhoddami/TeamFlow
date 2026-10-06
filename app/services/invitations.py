@@ -140,6 +140,18 @@ async def accept_invitation(
     )
     await events.notify_member_joined(db, org.id, user.id, org.name)
     await db.commit()
+    await events.dispatch_webhooks(
+        db,
+        organization_id=org.id,
+        event="member.joined",
+        data={
+            "user_id": str(user.id),
+            "email": user.email,
+            "role": membership.role,
+            "organization_id": str(org.id),
+            "organization_slug": org.slug,
+        },
+    )
     return (
         await db.execute(select(Membership).where(Membership.id == membership.id))
     ).scalar_one()

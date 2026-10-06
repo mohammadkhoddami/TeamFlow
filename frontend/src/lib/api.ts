@@ -2,18 +2,25 @@ import { SESSION_EXPIRED_EVENT, tokens } from './tokens'
 import type {
   AttachmentRead,
   AuditLogRead,
+  BulkTaskAction,
+  BulkTaskResult,
   CommentRead,
   DashboardStats,
   DownloadGrant,
+  EstimationUnit,
   InvitationRead,
   LabelRead,
   MembershipRead,
   MembershipRole,
+  NotificationPreferenceRead,
   NotificationRead,
   OrganizationMemberRead,
   OrganizationRead,
   Page,
   ProjectRead,
+  SavedFilterRead,
+  SearchResponse,
+  SprintRead,
   TaskPriority,
   TaskRead,
   TaskStatus,
@@ -58,6 +65,10 @@ export interface TaskFilters {
   due_before?: string
   due_after?: string
   overdue?: boolean
+  sprint_id?: string
+  backlog_only?: boolean
+  include_archived?: boolean
+  archived_only?: boolean
   sort?: string
   offset?: number
   limit?: number
@@ -72,6 +83,10 @@ export interface TaskCreateInput {
   due_date?: string | null
   assignee_id?: string | null
   label_ids?: string[]
+  sprint_id?: string | null
+  estimate?: number | null
+  remaining_estimate?: number | null
+  actual_estimate?: number | null
 }
 
 export interface TaskUpdateInput {
@@ -84,6 +99,22 @@ export interface TaskUpdateInput {
   due_date?: string | null
   assignee_id?: string | null
   label_ids?: string[]
+  sprint_id?: string | null
+  estimate?: number | null
+  remaining_estimate?: number | null
+  actual_estimate?: number | null
+}
+
+export interface BulkTaskInput {
+  task_ids: string[]
+  action: BulkTaskAction
+  status?: TaskStatus
+  priority?: TaskPriority
+  assignee_id?: string | null
+  label_ids?: string[]
+  sprint_id?: string | null
+  project_id?: string | null
+  estimate?: number | null
 }
 
 // ------------------------------------------------------------- request core
@@ -368,7 +399,13 @@ export const projectsApi = {
 
   update: (
     projectId: string,
-    data: { name?: string; description?: string | null; status?: 'active' | 'archived' },
+    data: {
+      name?: string
+      description?: string | null
+      status?: 'active' | 'archived'
+      key?: string
+      estimation_unit?: EstimationUnit
+    },
   ) =>
     request<ProjectRead>(`/projects/${projectId}`, { method: 'PATCH', body: data }),
 
@@ -410,6 +447,114 @@ export const tasksApi = {
 
   tree: (projectId: string) =>
     request<TaskTreeNode[]>(`/projects/${projectId}/tasks/tree`),
+
+  query: (slug: string, q: string, params?: { offset?: number; limit?: number }) =>
+    request<Page<TaskRead>>(
+      `/organizations/${slug}/tasks/query${buildQuery({
+        q,
+        offset: params?.offset,
+        limit: params?.limit,
+      } as Record<string, QueryValue>)}`,
+    ),
+
+  bulk: (slug: string, data: BulkTaskInput) =>
+    request<BulkTaskResult>(`/organizations/${slug}/tasks/bulk`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  archive: (taskId: string) =>
+    request<TaskRead>(`/tasks/${taskId}/archive`, { method: 'POST' }),
+
+  restore: (taskId: string) =>
+    request<TaskRead>(`/tasks/${taskId}/restore`, { method: 'POST' }),
+}
+
+// -------------------------------------------------------------- sprints api
+
+export const sprintsApi = {
+  list: (projectId: string) =>
+    request<SprintRead[]>(`/projects/${projectId}/sprints`),
+
+  create: (
+    projectId: string,
+    data: { name: string; goal?: string | null; start_date?: string | null; end_date?: string | null },
+  ) => request<SprintRead>(`/projects/${projectId}/sprints`, { method: 'POST', body: data }),
+
+  update: (
+    sprintId: string,
+    data: { name?: string; goal?: string | null; start_date?: string | null; end_date?: string | null },
+  ) => request<SprintRead>(`/sprints/${sprintId}`, { method: 'PATCH', body: data }),
+
+  start: (sprintId: string) =>
+    request<SprintRead>(`/sprints/${sprintId}/start`, { method: 'POST' }),
+
+  complete: (sprintId: string, carryOverSprintId?: string | null) =>
+    request<SprintRead>(`/sprints/${sprintId}/complete`, {
+      method: 'POST',
+      body: { carry_over_sprint_id: carryOverSprintId ?? null },
+    }),
+
+  remove: (sprintId: string) =>
+    request<void>(`/sprints/${sprintId}`, { method: 'DELETE' }),
+
+  backlog: (projectId: string, params?: { offset?: number; limit?: number }) =>
+    request<Page<TaskRead>>(
+      `/projects/${projectId}/sprints/backlog${buildQuery(params as Record<string, QueryValue>)}`,
+    ),
+}
+
+// ------------------------------------------------------- saved filters api
+
+export const savedFiltersApi = {
+  list: (slug: string) =>
+    request<SavedFilterRead[]>(`/organizations/${slug}/saved-filters`),
+
+  create: (
+    slug: string,
+    data: { name: string; query: string; project_id?: string | null; is_shared?: boolean },
+  ) => request<SavedFilterRead>(`/organizations/${slug}/saved-filters`, { method: 'POST', body: data }),
+
+  update: (
+    slug: string,
+    savedFilterId: string,
+    data: { name?: string; query?: string; is_shared?: boolean },
+  ) =>
+    request<SavedFilterRead>(`/organizations/${slug}/saved-filters/${savedFilterId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  remove: (slug: string, savedFilterId: string) =>
+    request<void>(`/organizations/${slug}/saved-filters/${savedFilterId}`, {
+      method: 'DELETE',
+    }),
+}
+
+// -------------------------------------------------------------- search api
+
+export const searchApi = {
+  global: (slug: string, q: string, limit = 10) =>
+    request<SearchResponse>(`/organizations/${slug}/search${buildQuery({ q, limit })}`),
+}
+
+// -------------------------------------------------------- preferences api
+
+export const preferencesApi = {
+  get: () => request<NotificationPreferenceRead>('/auth/me/notification-preferences'),
+
+  update: (data: Partial<NotificationPreferenceRead>) =>
+    request<NotificationPreferenceRead>('/auth/me/notification-preferences', {
+      method: 'PUT',
+      body: data,
+    }),
+
+  unsubscribe: (token: string) =>
+    request<{ detail: string }>(`/auth/unsubscribe${buildQuery({ token })}`, {
+      method: 'POST',
+      auth: false,
+      retryOn401: false,
+    }),
 }
 
 // ----------------------------------------------------------- comments api

@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../contexts/auth'
 import { useToast } from '../../contexts/toast'
 import { ApiError, tasksApi } from '../../lib/api'
-import { qk, useInvalidateTasks, useLabels, useTaskChildren } from '../../lib/hooks'
+import { qk, useInvalidateTasks, useLabels, useSprints, useTaskChildren } from '../../lib/hooks'
 import {
   PRIORITIES,
   PRIORITY_BADGE,
@@ -75,6 +75,7 @@ export function TaskDetailDrawer({
 
   const current = detail.data ?? task
   const children = useTaskChildren(current?.id)
+  const sprints = useSprints(current?.project_id)
 
   useEffect(() => {
     if (current) {
@@ -158,6 +159,14 @@ export function TaskDetailDrawer({
             <Badge className={PRIORITY_BADGE[current.priority]}>
               {PRIORITY_LABELS[current.priority]}
             </Badge>
+            {current.key && (
+              <span className="font-mono text-[11px] text-slate-400">{current.key}</span>
+            )}
+            {current.estimate != null && (
+              <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                {current.estimate} pts
+              </span>
+            )}
           </div>
           {current.parent && (
             <button
@@ -266,6 +275,56 @@ export function TaskDetailDrawer({
                 const next = fromDateTimeLocal(dueDate)
                 const before = current.due_date ? new Date(current.due_date).toISOString() : null
                 if (next !== before) patch.mutate({ due_date: next })
+              }}
+            />
+          </Field>
+          <Field label="Sprint">
+            <Select
+              value={current.sprint_id ?? ''}
+              onChange={(event) => patch.mutate({ sprint_id: event.target.value || null })}
+            >
+              <option value="">Backlog (no sprint)</option>
+              {(sprints.data ?? [])
+                .filter(
+                  (sprint) =>
+                    sprint.state !== 'completed' || sprint.id === current.sprint_id,
+                )
+                .map((sprint) => (
+                  <option key={sprint.id} value={sprint.id}>
+                    {sprint.name}
+                    {sprint.state === 'active' ? ' (active)' : ''}
+                    {sprint.state === 'completed' ? ' (completed)' : ''}
+                  </option>
+                ))}
+            </Select>
+          </Field>
+          <Field label="Estimate" hint="Points or hours per project setting">
+            <Input
+              type="number"
+              min={0}
+              step="0.5"
+              defaultValue={current.estimate ?? ''}
+              key={`estimate-${current.id}-${current.estimate}`}
+              onBlur={(event) => {
+                const raw = event.target.value.trim()
+                const next = raw === '' ? null : Number(raw)
+                if (next !== current.estimate) patch.mutate({ estimate: next })
+              }}
+            />
+          </Field>
+          <Field label="Remaining">
+            <Input
+              type="number"
+              min={0}
+              step="0.5"
+              defaultValue={current.remaining_estimate ?? ''}
+              key={`remaining-${current.id}-${current.remaining_estimate}`}
+              onBlur={(event) => {
+                const raw = event.target.value.trim()
+                const next = raw === '' ? null : Number(raw)
+                if (next !== current.remaining_estimate) {
+                  patch.mutate({ remaining_estimate: next })
+                }
               }}
             />
           </Field>

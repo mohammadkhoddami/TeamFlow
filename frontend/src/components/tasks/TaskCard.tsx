@@ -39,6 +39,14 @@ export function TaskCard({
         <div className="flex items-center gap-1.5">
           <Badge className={TYPE_BADGE[task.type]}>{TYPE_LABELS[task.type]}</Badge>
           <Badge className={PRIORITY_BADGE[task.priority]}>{PRIORITY_LABELS[task.priority]}</Badge>
+          {task.key && (
+            <span className="font-mono text-[10px] text-slate-400">{task.key}</span>
+          )}
+          {task.estimate != null && (
+            <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+              {task.estimate}
+            </span>
+          )}
         </div>
         {task.labels.length > 0 && (
           <div className="flex flex-wrap justify-end gap-1">

@@ -15,9 +15,9 @@ from app.models import (
     Task,
     User,
 )
-from app.repositories import CommentRepository, UserRepository
+from app.repositories import CommentRepository, ProjectRepository, UserRepository
 from app.schemas import CommentCreate, CommentUpdate
-from app.services import audit, events
+from app.services import audit, events, preferences
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
@@ -94,6 +94,38 @@ async def create_comment(
     await events.dispatch_webhooks(
         db, organization_id=org.id, event="comment.created", data=payload
     )
+
+    # Preference-gated email copies (comments default off; mentions default on).
+    project = await ProjectRepository(db).get(task.project_id)
+    if project is not None:
+        excerpt = " ".join(data.body.split())[:280]
+        mentioned_ids = {user.id for user in mentioned.values()}
+        for user in mentioned.values():
+            if user.id != actor.id:
+                await preferences.task_email(
+                    db,
+                    user_id=user.id,
+                    notification_type="mention",
+                    kind="mention",
+                    task=task,
+                    project=project,
+                    org_slug=org.slug,
+                    extra_context={"author_name": actor.full_name or actor.email,
+                                   "comment_excerpt": excerpt},
+                )
+        for uid in dict.fromkeys(watcher_ids):
+            if uid != actor.id and uid not in mentioned_ids:
+                await preferences.task_email(
+                    db,
+                    user_id=uid,
+                    notification_type="comment_created",
+                    kind="comment_created",
+                    task=task,
+                    project=project,
+                    org_slug=org.slug,
+                    extra_context={"author_name": actor.full_name or actor.email,
+                                   "comment_excerpt": excerpt},
+                )
     return comment
 
 

@@ -39,7 +39,7 @@ from app.repositories import (
     UserRepository,
 )
 from app.schemas import OrganizationCreate, OrganizationUpdate
-from app.services import audit
+from app.services import audit, events
 
 ROLE_RANK = {
     MembershipRole.MEMBER: 1,
@@ -191,6 +191,18 @@ async def add_member_direct(
         Membership(user_id=user.id, organization_id=org.id, role=role)
     )
     await db.commit()
+    await events.dispatch_webhooks(
+        db,
+        organization_id=org.id,
+        event="member.joined",
+        data={
+            "user_id": str(user.id),
+            "email": user.email,
+            "role": role,
+            "organization_id": str(org.id),
+            "organization_slug": org.slug,
+        },
+    )
     # Re-select so the joined-eager `user` relationship is loaded (fresh
     # instances do not trigger eager strategies; implicit lazy loads are
     # unsafe in async sessions).

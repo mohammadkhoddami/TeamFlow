@@ -7,7 +7,10 @@ import App from './App.tsx'
 import { AuthProvider } from './contexts/auth.tsx'
 import { ToastProvider } from './contexts/toast.tsx'
 import { ApiError } from './lib/api.ts'
+import { initTheme } from './lib/theme.ts'
 import './index.css'
+
+initTheme()
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -1,4 +1,5 @@
-"""Task service: CRUD, status transitions, assignment, labels, watchers.
+"""Task service: CRUD, status transitions, assignment, labels, watchers,
+estimation, sprints, issue keys, clone/move/archive.
 
 Business rules:
   - status transitions follow a whitelist (with reopening); same->same is a
@@ -9,6 +10,10 @@ Business rules:
   - assignee must be an active member of the task's org
   - creator + assignee auto-watch; watchers get notified on comments/status
   - members may edit tasks; only managers+ (or the creator) may delete
+  - issue keys use the project's atomic counter (UPDATE ... + 1 RETURNING), so
+    concurrent creates can never collide
+  - archive is a soft delete: archived tasks disappear from boards/backlog but
+    remain queryable
 
 Async-SQLAlchemy note: M2M collections are written through the link tables
 (`TaskLabelLink`, `TaskWatcherLink`) and read back with an explicit
@@ -19,7 +24,7 @@ raise MissingGreenlet inside an async session, so we never trigger them.
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, insert, select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import (
@@ -33,6 +38,8 @@ from app.models import (
     MembershipRole,
     Organization,
     Project,
+    Sprint,
+    SprintState,
     Task,
     TaskLabelLink,
     TaskStatus,
@@ -40,9 +47,15 @@ from app.models import (
     TaskWatcherLink,
     User,
 )
-from app.repositories import LabelRepository, MembershipRepository, TaskRepository
+from app.repositories import (
+    LabelRepository,
+    MembershipRepository,
+    ProjectRepository,
+    SprintRepository,
+    TaskRepository,
+)
 from app.schemas import TaskCreate, TaskUpdate
-from app.services import audit, cache, events
+from app.services import audit, cache, events, preferences
 
 # Allowed transitions; reopening a done task returns to in_progress.
 STATUS_TRANSITIONS: dict[str, set[str]] = {
@@ -129,6 +142,42 @@ async def _assert_assignee_in_org(
         )
 
 
+async def _assert_sprint_in_project(
+    db: AsyncSession,
+    org_id: uuid.UUID,
+    project_id: uuid.UUID,
+    sprint_id: uuid.UUID,
+) -> Sprint:
+    sprint = await SprintRepository(db).get_in_org(sprint_id, org_id)
+    if not sprint or sprint.project_id != project_id:
+        raise ValidationFailedError("Sprint not found in this project")
+    if sprint.state == SprintState.COMPLETED:
+        raise ValidationFailedError("Cannot add tasks to a completed sprint")
+    return sprint
+
+
+async def _next_issue_key(db: AsyncSession, project: Project) -> tuple[int, str]:
+    """Atomically reserve the next issue number for a project.
+
+    `UPDATE ... SET issue_counter = issue_counter + 1 RETURNING` is a single
+    statement, so parallel task creations serialize on the row and can never
+    produce duplicate keys.
+    """
+    result = await db.execute(
+        update(Project)
+        .where(Project.id == project.id)
+        .values(issue_counter=Project.issue_counter + 1)
+        .returning(Project.issue_counter)
+    )
+    number = int(result.scalar_one())
+    prefix = project.key or "PRJ"
+    return number, f"{prefix}-{number}"
+
+
+def _next_backlog_rank() -> float:
+    return datetime.now(UTC).timestamp()
+
+
 async def _resolve_label_ids(
     db: AsyncSession, org_id: uuid.UUID, label_ids: list[uuid.UUID]
 ) -> list[uuid.UUID]:
@@ -198,6 +247,7 @@ async def get_task_for_org(
 def task_event_payload(task: Task) -> dict:
     return {
         "id": str(task.id),
+        "key": task.key,
         "project_id": str(task.project_id),
         "title": task.title,
         "status": task.status,
@@ -205,6 +255,8 @@ def task_event_payload(task: Task) -> dict:
         "type": task.type,
         "parent_id": str(task.parent_id) if task.parent_id else None,
         "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+        "sprint_id": str(task.sprint_id) if task.sprint_id else None,
+        "estimate": task.estimate,
         "due_date": task.due_date.isoformat() if task.due_date else None,
     }
 
@@ -225,19 +277,18 @@ async def refetch_task(db: AsyncSession, task_id: uuid.UUID) -> Task:
     return (await db.execute(statement)).scalar_one()
 
 
-async def create_task(
+async def _apply_create_fields(
     db: AsyncSession,
-    actor: User,
     org: Organization,
     project: Project,
     data: TaskCreate,
-    ip: str | None = None,
+    actor: User,
 ) -> Task:
+    """Builds a fully validated Task (without persisting it)."""
     if data.parent_id is not None:
-        await _assert_parent_valid(
-            db, org.id, project.id, data.parent_id, data.type
-        )
+        await _assert_parent_valid(db, org.id, project.id, data.parent_id, data.type)
 
+    number, key = await _next_issue_key(db, project)
     task = Task(
         organization_id=org.id,
         project_id=project.id,
@@ -248,10 +299,33 @@ async def create_task(
         parent_id=data.parent_id,
         due_date=data.due_date,
         created_by_id=actor.id,
+        number=number,
+        key=key,
+        backlog_rank=_next_backlog_rank(),
+        estimate=data.estimate,
+        remaining_estimate=data.remaining_estimate
+        if data.remaining_estimate is not None
+        else data.estimate,
+        actual_estimate=data.actual_estimate,
     )
+    if data.sprint_id is not None:
+        await _assert_sprint_in_project(db, org.id, project.id, data.sprint_id)
+        task.sprint_id = data.sprint_id
     if data.assignee_id is not None:
         await _assert_assignee_in_org(db, org.id, data.assignee_id)
         task.assignee_id = data.assignee_id
+    return task
+
+
+async def create_task(
+    db: AsyncSession,
+    actor: User,
+    org: Organization,
+    project: Project,
+    data: TaskCreate,
+    ip: str | None = None,
+) -> Task:
+    task = await _apply_create_fields(db, org, project, data, actor)
 
     task = await TaskRepository(db).add(task)
     if data.label_ids:
@@ -265,7 +339,7 @@ async def create_task(
     await audit.log(
         db, AuditAction.TASK_CREATED, actor_id=actor.id,
         organization_id=org.id, target_type="task", target_id=task.id, ip=ip,
-        meta={"title": task.title, "project_id": str(project.id)},
+        meta={"title": task.title, "project_id": str(project.id), "key": task.key},
     )
     if task.assignee_id and task.assignee_id != actor.id:
         await audit.log(
@@ -289,6 +363,16 @@ async def create_task(
     await events.dispatch_webhooks(
         db, organization_id=org.id, event="task.created", data=payload
     )
+    if task.assignee_id and task.assignee_id != actor.id:
+        await preferences.task_email(
+            db,
+            user_id=task.assignee_id,
+            notification_type="task_assigned",
+            kind="task_assigned",
+            task=task,
+            project=project,
+            org_slug=org.slug,
+        )
     await cache.invalidate_dashboard(org.id)
     return task
 
@@ -323,6 +407,18 @@ async def update_task(
         if data.assignee_id is not None:
             await _assert_assignee_in_org(db, org.id, data.assignee_id)
         task.assignee_id = data.assignee_id
+
+    if "sprint_id" in changed and data.sprint_id != task.sprint_id:
+        if data.sprint_id is not None:
+            await _assert_sprint_in_project(db, org.id, task.project_id, data.sprint_id)
+        task.sprint_id = data.sprint_id
+
+    if "estimate" in changed:
+        task.estimate = data.estimate
+    if "remaining_estimate" in changed:
+        task.remaining_estimate = data.remaining_estimate
+    if "actual_estimate" in changed:
+        task.actual_estimate = data.actual_estimate
 
     if "status" in changed and data.status and data.status != task.status:
         allowed = STATUS_TRANSITIONS.get(task.status, set())
@@ -370,21 +466,54 @@ async def update_task(
                 organization_id=org.id,
                 data={"task_id": str(task.id), "project_id": str(task.project_id)},
             )
+    completed_now = task.status == TaskStatus.DONE and old_status != TaskStatus.DONE
+    if completed_now:
+        await _notify_task_completed(db, org, task, actor)
     await db.commit()
 
     task = await refetch_task(db, task.id)
     payload = task_event_payload(task)
-    event_type = (
-        "task.completed"
-        if task.status == TaskStatus.DONE and old_status != TaskStatus.DONE
-        else "task.updated"
-    )
+    event_type = "task.completed" if completed_now else "task.updated"
     await events.publish_project_event(task.project_id, "task.updated", payload)
     await events.dispatch_webhooks(
         db, organization_id=org.id, event=event_type, data=payload
     )
+    if "assignee_id" in changed and task.assignee_id and task.assignee_id != actor.id:
+        project = await ProjectRepository(db).get(task.project_id)
+        if project:
+            await preferences.task_email(
+                db,
+                user_id=task.assignee_id,
+                notification_type="task_assigned",
+                kind="task_assigned",
+                task=task,
+                project=project,
+                org_slug=org.slug,
+            )
     await cache.invalidate_dashboard(org.id)
     return task
+
+
+async def _notify_task_completed(
+    db: AsyncSession, org: Organization, task: Task, actor: User
+) -> None:
+    """Watchers, assignee and creator hear about a completed task
+    (NotificationType.TASK_COMPLETED was declared but never emitted)."""
+    recipients = {w.id for w in task.watchers}
+    if task.assignee_id:
+        recipients.add(task.assignee_id)
+    if task.created_by_id:
+        recipients.add(task.created_by_id)
+    recipients.discard(actor.id)
+    for user_id in recipients:
+        await events.notify(
+            db,
+            user_id=user_id,
+            type="task_completed",
+            title=f"Completed: {task.title}",
+            organization_id=org.id,
+            data={"task_id": str(task.id), "project_id": str(task.project_id)},
+        )
 
 
 async def move_task(
@@ -403,6 +532,180 @@ async def move_task(
             f"Cannot move task from '{task.status}' to '{new_status}'"
         )
     return await update_task(db, actor, org, task, TaskUpdate(status=new_status), ip)
+
+
+async def archive_task(
+    db: AsyncSession, actor: User, org: Organization, task: Task, ip: str | None = None
+) -> Task:
+    if task.archived_at is None:
+        task.archived_at = datetime.now(UTC)
+        task = await TaskRepository(db).update(task)
+        await audit.log(
+            db, AuditAction.TASK_UPDATED, actor_id=actor.id,
+            organization_id=org.id, target_type="task", target_id=task.id, ip=ip,
+            meta={"archived": True},
+        )
+        await db.commit()
+    return task
+
+
+async def restore_task(
+    db: AsyncSession, actor: User, org: Organization, task: Task, ip: str | None = None
+) -> Task:
+    if task.archived_at is not None:
+        task.archived_at = None
+        task = await TaskRepository(db).update(task)
+        await audit.log(
+            db, AuditAction.TASK_UPDATED, actor_id=actor.id,
+            organization_id=org.id, target_type="task", target_id=task.id, ip=ip,
+            meta={"archived": False},
+        )
+        await db.commit()
+    return task
+
+
+async def clone_task(
+    db: AsyncSession,
+    actor: User,
+    org: Organization,
+    task: Task,
+    *,
+    target_project: Project | None = None,
+    ip: str | None = None,
+) -> Task:
+    """Duplicate a task (optionally into another project).
+
+    Labels/watchers are copied; the parent is kept only when it exists in the
+    target project. The clone starts fresh in TODO with a new issue key.
+    """
+    project = target_project or await ProjectRepository(db).get(task.project_id)
+    if project is None:
+        raise ValidationFailedError("Target project not found")
+    parent_id = task.parent_id
+    if parent_id is not None:
+        parent = await TaskRepository(db).get_in_org(parent_id, org.id)
+        if parent is None or parent.project_id != project.id:
+            parent_id = None
+    number, key = await _next_issue_key(db, project)
+    clone = Task(
+        organization_id=org.id,
+        project_id=project.id,
+        title=f"{task.title} (copy)"[:255],
+        description=task.description,
+        priority=task.priority,
+        type=task.type,
+        parent_id=parent_id,
+        due_date=task.due_date,
+        created_by_id=actor.id,
+        assignee_id=task.assignee_id,
+        number=number,
+        key=key,
+        estimate=task.estimate,
+        remaining_estimate=task.remaining_estimate,
+        actual_estimate=task.actual_estimate,
+        backlog_rank=_next_backlog_rank(),
+        sprint_id=task.sprint_id if project.id == task.project_id else None,
+    )
+    clone = await TaskRepository(db).add(clone)
+    label_ids = [label.id for label in task.labels]
+    if label_ids:
+        await _set_task_labels(db, clone.id, label_ids)
+    watcher_ids = {w.id for w in task.watchers} | {actor.id}
+    await _add_watchers(db, clone.id, watcher_ids)
+    await audit.log(
+        db, AuditAction.TASK_CREATED, actor_id=actor.id,
+        organization_id=org.id, target_type="task", target_id=clone.id, ip=ip,
+        meta={"title": clone.title, "cloned_from": str(task.id), "key": clone.key},
+    )
+    await db.commit()
+    clone = await refetch_task(db, clone.id)
+    payload = task_event_payload(clone)
+    await events.publish_project_event(clone.project_id, "task.created", payload)
+    await events.dispatch_webhooks(
+        db, organization_id=org.id, event="task.created", data=payload
+    )
+    await cache.invalidate_dashboard(org.id)
+    return clone
+
+
+async def move_task_to_project(
+    db: AsyncSession,
+    actor: User,
+    org: Organization,
+    membership: Membership,
+    task: Task,
+    target_project_id: uuid.UUID,
+    ip: str | None = None,
+) -> Task:
+    """Move a task (and its descendants) to another project in the same org."""
+    if membership.role == MembershipRole.MEMBER:
+        raise PermissionDeniedError("Only managers and above can move tasks between projects")
+    if task.project_id == target_project_id:
+        return task
+    target = await ProjectRepository(db).get_in_org(target_project_id, org.id)
+    if not target:
+        raise ValidationFailedError("Target project not found")
+
+    descendants = await _collect_descendants(db, org.id, task.id)
+    for node in [task, *descendants]:
+        number, key = await _next_issue_key(db, target)
+        node.project_id = target.id
+        node.number = number
+        node.key = key
+        # Sprint/parent links only survive when they already live in the target.
+        if node.sprint_id is not None:
+            sprint = await SprintRepository(db).get_in_org(node.sprint_id, org.id)
+            if sprint is None or sprint.project_id != target.id:
+                node.sprint_id = None
+        if node.parent_id is not None:
+            moves_with_tree = node.parent_id == task.id or any(
+                d.id == node.parent_id for d in descendants
+            )
+            if not moves_with_tree:
+                parent = await TaskRepository(db).get_in_org(node.parent_id, org.id)
+                if parent is None or parent.project_id != target.id:
+                    node.parent_id = None
+        db.add(node)
+    await db.flush()
+    await audit.log(
+        db, AuditAction.TASK_UPDATED, actor_id=actor.id,
+        organization_id=org.id, target_type="task", target_id=task.id, ip=ip,
+        meta={"moved_to_project": str(target.id)},
+    )
+    await db.commit()
+    moved = await refetch_task(db, task.id)
+    payload = task_event_payload(moved)
+    await events.publish_project_event(moved.project_id, "task.updated", payload)
+    await events.dispatch_webhooks(
+        db, organization_id=org.id, event="task.updated", data=payload
+    )
+    await cache.invalidate_dashboard(org.id)
+    return moved
+
+
+MAX_DESCENDANTS = 1000
+
+
+async def _collect_descendants(
+    db: AsyncSession, org_id: uuid.UUID, root_id: uuid.UUID
+) -> list[Task]:
+    """Bounded breadth-first walk of the task hierarchy below `root_id`."""
+    collected: list[Task] = []
+    seen: set[uuid.UUID] = {root_id}
+    frontier = [root_id]
+    repo = TaskRepository(db)
+    while frontier and len(collected) < MAX_DESCENDANTS:
+        current = frontier.pop()
+        children = await repo.list_children(org_id, current, limit=500)
+        for child in children:
+            if child.id in seen:
+                continue
+            seen.add(child.id)
+            collected.append(child)
+            frontier.append(child.id)
+            if len(collected) >= MAX_DESCENDANTS:
+                break
+    return collected
 
 
 async def delete_task(

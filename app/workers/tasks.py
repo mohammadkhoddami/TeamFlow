@@ -205,7 +205,7 @@ def warm_dashboard_caches() -> dict:
     with session_scope() as db:
         org_ids = list(
             db.execute(
-                select(Organization.id).where(Organization.is_active == True)  # noqa: E712
+                select(Organization.id).where(Organization.is_active == True)
             ).scalars()
         )
         for org_id in org_ids:
@@ -252,7 +252,7 @@ def _compute_stats_sync(db, organization_id) -> dict:
     active_members = db.execute(
         select(sa_func.count(Membership.id)).where(
             Membership.organization_id == organization_id,
-            Membership.is_active == True,  # noqa: E712
+            Membership.is_active == True,
         )
     ).scalar_one()
     per_member = db.execute(
@@ -283,6 +283,77 @@ def _compute_stats_sync(db, organization_id) -> dict:
         ],
         "active_members": int(active_members),
     }
+
+
+@shared_task(name="teamflow.send_notification_digests")
+def send_notification_digests(cadence: str | None = None) -> dict:
+    """Beat job (daily): email users whose preference is a daily/weekly digest.
+
+    Collects unread notifications from the period and sends one summary email.
+    Immediate-cadence users get their emails inline from the API instead.
+    """
+    from app.models import Notification, NotificationPreference, User
+    from app.workers.celery_app import celery_app
+
+    now = datetime.now(UTC)
+    sent = 0
+    with session_scope() as db:
+        cadences = [cadence] if cadence else ["daily", "weekly"]
+        preferences = list(
+            db.execute(
+                select(NotificationPreference).where(
+                    NotificationPreference.email_enabled == True,
+                    NotificationPreference.digest.in_(cadences),
+                )
+            ).scalars()
+        )
+        user_ids = [preference.user_id for preference in preferences]
+        users = {
+            user.id: user
+            for user in db.execute(select(User).where(User.id.in_(user_ids))).scalars()
+        }
+        for preference in preferences:
+            user = users.get(preference.user_id)
+            if user is None or not user.is_active:
+                continue
+            period = (
+                timedelta(days=7)
+                if preference.digest == "weekly"
+                else timedelta(days=1)
+            )
+            unread = list(
+                db.execute(
+                    select(Notification)
+                    .where(
+                        Notification.user_id == preference.user_id,
+                        Notification.read_at.is_(None),
+                        Notification.created_at >= now - period,
+                    )
+                    .order_by(Notification.created_at.desc())
+                    .limit(50)
+                ).scalars()
+            )
+            if not unread:
+                continue
+            lines = "\n".join(f"- {entry.title}" for entry in unread)
+            celery_app.send_task(
+                "teamflow.send_email",
+                [
+                    user.email,
+                    "notification_digest",
+                    {
+                        "count": str(len(unread)),
+                        "lines": lines,
+                        "frontend_url": settings.frontend_base_url,
+                        "unsubscribe_url": (
+                            f"{settings.frontend_base_url}/unsubscribe"
+                            f"?token={preference.unsubscribe_token}"
+                        ),
+                    },
+                ],
+            )
+            sent += 1
+    return {"sent": sent}
 
 
 @shared_task(name="teamflow.notify_due_tasks")

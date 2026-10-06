@@ -38,6 +38,7 @@ from app.models import (
     Membership,
     Organization,
     Project,
+    Sprint,
     Task,
     User,
 )
@@ -149,6 +150,30 @@ async def get_task_access(
 
 
 TaskAccess = Annotated[tuple[Task, Organization, Membership], Depends(get_task_access)]
+
+
+async def get_sprint_access(
+    sprint_id: uuid.UUID, current_user: CurrentUser, db: DB
+) -> tuple[Sprint, Organization, Membership]:
+    """Tenant boundary for id-addressed sprints (IDOR containment)."""
+    sprint = (
+        await db.execute(select(Sprint).where(Sprint.id == sprint_id))
+    ).scalar_one_or_none()
+    if not sprint:
+        raise NotFoundError("Sprint not found")
+    membership = await MembershipRepository(db).get_for_user(
+        current_user.id, sprint.organization_id
+    )
+    if not membership or not membership.is_active:
+        raise NotFoundError("Sprint not found")
+    org = await OrganizationRepository(db).get(sprint.organization_id)
+    if not org:
+        raise NotFoundError("Sprint not found")
+    org_id_ctx.set(str(org.id))
+    return sprint, org, membership
+
+
+SprintAccess = Annotated[tuple[Sprint, Organization, Membership], Depends(get_sprint_access)]
 
 
 async def get_attachment_access(

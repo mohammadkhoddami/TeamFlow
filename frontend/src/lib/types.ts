@@ -54,15 +54,117 @@ export interface InvitationRead {
   created_at: string
 }
 
+export type EstimationUnit = 'none' | 'points' | 'hours'
+
 export interface ProjectRead {
   id: string
   organization_id: string
   name: string
   description: string | null
   status: 'active' | 'archived'
+  key: string | null
+  estimation_unit: EstimationUnit
   owner_id: string | null
   created_at: string
   updated_at: string | null
+}
+
+export type SprintState = 'planned' | 'active' | 'completed'
+
+export interface SprintRead {
+  id: string
+  organization_id: string
+  project_id: string
+  name: string
+  goal: string | null
+  state: SprintState
+  start_date: string | null
+  end_date: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string | null
+  task_count: number
+  done_task_count: number
+  total_estimate: number | null
+  done_estimate: number | null
+  carried_over_count: number
+}
+
+export interface SavedFilterRead {
+  id: string
+  organization_id: string
+  project_id: string | null
+  owner_id: string
+  name: string
+  query: string
+  is_shared: boolean
+  created_at: string
+  updated_at: string | null
+}
+
+export interface TaskSearchHit {
+  id: string
+  key: string | null
+  title: string
+  status: TaskStatus
+  priority: TaskPriority
+  type: TaskType
+  project_id: string
+  project_name: string | null
+  snippet: string | null
+}
+
+export interface CommentSearchHit {
+  id: string
+  task_id: string
+  task_title: string | null
+  task_key: string | null
+  project_id: string | null
+  body: string
+  snippet: string | null
+  created_at: string
+}
+
+export interface ProjectSearchHit {
+  id: string
+  name: string
+  key: string | null
+  status: string
+  snippet: string | null
+}
+
+export interface SearchResponse {
+  query: string
+  tasks: TaskSearchHit[]
+  comments: CommentSearchHit[]
+  projects: ProjectSearchHit[]
+}
+
+export interface NotificationPreferenceRead {
+  email_enabled: boolean
+  assigned: boolean
+  mentioned: boolean
+  comments: boolean
+  due: boolean
+  digest: 'immediate' | 'daily' | 'weekly' | 'off'
+  unsubscribe_url: string | null
+}
+
+export type BulkTaskAction =
+  | 'update'
+  | 'move'
+  | 'clone'
+  | 'delete'
+  | 'archive'
+  | 'restore'
+  | 'move_project'
+
+export interface BulkTaskResult {
+  requested: number
+  updated: number
+  skipped: number
+  created_ids: string[]
+  failures: { task_id: string; reason: string }[]
 }
 
 export interface LabelRead {
@@ -85,6 +187,8 @@ export interface TaskRead {
   id: string
   organization_id: string
   project_id: string
+  key: string | null
+  number: number | null
   title: string
   description: string | null
   status: TaskStatus
@@ -97,6 +201,13 @@ export interface TaskRead {
   completed_at: string | null
   created_at: string
   updated_at: string | null
+  estimate: number | null
+  remaining_estimate: number | null
+  actual_estimate: number | null
+  backlog_rank: number | null
+  sprint_id: string | null
+  sprint_name: string | null
+  archived_at: string | null
   assignee?: UserRead | null
   creator?: UserRead | null
   parent?: TaskParentRef | null

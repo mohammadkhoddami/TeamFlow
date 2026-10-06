@@ -12,6 +12,11 @@ from app.models.comment import Comment
 from app.models.idempotency import IdempotencyKey, IdempotencyStatus
 from app.models.label import Label
 from app.models.notification import Notification, NotificationType
+from app.models.notification_preference import (
+    DigestCadence,
+    NotificationPreference,
+    generate_unsubscribe_token,
+)
 from app.models.organization import (
     Invitation,
     InvitationStatus,
@@ -19,7 +24,9 @@ from app.models.organization import (
     MembershipRole,
     Organization,
 )
-from app.models.project import Project, ProjectStatus
+from app.models.project import EstimationUnit, Project, ProjectStatus
+from app.models.saved_filter import SavedFilter
+from app.models.sprint import Sprint, SprintState
 from app.models.task import (
     Task,
     TaskLabelLink,
@@ -38,6 +45,8 @@ __all__ = [
     "AttachmentStatus",
     "Comment",
     "DeliveryStatus",
+    "DigestCadence",
+    "EstimationUnit",
     "IdempotencyKey",
     "IdempotencyStatus",
     "Invitation",
@@ -46,10 +55,14 @@ __all__ = [
     "Membership",
     "MembershipRole",
     "Notification",
+    "NotificationPreference",
     "NotificationType",
     "Organization",
     "Project",
     "ProjectStatus",
+    "SavedFilter",
+    "Sprint",
+    "SprintState",
     "Task",
     "TaskLabelLink",
     "TaskPriority",
@@ -62,5 +75,6 @@ __all__ = [
     "Webhook",
     "WebhookDelivery",
     "WebhookEvent",
+    "generate_unsubscribe_token",
     "utcnow",
 ]

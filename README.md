@@ -168,6 +168,39 @@ replay, attachments (fake storage), webhook signing + retries + idempotency,
 rate limiting, notifications, audit trail, dashboard aggregation, WebSockets,
 and the admin panel (superuser-only login, CRUD, audit redaction, guards).
 
+## Agile features (M1)
+
+Phase 1 of the competitive plan is implemented on top of the existing board:
+
+- **Issue keys** — every project gets a `PROJECTKEY` (derived from its name,
+  editable) and tasks receive atomic, sequential keys (`TEAM-123`) shown on
+  cards, drawers, the tasks table, emails and the MCP server.
+- **Sprints & backlog** — project-scoped sprints (name, goal, dates, state),
+  one active sprint per project, start/complete with carry-over to a chosen
+  sprint or back to the backlog, a backlog view with manual ordering, and a
+  sprint filter on the board. Endpoints under `/projects/{id}/sprints` and
+  `/sprints/{id}`.
+- **Estimates** — per-task `estimate`/`remaining`/`actual` values with a
+  per-project estimation unit (points/hours/none); sprint totals aggregate
+  points for reports.
+- **TeamQL + saved filters** — `GET /organizations/{slug}/tasks/query?q=...`
+  parses a small query language (`status in (todo, in_progress) AND priority =
+  high AND assignee = me ORDER BY due`); filters can be saved/shared per org
+  (`/organizations/{slug}/saved-filters`) and reused from the tasks page.
+- **Global full-text search** — `GET /organizations/{slug}/search?q=...`
+  searches tasks, comments and projects through PostgreSQL expression GIN
+  indexes (`websearch_to_tsquery`); bound to Ctrl/Cmd+K in the UI.
+- **Bulk operations** — `POST /organizations/{slug}/tasks/bulk` supports
+  update, move, clone, delete, archive/restore and move-to-project for up to
+  200 tasks, with per-task failure reporting. Archive is a soft delete.
+- **Email preferences & digests** — per-user subscription matrix
+  (assigned/mentioned/comments/due), immediate/daily/weekly/off cadence,
+  token-based unsubscribe, and `task_assigned`/`mention`/`comment_created`/
+  `task_completed` emails actually enqueued. A daily Celery job sends digests.
+- **Quick wins** — dark mode (system/light/dark), mention autocomplete in the
+  Markdown editor, the advertised `member.joined` webhook is now dispatched,
+  and `NotificationType.TASK_COMPLETED` is emitted to watchers.
+
 ## Key behaviors
 
 - **Tenant isolation**: every tenant row carries `organization_id`; org-scoped

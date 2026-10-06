@@ -14,7 +14,17 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, Optional
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy import Uuid as SAUuid
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -24,6 +34,7 @@ if TYPE_CHECKING:
     from app.models.label import Label
     from app.models.organization import Organization
     from app.models.project import Project
+    from app.models.sprint import Sprint
     from app.models.user import User
 
 
@@ -111,6 +122,9 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         Index("ix_tasks_created", "created_at"),
         Index("ix_tasks_org_parent", "organization_id", "parent_id"),
         Index("ix_tasks_org_type", "organization_id", "type"),
+        Index("ix_tasks_org_sprint", "organization_id", "sprint_id"),
+        Index("ix_tasks_org_archived", "organization_id", "archived_at"),
+        UniqueConstraint("project_id", "number", name="uq_tasks_project_number"),
     )
 
     organization_id: uuid.UUID = Field(
@@ -136,6 +150,34 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     status: str = Field(sa_column=Column(String(16), nullable=False))
     priority: str = Field(sa_column=Column(String(16), nullable=False))
     type: str = Field(sa_column=Column(String(16), nullable=False, server_default="task"))
+    # Human-readable issue key, denormalized for display everywhere tasks are
+    # referenced (e.g. "TEAM-123"). `number` stays unique per project.
+    key: str | None = Field(default=None, sa_column=Column(String(32), nullable=True))
+    number: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
+    # Estimation: points or hours depending on the project's estimation unit.
+    estimate: float | None = Field(default=None, sa_column=Column(Float, nullable=True))
+    remaining_estimate: float | None = Field(
+        default=None, sa_column=Column(Float, nullable=True)
+    )
+    actual_estimate: float | None = Field(
+        default=None, sa_column=Column(Float, nullable=True)
+    )
+    # Manual backlog ordering; lower rank sorts first in the backlog.
+    backlog_rank: float | None = Field(
+        default=None, sa_column=Column(Float, nullable=True)
+    )
+    sprint_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("sprints.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    archived_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     due_date: datetime | None = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
@@ -189,6 +231,7 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     )
     organization: Optional["Organization"] = Relationship()
     project: Optional["Project"] = Relationship()
+    sprint: Optional["Sprint"] = Relationship(sa_relationship_kwargs={"lazy": "joined"})
     labels: list["Label"] = Relationship(
         link_model=TaskLabelLink, sa_relationship_kwargs={"lazy": "selectin"}
     )

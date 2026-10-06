@@ -74,6 +74,7 @@ def task_card(task: dict[str, Any], description_chars: int = 240) -> dict[str, A
     """Compact representation for boards and lists."""
     card: dict[str, Any] = {
         "id": task.get("id"),
+        "key": task.get("key"),
         "title": task.get("title"),
         "type": task.get("type") or "task",
         "status": task.get("status"),
@@ -85,6 +86,10 @@ def task_card(task: dict[str, Any], description_chars: int = 240) -> dict[str, A
         "labels": label_names(task),
         "updated_at": task.get("updated_at"),
     }
+    if task.get("estimate") is not None:
+        card["estimate"] = task.get("estimate")
+    if task.get("sprint_name"):
+        card["sprint"] = task.get("sprint_name")
     if task.get("child_count"):
         card["children"] = f"{task.get('done_child_count', 0)}/{task['child_count']} done"
     if is_overdue(task):

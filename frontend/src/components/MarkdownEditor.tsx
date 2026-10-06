@@ -1,4 +1,5 @@
 import {
+  AtSign,
   Bold,
   Code,
   Eye,
@@ -15,7 +16,15 @@ import {
 import { useRef, useState } from 'react'
 
 import { Markdown } from './Markdown'
+import { useOrgOptional } from './OrgLayout'
 import { cn } from '../lib/utils'
+
+interface MentionSuggestion {
+  email: string
+  name: string
+}
+
+const MENTION_RE = /(?:^|[\s(])@([\w.+-]*)$/
 
 function ToolbarButton({
   title,
@@ -54,6 +63,7 @@ export function MarkdownEditor({
   disabled = false,
   className,
   id,
+  mentions,
 }: {
   value: string
   onChange: (value: string) => void
@@ -64,9 +74,62 @@ export function MarkdownEditor({
   disabled?: boolean
   className?: string
   id?: string
+  /** Override mention candidates; defaults to the current org's members. */
+  mentions?: MentionSuggestion[]
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [tab, setTab] = useState<'write' | 'preview'>('write')
+  const org = useOrgOptional()
+
+  const candidates: MentionSuggestion[] =
+    mentions ??
+    (org?.members ?? [])
+      .filter((membership) => membership.user)
+      .map((membership) => ({
+        email: membership.user!.email,
+        name: membership.user!.full_name || membership.user!.email,
+      }))
+
+  const [mentionQuery, setMentionQuery] = useState<{ query: string; start: number } | null>(
+    null,
+  )
+  const [mentionIndex, setMentionIndex] = useState(0)
+
+  const filteredMentions = mentionQuery
+    ? candidates
+        .filter((candidate) => {
+          const needle = mentionQuery.query.toLowerCase()
+          return (
+            candidate.email.toLowerCase().includes(needle) ||
+            candidate.name.toLowerCase().includes(needle)
+          )
+        })
+        .slice(0, 6)
+    : []
+
+  const detectMention = (textarea: HTMLTextAreaElement) => {
+    const caret = textarea.selectionStart ?? value.length
+    const match = MENTION_RE.exec(value.slice(0, caret))
+    if (!match) {
+      setMentionQuery(null)
+      return
+    }
+    setMentionQuery({ query: match[1], start: caret - match[1].length - 1 })
+    setMentionIndex(0)
+  }
+
+  const insertMention = (candidate: MentionSuggestion) => {
+    const textarea = textareaRef.current
+    if (!mentionQuery || !textarea) return
+    const caret = textarea.selectionStart ?? value.length
+    const inserted = `${candidate.email} `
+    onChange(
+      `${value.slice(0, mentionQuery.start)}${inserted}${value.slice(caret)}`,
+    )
+    setMentionQuery(null)
+    const nextCaret = mentionQuery.start + inserted.length
+    focusSelection(nextCaret, nextCaret)
+  }
 
   const selection = () => {
     const textarea = textareaRef.current
@@ -141,6 +204,29 @@ export function MarkdownEditor({
   }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionQuery && filteredMentions.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setMentionIndex((index) => (index + 1) % filteredMentions.length)
+        return
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setMentionIndex(
+          (index) => (index - 1 + filteredMentions.length) % filteredMentions.length,
+        )
+        return
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault()
+        insertMention(filteredMentions[mentionIndex])
+        return
+      }
+    }
+    if (event.key === 'Escape' && mentionQuery) {
+      setMentionQuery(null)
+      return
+    }
     if (event.key === 'Tab') {
       event.preventDefault()
       const { start, end } = selection()
@@ -290,9 +376,41 @@ export function MarkdownEditor({
           placeholder={placeholder}
           autoFocus={autoFocus}
           disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => {
+            onChange(event.target.value)
+            detectMention(event.target)
+          }}
+          onClick={(event) => detectMention(event.currentTarget)}
+          onBlur={() => setMentionQuery(null)}
           onKeyDown={handleKeyDown}
         />
+      )}
+
+      {tab === 'write' && mentionQuery && filteredMentions.length > 0 && (
+        <div className="border-t border-slate-200 bg-white px-1 py-1">
+          <p className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+            <AtSign className="h-3 w-3" /> Mention
+          </p>
+          {filteredMentions.map((candidate, index) => (
+            <button
+              key={candidate.email}
+              type="button"
+              onMouseDown={(event) => {
+                event.preventDefault()
+                insertMention(candidate)
+              }}
+              className={cn(
+                'flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-xs',
+                index === mentionIndex
+                  ? 'bg-brand-50 text-brand-700'
+                  : 'text-slate-600 hover:bg-slate-50',
+              )}
+            >
+              <span className="truncate font-medium">{candidate.name}</span>
+              <span className="truncate text-[10px] text-slate-400">{candidate.email}</span>
+            </button>
+          ))}
+        </div>
       )}
 
       <div className="flex items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-400">

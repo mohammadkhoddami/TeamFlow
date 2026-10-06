@@ -48,11 +48,15 @@ celery_app.conf.update(
             "task": "teamflow.notify_due_tasks",
             "schedule": 24 * 3600,
         },
+        "send-notification-digests-daily": {
+            "task": "teamflow.send_notification_digests",
+            "schedule": 24 * 3600,
+        },
     },
 )
 
 # Queues: default (misc), emails, webhooks — workers can scale independently.
-from kombu import Queue  # noqa: E402
+from kombu import Queue
 
 celery_app.conf.task_queues = (
     Queue("default"),
@@ -87,4 +91,4 @@ def shutdown_worker(**kwargs: object) -> None:
 
 
 # Task registration: Celery discovers these at import time.
-from app.workers import tasks as worker_tasks  # noqa: E402,F401
+from app.workers import tasks as worker_tasks  # noqa: F401

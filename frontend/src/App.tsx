@@ -22,6 +22,7 @@ import { RegisterPage } from './pages/RegisterPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TasksPage } from './pages/TasksPage'
+import { UnsubscribePage } from './pages/UnsubscribePage'
 import { WebhooksPage } from './pages/WebhooksPage'
 
 export default function App() {
@@ -33,9 +34,10 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       </Route>
-      {/* Reset / OAuth links must work even when another session is active. */}
+      {/* Reset / OAuth / unsubscribe links must work even with a session. */}
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/auth/callback" element={<OAuthCallbackPage />} />
+      <Route path="/unsubscribe" element={<UnsubscribePage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<StandaloneLayout />}>

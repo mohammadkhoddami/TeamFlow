@@ -30,8 +30,33 @@ TEMPLATES: dict[str, tuple[str, str]] = {
     ),
     "task_assigned": (
         "A task was assigned to you",
-        "Task '{task_title}' was assigned to you in project '{project_name}'.\n"
-        "Open it at {task_url}",
+        "Task '{task_key} {task_title}' was assigned to you in project "
+        "'{project_name}'.\nOpen it at {task_url}\n\n"
+        "Stop these emails: {unsubscribe_url}",
+    ),
+    "task_completed": (
+        "A task you follow was completed",
+        "Task '{task_key} {task_title}' in project '{project_name}' is done.\n"
+        "Open it at {task_url}\n\n"
+        "Stop these emails: {unsubscribe_url}",
+    ),
+    "mention": (
+        "You were mentioned in TeamFlow",
+        "{author_name} mentioned you on '{task_key} {task_title}':\n\n"
+        "{comment_excerpt}\n\nOpen it at {task_url}\n\n"
+        "Stop these emails: {unsubscribe_url}",
+    ),
+    "comment_created": (
+        "New comment on a task you follow",
+        "{author_name} commented on '{task_key} {task_title}':\n\n"
+        "{comment_excerpt}\n\nOpen it at {task_url}\n\n"
+        "Stop these emails: {unsubscribe_url}",
+    ),
+    "notification_digest": (
+        "Your TeamFlow digest",
+        "You have {count} unread TeamFlow notifications.\n\n"
+        "{lines}\n\nOpen TeamFlow: {frontend_url}\n\n"
+        "Stop these emails: {unsubscribe_url}",
     ),
 }
 

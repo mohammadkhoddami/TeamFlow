@@ -20,6 +20,11 @@ export function useOrg(): OrgContextValue {
   return context
 }
 
+/** Like useOrg, but returns null outside org routes (shared components). */
+export function useOrgOptional(): OrgContextValue | null {
+  return useContext(OrgContext)
+}
+
 export function OrgLayout() {
   const { slug } = useParams<{ slug: string }>()
   const organizations = useOrganizations()

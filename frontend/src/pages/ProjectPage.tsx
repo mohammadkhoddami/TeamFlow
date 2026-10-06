@@ -1,9 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Download, LayoutGrid, Network, Plus, Settings2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, CalendarRange, Download, LayoutGrid, Network, Plus, Settings2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { useOrg } from '../components/OrgLayout'
+import { BacklogView } from '../components/tasks/BacklogView'
+import { SprintManager } from '../components/tasks/SprintManager'
 import { TaskBoard } from '../components/tasks/TaskBoard'
 import { TaskCreateDialog } from '../components/tasks/TaskCreateDialog'
 import { TaskDetailDrawer } from '../components/tasks/TaskDetailDrawer'
@@ -23,7 +25,7 @@ import {
 } from '../components/ui'
 import { useToast } from '../contexts/toast'
 import { ApiError, tasksApi, projectsApi } from '../lib/api'
-import { useInvalidateTasks, useProject, useTasks, useTaskTree } from '../lib/hooks'
+import { useInvalidateTasks, useProject, useSprints, useTasks, useTaskTree } from '../lib/hooks'
 import { downloadOpenTasksMarkdown } from '../lib/taskExport'
 import { canManage, type TaskRead, type TaskStatus, type TaskType } from '../lib/types'
 import { cn, formatDate } from '../lib/utils'
@@ -38,7 +40,18 @@ export function ProjectPage() {
   const invalidate = useInvalidateTasks()
 
   const project = useProject(projectId)
-  const tasks = useTasks(org.slug, { project_id: projectId, limit: 100 })
+  const sprints = useSprints(projectId)
+  const [sprintFilter, setSprintFilter] = useState<string>('')
+  const taskFilters = useMemo(
+    () => ({
+      project_id: projectId,
+      limit: 100,
+      sprint_id: sprintFilter && sprintFilter !== '__backlog__' ? sprintFilter : undefined,
+      backlog_only: sprintFilter === '__backlog__' || undefined,
+    }),
+    [projectId, sprintFilter],
+  )
+  const tasks = useTasks(org.slug, taskFilters)
   const tree = useTaskTree(projectId)
 
   const [socketStatus, setSocketStatus] = useState<SocketStatus>('connecting')
@@ -48,14 +61,17 @@ export function ProjectPage() {
   const [createStatus, setCreateStatus] = useState<TaskStatus>('todo')
   const [createParent, setCreateParent] = useState<TaskRead | null>(null)
   const [createType, setCreateType] = useState<TaskType>('task')
-  const [view, setView] = useState<'board' | 'tree'>('board')
+  const [view, setView] = useState<'board' | 'tree' | 'backlog'>('board')
   const [showSubtasks, setShowSubtasks] = useState(true)
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [managingSprints, setManagingSprints] = useState(false)
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState<'active' | 'archived'>('active')
+  const [projectKey, setProjectKey] = useState('')
+  const [estimationUnit, setEstimationUnit] = useState<'none' | 'points' | 'hours'>('points')
 
   const boardTasks = tasks.data
     ? showSubtasks
@@ -69,6 +85,8 @@ export function ProjectPage() {
       setName(project.data.name)
       setDescription(project.data.description ?? '')
       setStatus(project.data.status)
+      setProjectKey(project.data.key ?? '')
+      setEstimationUnit(project.data.estimation_unit ?? 'points')
     }
   }, [project.data, editing])
 
@@ -124,6 +142,8 @@ export function ProjectPage() {
         name: name.trim(),
         description: description.trim() || null,
         status,
+        key: projectKey.trim() ? projectKey.trim().toUpperCase() : undefined,
+        estimation_unit: estimationUnit,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['projects', projectId] })
@@ -224,9 +244,43 @@ export function ProjectPage() {
               >
                 <Network className="h-3.5 w-3.5" /> Hierarchy
               </button>
+              <button
+                type="button"
+                onClick={() => setView('backlog')}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  view === 'backlog'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                <CalendarRange className="h-3.5 w-3.5" /> Backlog
+              </button>
             </div>
             {view === 'board' && (
               <>
+                <Select
+                  className="w-auto"
+                  value={sprintFilter}
+                  onChange={(event) => setSprintFilter(event.target.value)}
+                  title="Filter the board by sprint"
+                >
+                  <option value="">All tasks</option>
+                  <option value="__backlog__">Backlog only</option>
+                  {(sprints.data ?? []).map((sprint) => (
+                    <option key={sprint.id} value={sprint.id}>
+                      {sprint.name}
+                      {sprint.state === 'active' ? ' (active)' : ''}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setManagingSprints(true)}
+                >
+                  <CalendarRange className="h-3.5 w-3.5" /> Sprints
+                </Button>
                 <Checkbox
                   label="Subtasks"
                   checked={showSubtasks}
@@ -275,6 +329,10 @@ export function ProjectPage() {
             />
           )}
         </>
+      ) : view === 'backlog' ? (
+        projectId ? (
+          <BacklogView projectId={projectId} onOpen={setSelectedTask} />
+        ) : null
       ) : (
         <>
           {tree.isLoading && <PageSpinner label="Loading hierarchy…" />}
@@ -351,6 +409,27 @@ export function ProjectPage() {
               <option value="archived">Archived</option>
             </Select>
           </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Issue key" hint="Prefix for new tasks, e.g. TEAM-42">
+              <Input
+                value={projectKey}
+                maxLength={10}
+                onChange={(event) => setProjectKey(event.target.value.toUpperCase())}
+              />
+            </Field>
+            <Field label="Estimation" hint="Points or hours on tasks and sprint totals">
+              <Select
+                value={estimationUnit}
+                onChange={(event) =>
+                  setEstimationUnit(event.target.value as 'none' | 'points' | 'hours')
+                }
+              >
+                <option value="points">Story points</option>
+                <option value="hours">Hours</option>
+                <option value="none">None</option>
+              </Select>
+            </Field>
+          </div>
           <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-3 py-3">
             <div>
               <p className="text-sm font-medium text-red-800">Delete project</p>
@@ -371,6 +450,14 @@ export function ProjectPage() {
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => deleteProject.mutate()}
       />
+
+      {projectId && (
+        <SprintManager
+          projectId={projectId}
+          open={managingSprints}
+          onClose={() => setManagingSprints(false)}
+        />
+      )}
     </div>
   )
 }

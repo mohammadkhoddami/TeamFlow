@@ -13,8 +13,11 @@ from app.repositories.invitation import InvitationRepository
 from app.repositories.label import LabelRepository
 from app.repositories.notification import NotificationRepository
 from app.repositories.organization import MembershipRepository, OrganizationRepository
+from app.repositories.preference import PreferenceRepository
 from app.repositories.project import ProjectRepository
-from app.repositories.task import TaskFilters, TaskRepository
+from app.repositories.saved_filter import SavedFilterRepository
+from app.repositories.sprint import SprintRepository
+from app.repositories.task import TaskFilters, TaskRepository, fts_condition
 from app.repositories.user import UserRepository
 from app.repositories.webhook import WebhookDeliveryRepository, WebhookRepository
 
@@ -28,10 +31,14 @@ __all__ = [
     "MembershipRepository",
     "NotificationRepository",
     "OrganizationRepository",
+    "PreferenceRepository",
     "ProjectRepository",
+    "SavedFilterRepository",
+    "SprintRepository",
     "TaskFilters",
     "TaskRepository",
     "UserRepository",
     "WebhookDeliveryRepository",
     "WebhookRepository",
+    "fts_condition",
 ]

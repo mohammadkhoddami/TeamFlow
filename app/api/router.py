@@ -13,7 +13,11 @@ from app.api.routes import (
     labels,
     notifications,
     organizations,
+    preferences,
     projects,
+    saved_filters,
+    search,
+    sprints,
     tasks,
     webhooks,
 )
@@ -31,6 +35,11 @@ api_router.include_router(projects.project_router)
 api_router.include_router(tasks.org_task_router)
 api_router.include_router(tasks.project_task_router)
 api_router.include_router(tasks.task_router)
+api_router.include_router(sprints.project_sprint_router)
+api_router.include_router(sprints.sprint_router)
+api_router.include_router(saved_filters.router)
+api_router.include_router(search.router)
+api_router.include_router(preferences.router)
 api_router.include_router(labels.router)
 api_router.include_router(labels.label_router)
 api_router.include_router(labels.task_label_router)

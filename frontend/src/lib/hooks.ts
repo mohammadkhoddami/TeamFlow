@@ -5,9 +5,13 @@ import type {
   DashboardStats,
   InvitationRead,
   LabelRead,
+  NotificationPreferenceRead,
   NotificationRead,
   Page,
   ProjectRead,
+  SavedFilterRead,
+  SearchResponse,
+  SprintRead,
   TaskRead,
   TaskTreeNode,
   WebhookDeliveryRead,
@@ -21,7 +25,11 @@ import {
   membersApi,
   notificationsApi,
   organizationsApi,
+  preferencesApi,
   projectsApi,
+  savedFiltersApi,
+  searchApi,
+  sprintsApi,
   tasksApi,
   webhooksApi,
 } from './api'
@@ -52,6 +60,12 @@ export const qk = {
   webhooks: (slug: string) => ['orgs', slug, 'webhooks'] as const,
   webhookDeliveries: (slug: string, webhookId: string) =>
     ['orgs', slug, 'webhooks', webhookId, 'deliveries'] as const,
+  sprints: (projectId: string) => ['projects', projectId, 'sprints'] as const,
+  backlog: (projectId: string, limit: number) =>
+    ['projects', projectId, 'backlog', limit] as const,
+  savedFilters: (slug: string) => ['orgs', slug, 'saved-filters'] as const,
+  search: (slug: string, q: string) => ['orgs', slug, 'search', q] as const,
+  preferences: ['auth', 'notification-preferences'] as const,
 }
 
 const NOTIFICATION_POLL_MS = 30_000
@@ -185,6 +199,47 @@ export function useWebhookDeliveries(slug: string, webhookId: string | undefined
     queryKey: qk.webhookDeliveries(slug, webhookId ?? ''),
     queryFn: () => webhooksApi.deliveries(slug, webhookId as string),
     enabled: Boolean(slug && webhookId),
+  })
+}
+
+export function useSprints(projectId: string | undefined) {
+  return useQuery<SprintRead[]>({
+    queryKey: qk.sprints(projectId ?? ''),
+    queryFn: () => sprintsApi.list(projectId as string),
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useBacklog(projectId: string | undefined, limit = 100) {
+  return useQuery<Page<TaskRead>>({
+    queryKey: qk.backlog(projectId ?? '', limit),
+    queryFn: () => sprintsApi.backlog(projectId as string, { limit }),
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useSavedFilters(slug: string) {
+  return useQuery<SavedFilterRead[]>({
+    queryKey: qk.savedFilters(slug),
+    queryFn: () => savedFiltersApi.list(slug),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useGlobalSearch(slug: string, query: string) {
+  const trimmed = query.trim()
+  return useQuery<SearchResponse>({
+    queryKey: qk.search(slug, trimmed),
+    queryFn: () => searchApi.global(slug, trimmed),
+    enabled: Boolean(slug) && trimmed.length >= 2,
+    staleTime: 5_000,
+  })
+}
+
+export function useNotificationPreferences() {
+  return useQuery<NotificationPreferenceRead>({
+    queryKey: qk.preferences,
+    queryFn: () => preferencesApi.get(),
   })
 }
 

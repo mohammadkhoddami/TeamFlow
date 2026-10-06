@@ -53,6 +53,7 @@ export function TaskCreateDialog({
   const [dueDate, setDueDate] = useState('')
   const [assigneeId, setAssigneeId] = useState('')
   const [labelIds, setLabelIds] = useState<string[]>([])
+  const [estimate, setEstimate] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   // Candidate parents share the board's query cache (same key shape).
@@ -73,6 +74,7 @@ export function TaskCreateDialog({
       setDueDate('')
       setAssigneeId('')
       setLabelIds([])
+      setEstimate('')
       setError(null)
     }
   }, [open, projectId, projects, defaultParentId, defaultType])
@@ -97,6 +99,7 @@ export function TaskCreateDialog({
         due_date: dueDate ? fromDateTimeLocal(dueDate) : null,
         assignee_id: assigneeId || null,
         label_ids: labelIds,
+        estimate: estimate.trim() === '' ? null : Number(estimate),
       })
       if (defaultStatus !== 'todo') {
         await tasksApi.move(task.id, defaultStatus)
@@ -218,6 +221,16 @@ export function TaskCreateDialog({
               type="datetime-local"
               value={dueDate}
               onChange={(event) => setDueDate(event.target.value)}
+            />
+          </Field>
+          <Field label="Estimate" hint="Story points or hours, per project setting">
+            <Input
+              type="number"
+              min={0}
+              step="0.5"
+              value={estimate}
+              onChange={(event) => setEstimate(event.target.value)}
+              placeholder="5"
             />
           </Field>
         </div>

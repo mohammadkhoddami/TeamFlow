@@ -7,16 +7,18 @@ import {
   Button,
   Card,
   CardHeader,
+  Checkbox,
   ConfirmDialog,
   ErrorState,
   Field,
   Input,
+  Select,
 } from '../components/ui'
 import { useAuth } from '../contexts/auth'
 import { useToast } from '../contexts/toast'
-import { ApiError, authApi, organizationsApi } from '../lib/api'
-import { qk } from '../lib/hooks'
-import { isAdmin, isOwner } from '../lib/types'
+import { ApiError, authApi, organizationsApi, preferencesApi } from '../lib/api'
+import { qk, useNotificationPreferences } from '../lib/hooks'
+import { isAdmin, isOwner, type NotificationPreferenceRead } from '../lib/types'
 
 export function SettingsPage() {
   const { org, role } = useOrg()
@@ -70,6 +72,18 @@ export function SettingsPage() {
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not revoke sessions'),
   })
+
+  const preferences = useNotificationPreferences()
+  const savePreferences = useMutation({
+    mutationFn: (data: Partial<NotificationPreferenceRead>) => preferencesApi.update(data),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: qk.preferences })
+      toast.success('Notification preferences saved')
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : 'Could not save preferences'),
+  })
+  const prefs = preferences.data
 
   return (
     <div className="max-w-3xl space-y-6 p-4 md:p-6">
@@ -126,6 +140,73 @@ export function SettingsPage() {
           >
             Log out everywhere
           </Button>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Email notifications"
+          description="Choose which events email you. In-app notifications are always recorded."
+        />
+        <div className="space-y-4 p-5">
+          {prefs && (
+            <>
+              <Checkbox
+                label="Send me email notifications"
+                checked={prefs.email_enabled}
+                onChange={(event) =>
+                  savePreferences.mutate({ email_enabled: event.target.checked })
+                }
+              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Checkbox
+                  label="Task assigned to me"
+                  checked={prefs.assigned}
+                  onChange={(event) =>
+                    savePreferences.mutate({ assigned: event.target.checked })
+                  }
+                />
+                <Checkbox
+                  label="I am @mentioned"
+                  checked={prefs.mentioned}
+                  onChange={(event) =>
+                    savePreferences.mutate({ mentioned: event.target.checked })
+                  }
+                />
+                <Checkbox
+                  label="Comments on tasks I watch"
+                  checked={prefs.comments}
+                  onChange={(event) =>
+                    savePreferences.mutate({ comments: event.target.checked })
+                  }
+                />
+                <Checkbox
+                  label="Tasks due soon"
+                  checked={prefs.due}
+                  onChange={(event) => savePreferences.mutate({ due: event.target.checked })}
+                />
+              </div>
+              <Field label="Delivery" hint="Digests are emailed on the schedule instead of per event">
+                <Select
+                  className="max-w-xs"
+                  value={prefs.digest}
+                  onChange={(event) =>
+                    savePreferences.mutate({
+                      digest: event.target.value as NotificationPreferenceRead['digest'],
+                    })
+                  }
+                >
+                  <option value="immediate">Immediately (per event)</option>
+                  <option value="daily">Daily digest</option>
+                  <option value="weekly">Weekly digest</option>
+                  <option value="off">Off</option>
+                </Select>
+              </Field>
+            </>
+          )}
+          {preferences.isLoading && (
+            <p className="text-xs text-slate-400">Loading preferences…</p>
+          )}
         </div>
       </Card>
 
