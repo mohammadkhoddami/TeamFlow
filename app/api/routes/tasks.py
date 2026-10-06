@@ -20,10 +20,12 @@ from app.repositories import (
     TaskRepository,
     WorklogRepository,
 )
+from app.core.exceptions import ValidationFailedError
 from app.repositories.task import DEFAULT_PAGE_SIZE
 from app.schemas import (
     BulkTaskRequest,
     BulkTaskResult,
+    CursorPage,
     CustomFieldValueRead,
     Page,
     PriorityLiteral,
@@ -124,6 +126,46 @@ async def list_tasks(
     )
     return Page[TaskRead](
         items=await _serialize_many(db, items), total=total, offset=offset, limit=limit
+    )
+
+
+@org_task_router.get(
+    "/cursor",
+    response_model=CursorPage[TaskRead],
+    summary="Keyset-paginated task listing (stable under writes, O(1) deep pages)",
+)
+async def list_tasks_cursor(
+    membership: OrgMembership,
+    db: DB,
+    project_id: uuid.UUID | None = None,
+    status: list[StatusLiteral] | None = Query(default=None),
+    priority: list[PriorityLiteral] | None = Query(default=None),
+    type: list[TaskTypeLiteral] | None = Query(default=None),
+    include_archived: bool = Query(default=False),
+    cursor: str | None = Query(default=None, max_length=512),
+    limit: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=100),
+) -> CursorPage[TaskRead]:
+    """Cursor listing ordered by created_at DESC, id DESC.
+
+    Pass `next_cursor` back verbatim until it is null. Cursors are stable:
+    inserting newer tasks never shifts subsequent pages (unlike OFFSET).
+    """
+    org, _m = membership
+    filters = TaskFilters(
+        project_id=project_id,
+        status=status,
+        priority=priority,
+        type=type,
+        include_archived=include_archived,
+    )
+    try:
+        items, next_cursor = await TaskRepository(db).list_cursor(
+            org.id, filters, cursor=cursor, limit=limit
+        )
+    except ValueError:
+        raise ValidationFailedError("Invalid cursor") from None
+    return CursorPage[TaskRead](
+        items=await _serialize_many(db, items), next_cursor=next_cursor, limit=limit
     )
 
 

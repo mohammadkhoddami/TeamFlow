@@ -460,10 +460,121 @@ def generate_recurring_tasks() -> dict:
     return {"generated": generated}
 
 
+@shared_task(
+    bind=True, name="teamflow.post_webhook_url", max_retries=3, default_retry_delay=10
+)
+def post_webhook_url(self, url: str, payload: dict) -> dict:
+    """One-off JSON POST used by automation webhook actions."""
+    import httpx
+
+    from app.workers.celery_app import http_client
+
+    client = http_client or httpx.Client(timeout=settings.webhook_timeout_seconds)
+    try:
+        response = client.post(url, json=payload)
+    except httpx.RequestError as exc:
+        raise self.retry(exc=exc, countdown=min(10 * 2 ** self.request.retries, 300))
+    if response.status_code >= 500:
+        raise self.retry(
+            exc=RuntimeError(f"HTTP {response.status_code}"),
+            countdown=min(10 * 2 ** self.request.retries, 300),
+        )
+    return {"status": "sent", "code": response.status_code}
+
+
+@shared_task(
+    bind=True, name="teamflow.deliver_integration", max_retries=settings.webhook_max_retries
+)
+def deliver_integration(self, event_id: str) -> dict:
+    """Outbound chat notification (Slack/Teams) for one IntegrationEvent row."""
+    from app.models import Integration, IntegrationEvent
+    from app.services.integrations import hub as integration_service
+
+    attempt = self.request.retries + 1
+    with session_scope() as db:
+        record = db.get(IntegrationEvent, uuid.UUID(event_id))
+        if record is None:
+            return {"status": "missing", "event_id": event_id}
+        if record.status == "delivered":
+            return {"status": "already_delivered", "event_id": event_id}
+        integration = db.get(Integration, record.integration_id)
+        if integration is None or not integration.is_active:
+            record.status = "failed"
+            record.detail = "integration deleted or disabled"
+            return {"status": "skipped", "event_id": event_id}
+        payload = dict(record.data or {})
+        event_type = record.event_type
+        provider = integration.provider
+        webhook_url = (integration.config or {}).get("webhook_url", "")
+
+    message = integration_service.format_chat_message(event_type, payload)
+    if not webhook_url:
+        with session_scope() as db:
+            record = db.get(IntegrationEvent, uuid.UUID(event_id))
+            if record is not None:
+                record.status = "failed"
+                record.detail = "missing webhook_url"
+        return {"status": "failed", "event_id": event_id}
+
+    from app.workers.celery_app import http_client
+
+    client = http_client or httpx.Client(
+        timeout=settings.webhook_timeout_seconds,
+        trust_env=settings.webhook_httpx_trust_env,
+    )
+    body = {"text": message}
+    try:
+        response = client.post(webhook_url, json=body)
+    except httpx.RequestError as exc:
+        return _integration_retry_or_fail(self, event_id, str(exc))
+    if response.status_code >= 400:
+        return _integration_retry_or_fail(self, event_id, f"HTTP {response.status_code}")
+    with session_scope() as db:
+        record = db.get(IntegrationEvent, uuid.UUID(event_id))
+        if record is not None:
+            record.status = "delivered"
+            record.detail = f"HTTP {response.status_code}"
+    return {"status": "delivered", "event_id": event_id, "provider": provider}
+
+
+def _integration_retry_or_fail(task, event_id: str, error: str) -> dict:
+    from app.models import IntegrationEvent
+
+    with session_scope() as db:
+        record = db.get(IntegrationEvent, uuid.UUID(event_id))
+        if record is not None:
+            record.detail = error[:2000]
+            if task.request.retries >= task.max_retries:
+                record.status = "failed"
+    if task.request.retries >= task.max_retries:
+        return {"status": "failed", "event_id": event_id}
+    raise task.retry(exc=RuntimeError(error[:200]), countdown=min(5 * 2**task.request.retries, 300))
+
+
+@shared_task(name="teamflow.run_scheduled_automations")
+def run_scheduled_automations() -> dict:
+    """Beat job (hourly): execute schedule-trigger automation rules.
+
+    The engine is async (shared with the API); a worker process has no running
+    loop, so `asyncio.run` is safe here.
+    """
+    import asyncio
+
+    from app.core.db import AsyncSessionLocal
+    from app.services import automations as automation_service
+
+    async def _run() -> dict:
+        async with AsyncSessionLocal() as db:
+            summary = await automation_service.run_due_scheduled_rules(db)
+            return summary.model_dump()
+
+    return asyncio.run(_run())
+
+
 @shared_task(name="teamflow.notify_due_tasks")
 def notify_due_tasks() -> dict:
     """Beat job (daily): remind watchers about tasks due within 24 hours."""
-    from app.models import Notification, Task, TaskStatus
+    from app.models import Notification, NotificationMute, Task, TaskStatus
 
     cutoff = datetime.now(UTC) + timedelta(hours=24)
     notified = 0
@@ -478,14 +589,29 @@ def notify_due_tasks() -> dict:
             ).scalars()
         )
         for task in tasks:
+            watcher_ids = [watcher.id for watcher in task.watchers]
+            if not watcher_ids:
+                continue
+            muted = set(
+                db.execute(
+                    select(NotificationMute.user_id).where(
+                        NotificationMute.user_id.in_(watcher_ids),
+                        NotificationMute.project_id == task.project_id,
+                    )
+                ).scalars()
+            )
             for watcher in task.watchers:
+                if watcher.id in muted:
+                    continue
                 db.add(
                     Notification(
                         user_id=watcher.id,
                         organization_id=task.organization_id,
+                        project_id=task.project_id,
+                        task_id=task.id,
                         type="task_due_soon",
                         title=f"Due soon: {task.title}",
-                        data={"task_id": str(task.id)},
+                        data={"task_id": str(task.id), "project_id": str(task.project_id)},
                     )
                 )
                 notified += 1

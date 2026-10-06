@@ -167,6 +167,12 @@ tenant isolation (IDOR -> 404), task transitions/query filters, idempotency
 replay, attachments (fake storage), webhook signing + retries + idempotency,
 rate limiting, notifications, audit trail, dashboard aggregation, WebSockets,
 and the admin panel (superuser-only login, CRUD, audit redaction, guards).
+M3 adds threaded comments/reactions/activity, notification mutes, the
+automation engine (conditions, actions, schedule runs, failure logging),
+API tokens/service accounts/OAuth grants, releases/roadmap/calendar,
+VCS + chat + calendar integrations, and cursor-pagination + query-budget
+tests (`tests/integration/test_m3_*.py`). The frontend has Vitest coverage
+for the Markdown (tables/images) and utility layers (`npm test`).
 
 ## Agile features (M1)
 
@@ -236,6 +242,45 @@ Phase 2 adds Jira-class planning while keeping the simple default:
   (dry-run supported) and a full workspace JSON export (optionally with
   attachment URLs) plus per-project CSV. `POST /organizations/{slug}/imports`,
   `GET /organizations/{slug}/export`.
+
+## Collaboration & ecosystem (M3)
+
+Phase 3 makes TeamFlow a collaboration hub and opens it to the ecosystem:
+
+- **Automation rules** — visual if-this-then-that rules: triggers (task
+  created/updated, status changed, comment created, schedule), conditions and
+  actions (assign, transition, comment, notify, webhook, add label, set
+  priority). Starter templates and a per-rule execution log.
+  `/organizations/{slug}/automations`, `.../templates`, `.../executions`;
+  schedule triggers run hourly via Celery beat.
+- **Releases & roadmap** — dated releases with scope progress plus a roadmap
+  timeline grouping work by epic. `/projects/{id}/releases`,
+  `/projects/{id}/roadmap`; `Task.release_id` scopes a task to a release.
+- **Calendar** — month/week view of due dates with drag-to-reschedule
+  (`GET /organizations/{slug}/calendar`, reschedule via `PATCH /tasks/{id}`).
+- **Threaded comments, reactions & activity feed** — replies
+  (`Comment.parent_id/root_id`), emoji reactions (curated set) and per-task/
+  project activity feeds. `/tasks/{id}/comments`, `/comments/{id}/reactions`,
+  `/tasks/{id}/activity`, `/projects/{id}/activity`.
+- **Rich content** — the Markdown editor/renderer now supports GFM tables,
+  images (including inline attachments via `attachment://<uuid>`) and keeps
+  the Markdown source as the single representation.
+- **Notification center upgrade** — notifications carry task/project pointers
+  for grouping, plus per-project mutes checked at fan-out time.
+  `/notifications/mutes`.
+- **Integrations** — GitHub/GitLab/Bitbucket webhooks link commits/PRs by issue
+  key and can auto-transition tasks; Slack/Teams receive event messages via an
+  incoming webhook; Google Calendar subscribes to a tokenized ICS feed.
+  `/organizations/{slug}/integrations`, public receivers
+  `POST /integrations/{provider}/{id}`, `GET /integrations/google-calendar/{id}/feed.ics`.
+- **API tokens, service accounts & OAuth apps** — personal access tokens
+  (`tf_...`), scoped service accounts (hidden from rosters) and OAuth2
+  client-credentials apps (`POST /oauth/token`), each with usage and optional
+  per-minute rate limits. The MCP server accepts `TEAMFLOW_TOKEN`.
+  `/organizations/{slug}/api-tokens`, `.../service-accounts`, `.../oauth-apps`.
+- **Performance & scale proof** — cursor (keyset) pagination on
+  `GET /organizations/{slug}/tasks/cursor`, query budgets enforced by tests,
+  a k6 load-test script and documented targets in `docs/performance.md`.
 
 ## Key behaviors
 
@@ -377,6 +422,17 @@ TEAMFLOW_EMAIL=other@example.com
 TEAMFLOW_PASSWORD=other-secret
 TEAMFLOW_ORG=other-org
 ```
+
+Agents and CI can skip passwords entirely with a personal access token
+(created under **API access** in the web UI, M3 #24):
+
+```env
+TEAMFLOW_TOKEN=tf_...
+TEAMFLOW_ORG=arsen
+```
+
+With `TEAMFLOW_TOKEN` the MCP server never calls `/auth/login`; the token's
+scopes, expiry and rate limit apply. Email+password remains the fallback.
 
 Give `TEAMFLOW_API_URL` the base URL only (`https://arsene.ir/flow`) - `/api/v1`
 is appended automatically. `TEAMFLOW_ORG` is only needed when the account

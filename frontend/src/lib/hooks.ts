@@ -2,18 +2,31 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 
 import type {
+  ActivityRead,
+  ApiTokenRead,
+  AutomationExecutionRead,
+  AutomationRuleRead,
+  AutomationTemplateRead,
   BoardRead,
+  CalendarResponse,
   ChecklistItemRead,
   CustomFieldRead,
   DashboardStats,
+  IntegrationEventRead,
+  IntegrationRead,
   InvitationRead,
   LabelRead,
+  NotificationMuteRead,
   NotificationPreferenceRead,
   NotificationRead,
+  OAuthAppRead,
   Page,
   ProjectRead,
+  ReleaseRead,
+  RoadmapResponse,
   SavedFilterRead,
   SearchResponse,
+  ServiceAccountRead,
   SprintRead,
   TaskAssigneeRead,
   TaskLinkSummary,
@@ -25,10 +38,14 @@ import type {
   WorklogRead,
 } from './types'
 import {
+  activityApi,
   auditApi,
+  automationsApi,
+  calendarApi,
   checklistApi,
   customFieldsApi,
   dashboardApi,
+  integrationsApi,
   invitationsApi,
   labelsApi,
   linksApi,
@@ -37,10 +54,12 @@ import {
   organizationsApi,
   preferencesApi,
   projectsApi,
+  releasesApi,
   savedFiltersApi,
   searchApi,
   sprintsApi,
   tasksApi,
+  tokensApi,
   webhooksApi,
   workflowsApi,
   worklogsApi,
@@ -86,6 +105,21 @@ export const qk = {
   taskChecklist: (taskId: string) => ['tasks', taskId, 'checklist'] as const,
   taskAssignees: (taskId: string) => ['tasks', taskId, 'assignees'] as const,
   taskWorklogs: (taskId: string) => ['tasks', taskId, 'worklogs'] as const,
+  taskActivity: (taskId: string) => ['tasks', taskId, 'activity'] as const,
+  projectActivity: (projectId: string) => ['projects', projectId, 'activity'] as const,
+  releases: (projectId: string) => ['projects', projectId, 'releases'] as const,
+  roadmap: (projectId: string) => ['projects', projectId, 'roadmap'] as const,
+  calendar: (slug: string, params: string) => ['orgs', slug, 'calendar', params] as const,
+  automations: (slug: string) => ['orgs', slug, 'automations'] as const,
+  automationTemplates: (slug: string) => ['orgs', slug, 'automations', 'templates'] as const,
+  automationExecutions: (slug: string) =>
+    ['orgs', slug, 'automations', 'executions'] as const,
+  integrations: (slug: string) => ['orgs', slug, 'integrations'] as const,
+  integrationEvents: (slug: string) => ['orgs', slug, 'integration-events'] as const,
+  notificationMutes: ['notifications', 'mutes'] as const,
+  apiTokens: (slug: string) => ['orgs', slug, 'api-tokens'] as const,
+  serviceAccounts: (slug: string) => ['orgs', slug, 'service-accounts'] as const,
+  oauthApps: (slug: string) => ['orgs', slug, 'oauth-apps'] as const,
 }
 
 const NOTIFICATION_POLL_MS = 30_000
@@ -332,8 +366,126 @@ export function useInvalidateTasks() {
         void queryClient.invalidateQueries({ queryKey: qk.taskLinks(taskId) })
         void queryClient.invalidateQueries({ queryKey: qk.taskWorklogs(taskId) })
         void queryClient.invalidateQueries({ queryKey: qk.taskAssignees(taskId) })
+        void queryClient.invalidateQueries({ queryKey: qk.taskActivity(taskId) })
       }
     },
     [queryClient],
   )
+}
+
+// -------------------------------------------------------------- M3 hooks
+
+export function useTaskActivity(taskId: string | null | undefined) {
+  return useQuery<ActivityRead[]>({
+    queryKey: qk.taskActivity(taskId ?? ''),
+    queryFn: () => activityApi.task(taskId as string),
+    enabled: Boolean(taskId),
+  })
+}
+
+export function useProjectActivity(projectId: string | undefined) {
+  return useQuery<ActivityRead[]>({
+    queryKey: qk.projectActivity(projectId ?? ''),
+    queryFn: () => activityApi.project(projectId as string),
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useReleases(projectId: string | undefined) {
+  return useQuery<ReleaseRead[]>({
+    queryKey: qk.releases(projectId ?? ''),
+    queryFn: () => releasesApi.list(projectId as string),
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useRoadmap(projectId: string | undefined) {
+  return useQuery<RoadmapResponse>({
+    queryKey: qk.roadmap(projectId ?? ''),
+    queryFn: () => releasesApi.roadmap(projectId as string),
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useCalendar(
+  slug: string,
+  params: { start?: string; end?: string; project_id?: string },
+) {
+  const serialized = JSON.stringify(params)
+  return useQuery<CalendarResponse>({
+    queryKey: qk.calendar(slug, serialized),
+    queryFn: () => calendarApi.get(slug, params),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useAutomations(slug: string) {
+  return useQuery<AutomationRuleRead[]>({
+    queryKey: qk.automations(slug),
+    queryFn: () => automationsApi.list(slug),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useAutomationTemplates(slug: string) {
+  return useQuery<AutomationTemplateRead[]>({
+    queryKey: qk.automationTemplates(slug),
+    queryFn: () => automationsApi.templates(slug),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useAutomationExecutions(slug: string) {
+  return useQuery<AutomationExecutionRead[]>({
+    queryKey: qk.automationExecutions(slug),
+    queryFn: () => automationsApi.executions(slug, { limit: 100 }),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useIntegrations(slug: string) {
+  return useQuery<IntegrationRead[]>({
+    queryKey: qk.integrations(slug),
+    queryFn: () => integrationsApi.list(slug),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useIntegrationEvents(slug: string) {
+  return useQuery<IntegrationEventRead[]>({
+    queryKey: qk.integrationEvents(slug),
+    queryFn: () => integrationsApi.events(slug, { limit: 100 }),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useNotificationMutes() {
+  return useQuery<NotificationMuteRead[]>({
+    queryKey: qk.notificationMutes,
+    queryFn: () => notificationsApi.listMutes(),
+  })
+}
+
+export function useApiTokens(slug: string) {
+  return useQuery<ApiTokenRead[]>({
+    queryKey: qk.apiTokens(slug),
+    queryFn: () => tokensApi.list(slug),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useServiceAccounts(slug: string, enabled = true) {
+  return useQuery<ServiceAccountRead[]>({
+    queryKey: qk.serviceAccounts(slug),
+    queryFn: () => tokensApi.listServiceAccounts(slug),
+    enabled: Boolean(slug) && enabled,
+  })
+}
+
+export function useOAuthApps(slug: string, enabled = true) {
+  return useQuery<OAuthAppRead[]>({
+    queryKey: qk.oauthApps(slug),
+    queryFn: () => tokensApi.listOAuthApps(slug),
+    enabled: Boolean(slug) && enabled,
+  })
 }

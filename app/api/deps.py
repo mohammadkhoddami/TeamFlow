@@ -19,7 +19,7 @@ rules; dependencies resolve *context*, not permissions.
 import uuid
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from jwt import PyJWTError
 from redis.asyncio import Redis
@@ -65,7 +65,32 @@ def get_storage() -> StorageClient:
 Storage = Annotated[StorageClient, Depends(get_storage)]
 
 
-async def get_current_user(token: Token, db: DB) -> User:
+async def get_current_user(request: Request, token: Token, db: DB) -> User:
+    """JWT or M3 API token.
+
+    Personal/service-account tokens (`tf_...`) and OAuth2 access tokens
+    (`tfo_...`) resolve to the owning User; scope + rate-limit checks happen
+    inside the token service so every route gets them for free.
+    """
+    from app.services import api_tokens
+
+    # Check the OAuth prefix first: "tfo_..." also starts with "tf_".
+    if token.startswith(api_tokens.OAUTH_TOKEN_PREFIX):
+        user = await api_tokens.authenticate_oauth_token(
+            db, token, method=request.method, path=request.url.path
+        )
+        user_id_ctx.set(str(user.id))
+        return user
+    if token.startswith(api_tokens.TOKEN_PREFIX):
+        api_token = await api_tokens.authenticate_token(
+            db, token, method=request.method, path=request.url.path
+        )
+        user = await db.get(User, api_token.user_id)
+        if not user or not user.is_active:
+            raise UnauthorizedError("Token owner not found or deactivated")
+        user_id_ctx.set(str(user.id))
+        return user
+
     try:
         payload = security.decode_token(token)
         user_id = uuid.UUID(payload["sub"])

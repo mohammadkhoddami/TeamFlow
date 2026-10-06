@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, CheckCheck } from 'lucide-react'
-import { useState } from 'react'
+import { Bell, BellOff, CheckCheck, Layers, LayoutList, ListTree } from 'lucide-react'
+import { useMemo, useState } from 'react'
 
 import { useOrg } from '../components/OrgLayout'
 import {
+  Badge,
   Button,
   Card,
   Checkbox,
@@ -12,14 +13,54 @@ import {
   PageSpinner,
 } from '../components/ui'
 import { notificationsApi } from '../lib/api'
-import { useNotifications } from '../lib/hooks'
+import { useNotificationMutes, useNotifications, useProjects } from '../lib/hooks'
+import type { NotificationRead } from '../lib/types'
 import { cn, relativeTime } from '../lib/utils'
+
+type GroupMode = 'project' | 'task' | 'none'
+
+function groupNotifications(
+  items: NotificationRead[],
+  mode: GroupMode,
+): { key: string; label: string; projectId: string | null; items: NotificationRead[] }[] {
+  if (mode === 'none') {
+    return [{ key: 'all', label: 'All notifications', projectId: null, items }]
+  }
+  const groups = new Map<string, NotificationRead[]>()
+  for (const item of items) {
+    const key =
+      mode === 'project' ? (item.project_id ?? 'none') : (item.task_id ?? 'none')
+    const list = groups.get(key) ?? []
+    list.push(item)
+    groups.set(key, list)
+  }
+  return [...groups.entries()].map(([key, grouped]) => ({
+    key,
+    label: key === 'none' ? 'General' : key,
+    projectId: mode === 'project' && key !== 'none' ? key : (grouped[0]?.project_id ?? null),
+    items: grouped,
+  }))
+}
 
 export function NotificationsPage() {
   const { org } = useOrg()
   const [unreadOnly, setUnreadOnly] = useState(false)
+  const [mode, setMode] = useState<GroupMode>('project')
   const notifications = useNotifications(unreadOnly)
+  const mutes = useNotificationMutes()
+  const projects = useProjects(org.slug)
   const queryClient = useQueryClient()
+
+  const projectNames = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const project of projects.data ?? []) map.set(project.id, project.name)
+    return map
+  }, [projects.data])
+
+  const mutedIds = useMemo(
+    () => new Set((mutes.data ?? []).map((mute) => mute.project_id)),
+    [mutes.data],
+  )
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['notifications'] })
@@ -27,6 +68,46 @@ export function NotificationsPage() {
 
   const markRead = useMutation({ mutationFn: notificationsApi.markRead, onSuccess: invalidate })
   const markAll = useMutation({ mutationFn: notificationsApi.markAllRead, onSuccess: invalidate })
+
+  const mute = useMutation({
+    mutationFn: (projectId: string) => notificationsApi.addMute(projectId),
+    onSuccess: invalidate,
+  })
+  const unmute = useMutation({
+    mutationFn: (projectId: string) => notificationsApi.removeMute(projectId),
+    onSuccess: invalidate,
+  })
+  const mutesBusy = mute.isPending || unmute.isPending
+
+  const groups = useMemo(
+    () => groupNotifications(notifications.data?.items ?? [], mode),
+    [notifications.data, mode],
+  )
+
+  function labelFor(group: { key: string; label: string; items: NotificationRead[] }): string {
+    if (mode === 'project') return projectNames.get(group.key) ?? 'General'
+    if (mode === 'task') {
+      const latest = group.items[0]
+      return latest?.title ?? 'Task activity'
+    }
+    return group.label
+  }
+
+  const modeButton = (value: GroupMode, icon: React.ReactNode, label: string) => (
+    <button
+      key={value}
+      onClick={() => setMode(value)}
+      className={cn(
+        'flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors',
+        mode === value
+          ? 'bg-brand-50 text-brand-700'
+          : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700',
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  )
 
   return (
     <div className="space-y-5 p-4 md:p-6">
@@ -38,6 +119,11 @@ export function NotificationsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5">
+            {modeButton('project', <Layers className="h-3.5 w-3.5" />, 'By project')}
+            {modeButton('task', <ListTree className="h-3.5 w-3.5" />, 'By task')}
+            {modeButton('none', <LayoutList className="h-3.5 w-3.5" />, 'Flat')}
+          </div>
           <Checkbox
             label="Unread only"
             checked={unreadOnly}
@@ -53,6 +139,24 @@ export function NotificationsPage() {
           </Button>
         </div>
       </div>
+
+      {(mutes.data?.length ?? 0) > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <span className="font-medium">Muted projects:</span>
+          {mutes.data?.map((entry) => (
+            <button
+              key={entry.id}
+              onClick={() => unmute.mutate(entry.project_id)}
+              disabled={mutesBusy}
+              className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 font-medium text-slate-600 hover:border-slate-300"
+              title="Unmute"
+            >
+              <BellOff className="h-3 w-3" />
+              {projectNames.get(entry.project_id) ?? entry.project_id.slice(0, 8)}
+            </button>
+          ))}
+        </div>
+      )}
 
       {notifications.isLoading && <PageSpinner />}
       {notifications.isError && (
@@ -70,46 +174,82 @@ export function NotificationsPage() {
         />
       )}
 
-      <div className="space-y-2">
-        {notifications.data?.items.map((notification) => {
-          const inThisOrg = notification.organization_id === org.id
-          return (
-            <Card
-              key={notification.id}
-              className={cn(
-                'flex items-start gap-3 p-4',
-                !notification.read_at && 'border-brand-200 bg-brand-50/40',
-              )}
-            >
-              <span
-                className={cn(
-                  'mt-1.5 h-2 w-2 shrink-0 rounded-full',
-                  notification.read_at ? 'bg-slate-200' : 'bg-brand-500',
-                )}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-slate-800">{notification.title}</p>
-                {notification.body && (
-                  <p className="mt-0.5 text-sm text-slate-600">{notification.body}</p>
-                )}
-                <p className="mt-1 text-xs text-slate-400">
-                  {notification.type} · {relativeTime(notification.created_at)}
-                  {notification.organization_id && (inThisOrg ? '' : ' · other workspace')}
+      <div className="space-y-5">
+        {groups.map((group) => (
+          <div key={group.key} className="space-y-2">
+            {mode !== 'none' && (
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {labelFor(group)}
+                  <Badge className="ml-2">{group.items.length}</Badge>
                 </p>
+                {group.projectId && (
+                  <button
+                    onClick={() =>
+                      mutedIds.has(group.projectId as string)
+                        ? unmute.mutate(group.projectId as string)
+                        : mute.mutate(group.projectId as string)
+                    }
+                    disabled={mutesBusy}
+                    className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
+                    title={mutedIds.has(group.projectId) ? 'Unmute project' : 'Mute project'}
+                  >
+                    {mutedIds.has(group.projectId) ? (
+                      <>
+                        <BellOff className="h-3.5 w-3.5" /> Muted
+                      </>
+                    ) : (
+                      <>
+                        <Bell className="h-3.5 w-3.5" /> Mute
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
-              {!notification.read_at && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => markRead.mutate(notification.id)}
-                  loading={markRead.isPending}
+            )}
+            {group.items.map((notification) => {
+              const inThisOrg = notification.organization_id === org.id
+              return (
+                <Card
+                  key={notification.id}
+                  className={cn(
+                    'flex items-start gap-3 p-4',
+                    !notification.read_at && 'border-brand-200 bg-brand-50/40',
+                  )}
                 >
-                  Mark read
-                </Button>
-              )}
-            </Card>
-          )
-        })}
+                  <span
+                    className={cn(
+                      'mt-1.5 h-2 w-2 shrink-0 rounded-full',
+                      notification.read_at ? 'bg-slate-200' : 'bg-brand-500',
+                    )}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-800">{notification.title}</p>
+                    {notification.body && (
+                      <p className="mt-0.5 text-sm text-slate-600">{notification.body}</p>
+                    )}
+                    <p className="mt-1 text-xs text-slate-400">
+                      {notification.type} · {relativeTime(notification.created_at)}
+                      {notification.project_id &&
+                        ` · ${projectNames.get(notification.project_id) ?? 'project'}`}
+                      {notification.organization_id && (inThisOrg ? '' : ' · other workspace')}
+                    </p>
+                  </div>
+                  {!notification.read_at && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => markRead.mutate(notification.id)}
+                      loading={markRead.isPending}
+                    >
+                      Mark read
+                    </Button>
+                  )}
+                </Card>
+              )
+            })}
+          </div>
+        ))}
       </div>
     </div>
   )

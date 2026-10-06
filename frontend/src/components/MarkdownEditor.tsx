@@ -4,6 +4,7 @@ import {
   Code,
   Eye,
   Heading2,
+  Image as ImageIcon,
   Italic,
   Link as LinkIcon,
   List,
@@ -11,6 +12,7 @@ import {
   PenLine,
   Quote,
   Strikethrough,
+  Table as TableIcon,
   Terminal,
 } from 'lucide-react'
 import { useRef, useState } from 'react'
@@ -163,6 +165,28 @@ export function MarkdownEditor({
     onChange(`${value.slice(0, start)}[${selected}](${url})${value.slice(end)}`)
     setTab('write')
     focusSelection(start + selected.length + 3, start + selected.length + 3 + url.length)
+  }
+
+  const applyImage = () => {
+    const { start, end } = selection()
+    const alt = value.slice(start, end) || 'description'
+    const url = 'https://'
+    onChange(`${value.slice(0, start)}![${alt}](${url})${value.slice(end)}`)
+    setTab('write')
+    focusSelection(start + alt.length + 4, start + alt.length + 4 + url.length)
+  }
+
+  const applyTable = () => {
+    const table = '| Column | Column |\n| --- | --- |\n| Cell | Cell |'
+    const { start, end } = selection()
+    const prefix = start > 0 && !value.slice(0, start).endsWith('\n') ? '\n' : ''
+    const suffix = value.slice(end).startsWith('\n') ? '' : '\n'
+    onChange(`${value.slice(0, start)}${prefix}${table}${suffix}${value.slice(end)}`)
+    setTab('write')
+    focusSelection(
+      start + prefix.length,
+      start + prefix.length + table.length,
+    )
   }
 
   const selectedLineRange = () => {
@@ -334,6 +358,13 @@ export function MarkdownEditor({
             onClick={() => applyWrap('\n```\n', '\n```', 'code')}
           >
             <Terminal className="h-3.5 w-3.5" />
+          </ToolbarButton>
+          <span className="mx-0.5 h-4 w-px bg-slate-200" />
+          <ToolbarButton title="Image" disabled={toolbarDisabled} onClick={applyImage}>
+            <ImageIcon className="h-3.5 w-3.5" />
+          </ToolbarButton>
+          <ToolbarButton title="Table" disabled={toolbarDisabled} onClick={applyTable}>
+            <TableIcon className="h-3.5 w-3.5" />
           </ToolbarButton>
         </div>
 

@@ -19,6 +19,39 @@ class CommentRepository:
         )
         return (await self.db.execute(statement)).scalar_one_or_none()
 
+    async def reply_counts(
+        self, comment_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, int]:
+        """Batched thread-reply counts (`root_id` rollup) — no N+1.
+
+        Counts every reply in a thread, not just direct children, so the root
+        comment shows the true thread size.
+        """
+        if not comment_ids:
+            return {}
+        rows = (
+            await self.db.execute(
+                select(Comment.root_id, func.count(Comment.id))
+                .where(Comment.root_id.in_(comment_ids))
+                .group_by(Comment.root_id)
+            )
+        ).all()
+        return {row[0]: int(row[1]) for row in rows}
+
+    async def list_replies(
+        self, root_ids: list[uuid.UUID], *, limit_per_thread: int = 200
+    ) -> list[Comment]:
+        """All replies for the given thread roots (flat, created order)."""
+        if not root_ids:
+            return []
+        statement = (
+            select(Comment)
+            .where(Comment.root_id.in_(root_ids))
+            .order_by(Comment.created_at.asc())
+            .limit(limit_per_thread * len(root_ids))
+        )
+        return list((await self.db.execute(statement)).scalars().all())
+
     async def list_for_task(
         self,
         task_id: uuid.UUID,

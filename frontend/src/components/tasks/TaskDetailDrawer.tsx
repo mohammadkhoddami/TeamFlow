@@ -9,6 +9,7 @@ import {
   qk,
   useInvalidateTasks,
   useLabels,
+  useReleases,
   useSprints,
   useTaskChildren,
   useWorkflow,
@@ -41,6 +42,7 @@ import {
   Select,
 } from '../ui'
 import { MarkdownEditor } from '../MarkdownEditor'
+import { ActivityFeed } from './ActivityFeed'
 import { AttachmentsSection } from './AttachmentsSection'
 import { CommentsSection } from './CommentsSection'
 import { LabelPicker } from './LabelPicker'
@@ -89,6 +91,7 @@ export function TaskDetailDrawer({
   const current = detail.data ?? task
   const children = useTaskChildren(current?.id)
   const sprints = useSprints(current?.project_id)
+  const releases = useReleases(current?.project_id)
   const workflow = useWorkflow(current?.project_id)
   const [customRule, setCustomRule] = useState('')
 
@@ -323,6 +326,20 @@ export function TaskDetailDrawer({
                 ))}
             </Select>
           </Field>
+          <Field label="Release">
+            <Select
+              value={current.release_id ?? ''}
+              onChange={(event) => patch.mutate({ release_id: event.target.value || null })}
+            >
+              <option value="">No release</option>
+              {(releases.data ?? []).map((release) => (
+                <option key={release.id} value={release.id}>
+                  {release.name}
+                  {release.release_date ? ` · ${release.release_date.slice(0, 10)}` : ''}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <Field label="Estimate" hint="Points or hours per project setting">
             <Input
               type="number"
@@ -501,9 +518,19 @@ export function TaskDetailDrawer({
           />
         </section>
 
-        <AttachmentsSection taskId={current.id} />
+        <AttachmentsSection
+          taskId={current.id}
+          onInsertMarkdown={(markdown) =>
+            setDescription((value) => `${value ? `${value}\n\n` : ''}${markdown}`)
+          }
+        />
 
         <CommentsSection taskId={current.id} />
+
+        <section className="space-y-1">
+          <h3 className="text-sm font-semibold text-slate-800">Activity</h3>
+          <ActivityFeed scope={{ type: 'task', id: current.id }} />
+        </section>
 
         <section className="grid gap-2 rounded-lg border border-slate-200 px-3 py-3 text-xs text-slate-500 sm:grid-cols-2">
           <p>

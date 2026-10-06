@@ -52,6 +52,7 @@ class TaskCreate(SQLModel):
     assignees: list[TaskAssigneeEntry] = Field(default_factory=list, max_length=20)
     checklist: list[str] = Field(default_factory=list, max_length=50)
     recurrence_rule: str | None = Field(default=None, max_length=255)
+    release_id: uuid.UUID | None = None
 
 
 class TaskUpdate(SQLModel):
@@ -71,6 +72,7 @@ class TaskUpdate(SQLModel):
     actual_estimate: float | None = Field(default=None, ge=0, le=100_000)
     custom_fields: dict[str, Any] | None = None
     recurrence_rule: str | None = Field(default=None, max_length=255)
+    release_id: uuid.UUID | None = None
 
 
 class TaskRead(SQLModel):
@@ -101,6 +103,7 @@ class TaskRead(SQLModel):
     archived_at: datetime | None = None
     recurrence_rule: str | None = None
     recurrence_source_id: uuid.UUID | None = None
+    release_id: uuid.UUID | None = None
     assignee: UserRead | None = None
     creator: UserRead | None = None
     parent: TaskParentRef | None = None

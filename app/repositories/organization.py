@@ -5,7 +5,7 @@ import uuid
 from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models import Membership, Organization
+from app.models import Membership, Organization, User
 
 
 class OrganizationRepository:
@@ -78,9 +78,14 @@ class MembershipRepository:
         limit: int = 50,
     ) -> list[Membership]:
         # Membership.user is joined-eager; no N+1 on the user column.
+        # Service-account shadow users are hidden from rosters/pickers (M3 #24).
         statement = (
             select(Membership)
-            .where(Membership.organization_id == organization_id)
+            .join(User, User.id == Membership.user_id)
+            .where(
+                Membership.organization_id == organization_id,
+                User.is_service_account == False,  # noqa: E712
+            )
             .order_by(Membership.created_at.asc())
             .offset(offset)
             .limit(limit)
@@ -94,9 +99,14 @@ class MembershipRepository:
         return (await self.db.execute(statement)).scalar_one()
 
     async def active_member_ids(self, organization_id: uuid.UUID) -> list[uuid.UUID]:
-        statement = select(Membership.user_id).where(
-            Membership.organization_id == organization_id,
-            Membership.is_active == True,
+        statement = (
+            select(Membership.user_id)
+            .join(User, User.id == Membership.user_id)
+            .where(
+                Membership.organization_id == organization_id,
+                Membership.is_active == True,  # noqa: E712
+                User.is_service_account == False,  # noqa: E712
+            )
         )
         return list((await self.db.execute(statement)).scalars().all())
 

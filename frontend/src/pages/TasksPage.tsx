@@ -82,6 +82,10 @@ export function TasksPage() {
   const [overdue, setOverdue] = useState(false)
   const [sort, setSort] = useState('-created_at')
   const [offset, setOffset] = useState(0)
+  // Cursor "load more": appends keyset-paginated pages without OFFSET drift.
+  const [cursorItems, setCursorItems] = useState<TaskRead[]>([])
+  const [cursorNext, setCursorNext] = useState<string | null>(null)
+  const [cursorLoading, setCursorLoading] = useState(false)
   const [selectedTask, setSelectedTask] = useState<TaskRead | null>(null)
   const [creating, setCreating] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -153,8 +157,36 @@ export function TasksPage() {
   const tasks = mode === 'filters' ? filterTasks : teamqlTasks
   const total = tasks.data?.total ?? 0
   const perPage = tasks.data?.limit ?? 25
-  const items = tasks.data?.items ?? []
+  const baseItems = tasks.data?.items ?? []
+  const items = cursorItems.length > 0 ? cursorItems : baseItems
   const projectNames = new Map(projects.data?.map((project) => [project.id, project.name]) ?? [])
+
+  // Reset accumulated cursor pages whenever the filter set changes.
+  useEffect(() => {
+    setCursorItems([])
+    setCursorNext(null)
+  }, [org.slug, projectId, statuses, priority, type, rootsOnly, assigneeId, search, overdue])
+
+  async function loadMore() {
+    setCursorLoading(true)
+    try {
+      const page = await tasksApi.cursor(org.slug, {
+        project_id: projectId || undefined,
+        status: statuses.length ? statuses : undefined,
+        priority: priority ? [priority as TaskPriority] : undefined,
+        type: type ? [type as TaskType] : undefined,
+        include_archived: undefined,
+        cursor: cursorNext,
+        limit: 50,
+      })
+      setCursorItems((current) => (current.length > 0 ? [...current, ...page.items] : [...baseItems, ...page.items]))
+      setCursorNext(page.next_cursor)
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not load more tasks')
+    } finally {
+      setCursorLoading(false)
+    }
+  }
 
   const bulk = useMutation({
     mutationFn: (data: Parameters<typeof tasksApi.bulk>[1]) => tasksApi.bulk(org.slug, data),
@@ -712,11 +744,39 @@ export function TasksPage() {
               </tbody>
             </table>
           </div>
-          <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
             <span>
-              Showing {Math.min(offset + 1, total)}–{Math.min(offset + perPage, total)} of {total}
+              {cursorItems.length > 0
+                ? `Loaded ${cursorItems.length} tasks (cursor mode)`
+                : `Showing ${Math.min(offset + 1, total)}–${Math.min(offset + perPage, total)} of ${total}`}
             </span>
             <div className="flex gap-2">
+              {mode === 'filters' && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void loadMore()}
+                    loading={cursorLoading}
+                    disabled={cursorNext === null && cursorItems.length > 0}
+                    title="Keyset pagination: stable and fast on large boards"
+                  >
+                    Load more (fast)
+                  </Button>
+                  {cursorItems.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setCursorItems([])
+                        setCursorNext(null)
+                      }}
+                    >
+                      Reset
+                    </Button>
+                  )}
+                </>
+              )}
               <Button
                 size="sm"
                 variant="secondary"

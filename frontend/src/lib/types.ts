@@ -481,6 +481,8 @@ export interface TaskRead {
   archived_at: string | null
   recurrence_rule: string | null
   recurrence_source_id: string | null
+  release_id: string | null
+  release_name?: string | null
   assignee?: UserRead | null
   creator?: UserRead | null
   parent?: TaskParentRef | null
@@ -502,14 +504,24 @@ export interface TaskTreeNode extends TaskRead {
   children: TaskTreeNode[]
 }
 
+export interface ReactionSummary {
+  emoji: string
+  count: number
+  user_ids: string[]
+}
+
 export interface CommentRead {
   id: string
   task_id: string
   organization_id: string
   body: string
+  parent_id: string | null
+  root_id: string | null
   author?: UserRead | null
   created_at: string
   updated_at: string | null
+  reply_count: number
+  reactions: ReactionSummary[]
 }
 
 export interface AttachmentRead {
@@ -537,11 +549,20 @@ export interface NotificationRead {
   id: string
   user_id: string
   organization_id: string | null
+  project_id: string | null
+  task_id: string | null
   type: string
   title: string
   body: string | null
   data: Record<string, unknown> | null
   read_at: string | null
+  created_at: string
+}
+
+export interface NotificationMuteRead {
+  id: string
+  project_id: string
+  organization_id: string
   created_at: string
 }
 
@@ -605,6 +626,322 @@ export interface Page<T> {
   total: number
   offset: number
   limit: number
+}
+
+export interface CursorPage<T> {
+  items: T[]
+  next_cursor: string | null
+  limit: number
+}
+
+export type ReleaseStatus = 'planned' | 'in_progress' | 'released' | 'cancelled'
+
+export interface ReleaseRead {
+  id: string
+  organization_id: string
+  project_id: string
+  name: string
+  description: string | null
+  version: string | null
+  status: ReleaseStatus
+  start_date: string | null
+  release_date: string | null
+  released_at: string | null
+  created_at: string
+  task_count: number
+  done_task_count: number
+}
+
+export interface RoadmapTaskRef {
+  id: string
+  key: string | null
+  title: string
+  type: TaskType
+  status: string
+  status_category: TaskCategory
+  priority: TaskPriority
+  due_date: string | null
+  estimate: number | null
+  assignee?: UserRead | null
+}
+
+export interface RoadmapEpic {
+  id: string
+  key: string | null
+  title: string
+  status: string
+  status_category: TaskCategory
+  priority: TaskPriority
+  start_date: string | null
+  due_date: string | null
+  task_count: number
+  done_task_count: number
+  children: RoadmapTaskRef[]
+}
+
+export interface RoadmapResponse {
+  project_id: string
+  releases: ReleaseRead[]
+  epics: RoadmapEpic[]
+  unassigned: RoadmapTaskRef[]
+}
+
+export interface CalendarTaskRead {
+  id: string
+  key: string | null
+  title: string
+  due_date: string
+  status: string
+  status_category: TaskCategory
+  priority: TaskPriority
+  type: TaskType
+  project_id: string
+  project_name: string
+  estimate: number | null
+  assignee?: UserRead | null
+}
+
+export interface CalendarResponse {
+  start: string
+  end: string
+  tasks: CalendarTaskRead[]
+}
+
+export interface ActivityRead {
+  id: string
+  organization_id: string
+  project_id: string | null
+  task_id: string | null
+  actor_id: string | null
+  actor?: UserRead | null
+  verb: string
+  summary: string
+  data: Record<string, unknown> | null
+  created_at: string
+}
+
+export type AutomationTrigger =
+  | 'task_created'
+  | 'task_updated'
+  | 'status_changed'
+  | 'comment_created'
+  | 'schedule'
+
+export interface AutomationCondition {
+  field: string
+  op: string
+  value: unknown
+}
+
+export interface AutomationAction {
+  type:
+    | 'assign'
+    | 'transition'
+    | 'comment'
+    | 'notify'
+    | 'webhook'
+    | 'add_label'
+    | 'set_priority'
+  assignee_id?: string | null
+  status?: string | null
+  body?: string | null
+  url?: string | null
+  user_id?: string | null
+  role?: string | null
+  label_id?: string | null
+  priority?: TaskPriority | null
+}
+
+export interface AutomationRuleRead {
+  id: string
+  organization_id: string
+  project_id: string | null
+  name: string
+  description: string | null
+  is_active: boolean
+  trigger_type: AutomationTrigger
+  trigger_config: Record<string, unknown> | null
+  conditions: AutomationCondition[] | null
+  actions: AutomationAction[]
+  last_run_at: string | null
+  run_count: number
+  created_at: string
+}
+
+export interface AutomationExecutionRead {
+  id: string
+  rule_id: string
+  rule_name: string | null
+  project_id: string | null
+  task_id: string | null
+  trigger_event: string
+  status: 'success' | 'failed' | 'skipped'
+  actions_log: { action: string; status: string; detail?: string | null }[]
+  error: string | null
+  created_at: string
+}
+
+export interface AutomationTemplateRead {
+  id: string
+  name: string
+  description: string
+  trigger_type: AutomationTrigger
+  trigger_config: Record<string, unknown> | null
+  conditions: AutomationCondition[] | null
+  actions: AutomationAction[]
+}
+
+export type IntegrationProvider =
+  | 'github'
+  | 'gitlab'
+  | 'bitbucket'
+  | 'slack'
+  | 'teams'
+  | 'google_calendar'
+
+export interface IntegrationRead {
+  id: string
+  organization_id: string
+  provider: IntegrationProvider
+  name: string
+  config: Record<string, unknown>
+  events: string[]
+  is_active: boolean
+  last_event_at: string | null
+  webhook_path: string | null
+  feed_path: string | null
+  has_secret: boolean
+  created_at: string
+}
+
+export interface IntegrationCreated extends IntegrationRead {
+  secret: string | null
+}
+
+export interface IntegrationEventRead {
+  id: string
+  integration_id: string
+  direction: 'inbound' | 'outbound'
+  event_type: string
+  status: string
+  detail: string | null
+  data: Record<string, unknown> | null
+  created_at: string
+}
+
+export interface ApiTokenRead {
+  id: string
+  organization_id: string
+  user_id: string
+  service_account_id: string | null
+  name: string
+  token_prefix: string
+  scopes: string[]
+  rate_limit_per_minute: number | null
+  expires_at: string | null
+  last_used_at: string | null
+  usage_count: number
+  is_active: boolean
+  revoked_at: string | null
+  created_at: string
+}
+
+export interface ApiTokenCreated extends ApiTokenRead {
+  token: string
+}
+
+export interface ApiTokenUsage {
+  token_id: string
+  name: string
+  usage_count: number
+  last_used_at: string | null
+  rate_limit_per_minute: number | null
+  requests_last_minute: number
+}
+
+export interface ServiceAccountRead {
+  id: string
+  organization_id: string
+  user_id: string
+  name: string
+  description: string | null
+  scopes: string[]
+  is_active: boolean
+  created_at: string
+}
+
+export interface OAuthAppRead {
+  id: string
+  organization_id: string
+  name: string
+  description: string | null
+  client_id: string
+  redirect_uris: string[]
+  scopes: string[]
+  is_active: boolean
+  last_used_at: string | null
+  created_at: string
+}
+
+export interface OAuthAppCreated extends OAuthAppRead {
+  client_secret: string
+}
+
+export const REACTION_EMOJIS = [
+  '👍',
+  '👎',
+  '❤️',
+  '🎉',
+  '😄',
+  '😅',
+  '🙏',
+  '👀',
+  '🚀',
+  '✅',
+  '❌',
+  '🔥',
+  '💡',
+  '⚠️',
+] as const
+
+export const RELEASE_STATUS_LABELS: Record<ReleaseStatus, string> = {
+  planned: 'Planned',
+  in_progress: 'In progress',
+  released: 'Released',
+  cancelled: 'Cancelled',
+}
+
+export const RELEASE_STATUS_BADGE: Record<ReleaseStatus, string> = {
+  planned: 'bg-slate-100 text-slate-600',
+  in_progress: 'bg-sky-100 text-sky-700',
+  released: 'bg-emerald-100 text-emerald-700',
+  cancelled: 'bg-red-100 text-red-700',
+}
+
+export const AUTOMATION_TRIGGER_LABELS: Record<AutomationTrigger, string> = {
+  task_created: 'When a task is created',
+  task_updated: 'When a task is updated',
+  status_changed: 'When status changes',
+  comment_created: 'When a comment is posted',
+  schedule: 'On a schedule',
+}
+
+export const INTEGRATION_PROVIDERS: readonly IntegrationProvider[] = [
+  'github',
+  'gitlab',
+  'bitbucket',
+  'slack',
+  'teams',
+  'google_calendar',
+]
+
+export const INTEGRATION_PROVIDER_LABELS: Record<IntegrationProvider, string> = {
+  github: 'GitHub',
+  gitlab: 'GitLab',
+  bitbucket: 'Bitbucket',
+  slack: 'Slack',
+  teams: 'Microsoft Teams',
+  google_calendar: 'Google Calendar',
 }
 
 export interface TokenPair {

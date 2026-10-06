@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
+  CalendarDays,
   CalendarRange,
   Columns3,
   Download,
@@ -8,6 +9,7 @@ import {
   LayoutGrid,
   Network,
   Plus,
+  Rocket,
   Save,
   Settings2,
   SlidersHorizontal,
@@ -19,7 +21,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useOrg } from '../components/OrgLayout'
 import { BacklogView } from '../components/tasks/BacklogView'
 import { BoardManager } from '../components/tasks/BoardManager'
+import { CalendarView } from '../components/tasks/CalendarView'
 import { CustomFieldsManager } from '../components/tasks/CustomFieldsManager'
+import { RoadmapView } from '../components/tasks/RoadmapView'
 import { SprintManager } from '../components/tasks/SprintManager'
 import { TaskBoard } from '../components/tasks/TaskBoard'
 import { TaskCreateDialog } from '../components/tasks/TaskCreateDialog'
@@ -98,7 +102,9 @@ export function ProjectPage() {
   const [createStatus, setCreateStatus] = useState<string>('todo')
   const [createParent, setCreateParent] = useState<TaskRead | null>(null)
   const [createType, setCreateType] = useState<TaskType>('task')
-  const [view, setView] = useState<'board' | 'tree' | 'backlog'>('board')
+  const [view, setView] = useState<'board' | 'tree' | 'backlog' | 'roadmap' | 'calendar'>(
+    'board',
+  )
   const [showSubtasks, setShowSubtasks] = useState(true)
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -309,6 +315,30 @@ export function ProjectPage() {
               >
                 <CalendarRange className="h-3.5 w-3.5" /> Backlog
               </button>
+              <button
+                type="button"
+                onClick={() => setView('roadmap')}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  view === 'roadmap'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                <Rocket className="h-3.5 w-3.5" /> Roadmap
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('calendar')}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  view === 'calendar'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                <CalendarDays className="h-3.5 w-3.5" /> Calendar
+              </button>
             </div>
             {view === 'board' && (
               <>
@@ -439,6 +469,10 @@ export function ProjectPage() {
         projectId ? (
           <BacklogView projectId={projectId} onOpen={setSelectedTask} />
         ) : null
+      ) : view === 'roadmap' ? (
+        projectId ? <RoadmapView projectId={projectId} /> : null
+      ) : view === 'calendar' ? (
+        projectId ? <CalendarView projectId={projectId} /> : null
       ) : (
         <>
           {tree.isLoading && <PageSpinner label="Loading hierarchy…" />}

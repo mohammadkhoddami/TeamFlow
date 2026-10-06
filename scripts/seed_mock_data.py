@@ -108,6 +108,8 @@ PROJECT_NOUNS = [
     "Dashboard", "Integration", "Launch", "Overhaul", "Cleanup",
 ]
 
+EMOJIS = ["👍", "👎", "❤️", "🎉", "😄", "🚀", "✅", "👀", "🔥", "🙏"]
+
 TASK_VERBS = [
     "Fix", "Add", "Refactor", "Document", "Investigate", "Optimize", "Implement",
     "Review", "Migrate", "Test", "Deploy", "Design", "Update", "Remove", "Harden",
@@ -418,18 +420,100 @@ class Seeder:
         )
         return projects_by_org, labels_by_org
 
+    def load_sprints_releases(
+        self,
+        orgs: list[tuple],
+        member_lists: list[list[str]],
+        projects_by_org: dict[int, list[tuple]],
+    ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+        """M1 sprints + M3 releases so reports/roadmap/calendar have real data."""
+        rng = self.rng
+        sprint_rows = []
+        release_rows = []
+        sprints_by_project: dict[str, list[str]] = {}
+        releases_by_project: dict[str, list[str]] = {}
+
+        for index, org in enumerate(orgs):
+            org_id = org[0]
+            org_created = org[5]
+            members = member_lists[index]
+            for project_id, project_created_iso in projects_by_org[index]:
+                created = datetime.fromisoformat(project_created_iso)
+                sprint_ids = []
+                for seq in range(rng.randint(2, 4)):
+                    sprint_id = new_uuid(rng)
+                    start = rand_between(rng, max(created, org_created), self.now)
+                    end = min(start + timedelta(days=14), self.now + timedelta(days=21))
+                    state = rng.choices(["planned", "active", "completed"], weights=[0.45, 0.2, 0.35], k=1)[0]
+                    completed_at = end if state == "completed" else None
+                    sprint_rows.append(
+                        (
+                            sprint_id, org_id, project_id, f"Sprint {seq + 1}",
+                            "Keep the board moving.", state, start, end, completed_at,
+                            rng.choice(members), created, None,
+                        )
+                    )
+                    sprint_ids.append(str(sprint_id))
+                sprints_by_project[str(project_id)] = sprint_ids
+
+                release_ids = []
+                for seq in range(rng.randint(1, 3)):
+                    release_id = new_uuid(rng)
+                    window_start = rand_between(rng, max(created, org_created), self.now)
+                    release_date = min(window_start + timedelta(days=rng.randint(20, 120)), self.now + timedelta(days=60))
+                    status = rng.choices(
+                        ["planned", "in_progress", "released", "cancelled"],
+                        weights=[0.35, 0.3, 0.3, 0.05],
+                        k=1,
+                    )[0]
+                    released_at = release_date if status == "released" else None
+                    release_rows.append(
+                        (
+                            release_id, org_id, project_id, f"v0.{seq + 1}.0", "Release scope.",
+                            f"0.{seq + 1}.0", status, window_start, release_date, released_at,
+                            rng.choice(members), created, None,
+                        )
+                    )
+                    release_ids.append(str(release_id))
+                releases_by_project[str(project_id)] = release_ids
+
+        self.counts["sprints"] = copy_rows(
+            self.cur,
+            "sprints",
+            (
+                "id", "organization_id", "project_id", "name", "goal", "state",
+                "start_date", "end_date", "completed_at", "created_by_id", "created_at",
+                "updated_at",
+            ),
+            sprint_rows,
+        )
+        self.counts["releases"] = copy_rows(
+            self.cur,
+            "releases",
+            (
+                "id", "organization_id", "project_id", "name", "description", "version",
+                "status", "start_date", "release_date", "released_at", "created_by_id",
+                "created_at", "updated_at",
+            ),
+            release_rows,
+        )
+        return sprints_by_project, releases_by_project
+
     def load_tasks(
         self,
         orgs: list[tuple],
         member_lists: list[list[str]],
         projects_by_org: dict[int, list[tuple]],
         labels_by_org: dict[int, list[str]],
+        sprints_by_project: dict[str, list[str]],
+        releases_by_project: dict[str, list[str]],
     ) -> tuple[list[tuple], dict[int, list[tuple]]]:
         rng = self.rng
         cfg = self.cfg
         columns = (
             "id", "organization_id", "project_id", "title", "description", "status",
-            "priority", "due_date", "created_by_id", "assignee_id", "completed_at",
+            "status_category", "priority", "type", "key", "number", "due_date",
+            "created_by_id", "assignee_id", "completed_at", "sprint_id", "release_id",
             "created_at", "updated_at",
         )
         tasks_meta: list[tuple] = []
@@ -442,12 +526,19 @@ class Seeder:
                 members = member_lists[index]
                 projects = projects_by_org[index]
                 labels = labels_by_org[index]
+                numbers: dict[str, int] = {}
                 for _ in range(cfg["tasks_per_org"]):
                     project_id, project_created_iso = rng.choice(projects)
+                    project_key = str(project_id)
+                    number = numbers.get(project_key, 0) + 1
+                    numbers[project_key] = number
+                    prefix = f"P{str(project_id).replace('-', '')[:3].upper()}"
+                    issue_key = f"{prefix}-{number}"
                     project_created = datetime.fromisoformat(project_created_iso)
                     created = rand_between(rng, max(project_created, org_created), self.now)
                     status = weighted(rng, STATUS_WEIGHTS)
                     priority = weighted(rng, PRIORITY_WEIGHTS)
+                    task_type = rng.choices(["task", "story", "epic"], weights=[0.72, 0.24, 0.04], k=1)[0]
                     title = f"{rng.choice(TASK_VERBS)} {rng.choice(TASK_OBJECTS)}"
                     description = (
                         f"{title.capitalize()} {rng.choice(TASK_CONTEXTS)}.\n\n"
@@ -464,14 +555,25 @@ class Seeder:
                     updated_at = None
                     if rng.random() < 0.65:
                         updated_at = min(created + timedelta(days=rng.uniform(0.1, 20)), self.now)
+                    sprint_id = None
+                    if rng.random() < 0.55:
+                        sprint_id = rng.choice(sprints_by_project.get(project_key, [None]))
+                    release_id = None
+                    if rng.random() < 0.5:
+                        release_id = rng.choice(releases_by_project.get(project_key, [None]))
                     task_id = new_uuid(rng)
                     copy.write_row(
                         (
-                            task_id, org_id, project_id, title, description, status, priority,
-                            due_date, creator, assignee, completed_at, created, updated_at,
+                            task_id, org_id, project_id, title, description, status,
+                            status, priority, task_type, issue_key, number, due_date,
+                            creator, assignee, completed_at, sprint_id, release_id,
+                            created, updated_at,
                         )
                     )
-                    meta = (str(task_id), str(org_id), str(project_id), created, status, creator, assignee, title, labels)
+                    meta = (
+                        str(task_id), str(org_id), str(project_id), created, status,
+                        creator, assignee, title, labels,
+                    )
                     tasks_meta.append(meta)
                     tasks_by_org[index].append(meta)
 
@@ -501,9 +603,20 @@ class Seeder:
             rows.extend((task_id, user_id) for user_id in watchers)
         self.counts["task_watchers"] = copy_rows(self.cur, "task_watchers", ("task_id", "user_id"), rows)
 
-    def load_comments(self, tasks_meta: list[tuple], member_lists: list[list[str]], org_index_by_id: dict[str, int]) -> None:
+    def load_comments(
+        self, tasks_meta: list[tuple], member_lists: list[list[str]], org_index_by_id: dict[str, int]
+    ) -> list[tuple]:
+        """Threaded comments (root + one reply level) with reaction candidates.
+
+        Returns a bounded sample of comments so `load_reactions` can attach
+        emoji reactions without holding every comment in memory.
+        """
         rng = self.rng
-        columns = ("id", "organization_id", "task_id", "author_id", "body", "created_at", "updated_at")
+        columns = (
+            "id", "organization_id", "task_id", "author_id", "body",
+            "parent_id", "root_id", "created_at", "updated_at",
+        )
+        reaction_candidates: list[tuple] = []
 
         def rows():
             for meta in tasks_meta:
@@ -513,17 +626,74 @@ class Seeder:
                 if isinstance(created, str):
                     created = datetime.fromisoformat(created)
                 members = member_lists[org_index_by_id[org_id]]
+                thread_root: tuple[str, datetime] | None = None
                 for _ in range(rng.randint(1, 5)):
+                    comment_id = new_uuid(rng)
                     comment_created = rand_between(rng, created, self.now)
                     updated = None
                     if rng.random() < 0.1:
                         updated = min(comment_created + timedelta(days=rng.uniform(0.01, 2)), self.now)
                     body = " ".join(rng.sample(COMMENT_PHRASES, rng.randint(1, 2)))
+                    author = rng.choice(members)
+                    parent_id = root_id = None
+                    if thread_root is not None and rng.random() < 0.5:
+                        parent_id, root_id = thread_root
+                    else:
+                        thread_root = (str(comment_id), comment_created)
+                    if len(reaction_candidates) < 50_000 and rng.random() < 0.25:
+                        reaction_candidates.append((org_id, str(comment_id), author, comment_created))
                     yield (
-                        new_uuid(rng), org_id, task_id, rng.choice(members), body, comment_created, updated,
+                        comment_id, org_id, task_id, author, body,
+                        parent_id, root_id, comment_created, updated,
                     )
 
         self.counts["comments"] = copy_rows(self.cur, "comments", columns, rows())
+        return reaction_candidates
+
+    def load_reactions(self, candidates: list[tuple]) -> None:
+        rng = self.rng
+        rows = []
+        for org_id, comment_id, author, created in candidates:
+            for emoji in rng.sample(EMOJIS, rng.randint(1, 2)):
+                rows.append(
+                    (new_uuid(rng), org_id, comment_id, rng.choice([author, author]), emoji, created, None)
+                )
+        self.counts["comment_reactions"] = copy_rows(
+            self.cur,
+            "comment_reactions",
+            ("id", "organization_id", "comment_id", "user_id", "emoji", "created_at", "updated_at"),
+            rows,
+        )
+
+    def load_activities(
+        self, tasks_meta: list[tuple], member_lists: list[list[str]], org_index_by_id: dict[str, int]
+    ) -> None:
+        """One `task_created` activity per task + a slices of status changes."""
+        rng = self.rng
+        columns = (
+            "id", "organization_id", "project_id", "task_id", "actor_id", "verb",
+            "summary", "data", "created_at", "updated_at",
+        )
+
+        def rows():
+            for meta in tasks_meta:
+                task_id, org_id, project_id, created, status, creator, _, title, _ = meta
+                if isinstance(created, str):
+                    created = datetime.fromisoformat(created)
+                yield (
+                    new_uuid(rng), org_id, project_id, task_id, creator, "task_created",
+                    f"created {title}", json.dumps({"title": title}), created, None,
+                )
+                if rng.random() < 0.35:
+                    changed = rand_between(rng, created, self.now)
+                    members = member_lists[org_index_by_id[org_id]]
+                    yield (
+                        new_uuid(rng), org_id, project_id, task_id, rng.choice(members),
+                        "status_changed", f"moved {title} to {status}",
+                        json.dumps({"to": status}), changed, None,
+                    )
+
+        self.counts["activities"] = copy_rows(self.cur, "activities", columns, rows())
 
     def load_attachments(self, tasks_meta: list[tuple], member_lists: list[list[str]], org_index_by_id: dict[str, int]) -> None:
         rng = self.rng
@@ -555,7 +725,10 @@ class Seeder:
 
     def load_notifications(self, users: list[tuple], tasks_by_org: dict[int, list[tuple]], user_orgs: dict[str, list[int]]) -> None:
         rng = self.rng
-        columns = ("id", "user_id", "organization_id", "type", "title", "body", "data", "read_at", "created_at", "updated_at")
+        columns = (
+            "id", "user_id", "organization_id", "project_id", "task_id", "type",
+            "title", "body", "data", "read_at", "created_at", "updated_at",
+        )
         types = ["task_assigned", "task_completed", "comment_created", "mention", "task_due_soon"]
 
         def rows():
@@ -579,6 +752,8 @@ class Seeder:
                         new_uuid(rng),
                         user[0],
                         org_id,
+                        project_id,
+                        task_id,
                         notification_type,
                         f"{notification_type.replace('_', ' ').title()}: {title}",
                         rng.choice(COMMENT_PHRASES),
@@ -774,7 +949,17 @@ def main() -> int:
         print(f"  labels               {seeder.counts['labels']:>9,}  ({time.perf_counter() - step:.1f}s)", flush=True)
 
         step = time.perf_counter()
-        tasks_meta, tasks_by_org = seeder.load_tasks(orgs, member_lists, projects_by_org, labels_by_org)
+        sprints_by_project, releases_by_project = seeder.load_sprints_releases(
+            orgs, member_lists, projects_by_org
+        )
+        print(f"  sprints              {seeder.counts['sprints']:>9,}  ({time.perf_counter() - step:.1f}s)", flush=True)
+        print(f"  releases             {seeder.counts['releases']:>9,}  ({time.perf_counter() - step:.1f}s)", flush=True)
+
+        step = time.perf_counter()
+        tasks_meta, tasks_by_org = seeder.load_tasks(
+            orgs, member_lists, projects_by_org, labels_by_org,
+            sprints_by_project, releases_by_project,
+        )
         print(f"  tasks                {seeder.counts['tasks']:>9,}  ({time.perf_counter() - step:.1f}s)", flush=True)
 
         org_index_by_id = {str(org[0]): index for index, org in enumerate(orgs)}
@@ -786,8 +971,16 @@ def main() -> int:
         print(f"  task_watchers        {seeder.counts['task_watchers']:>9,}  ({time.perf_counter() - step:.1f}s)", flush=True)
 
         step = time.perf_counter()
-        seeder.load_comments(tasks_meta, member_lists, org_index_by_id)
+        reaction_candidates = seeder.load_comments(tasks_meta, member_lists, org_index_by_id)
         print(f"  comments             {seeder.counts['comments']:>9,}  ({time.perf_counter() - step:.1f}s)", flush=True)
+
+        step = time.perf_counter()
+        seeder.load_reactions(reaction_candidates)
+        print(f"  comment_reactions    {seeder.counts['comment_reactions']:>9,}  ({time.perf_counter() - step:.1f}s)", flush=True)
+
+        step = time.perf_counter()
+        seeder.load_activities(tasks_meta, member_lists, org_index_by_id)
+        print(f"  activities           {seeder.counts['activities']:>9,}  ({time.perf_counter() - step:.1f}s)", flush=True)
 
         step = time.perf_counter()
         seeder.load_attachments(tasks_meta, member_lists, org_index_by_id)

@@ -73,8 +73,9 @@ TEAMFLOW_ORG=other-org
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `TEAMFLOW_API_URL` | yes | `http://localhost:8000` | TeamFlow base URL. `/api/v1` is appended if missing. Best set once in the shared file. |
-| `TEAMFLOW_EMAIL` | yes | – | Account the agent acts as. Set per project. |
-| `TEAMFLOW_PASSWORD` | yes | – | Password (min 10 chars, matching TeamFlow's rules). Set per project. |
+| `TEAMFLOW_TOKEN` | one of token / email+password | – | Personal access token (`tf_...`) created under **API access** in the UI. Preferred for agents/CI: no interactive login, revocable, scoped, optional per-minute rate limit. |
+| `TEAMFLOW_EMAIL` | one of token / email+password | – | Account the agent acts as. Set per project. |
+| `TEAMFLOW_PASSWORD` | one of token / email+password | – | Password (min 10 chars, matching TeamFlow's rules). Set per project. |
 | `TEAMFLOW_ORG` | no | your only org | Default organization slug. Needed only for multi-org accounts. |
 | `TEAMFLOW_PROJECT` | no | – | Default project name or UUID. |
 | `TEAMFLOW_TIMEOUT` | no | `30` | HTTP timeout in seconds. |
@@ -82,8 +83,10 @@ TEAMFLOW_ORG=other-org
 | `TEAMFLOW_TRUST_ENV` | no | `true` | Honour HTTP(S)_PROXY / system proxy settings. Set `false` when the proxy cannot reach the API — typical for a TeamFlow instance on localhost on a machine with a system proxy. |
 | `TEAMFLOW_ENV_FILE` | no | – | Pin the project env file instead of discovering it. |
 
-The server logs in once, refreshes its access token automatically, and
-re-authenticates if a token is revoked. No token juggling required.
+With `TEAMFLOW_TOKEN`, no login ever happens: the token is sent as a bearer
+credential and its scopes/expiry apply. With email+password, the server logs
+in once, refreshes its access token automatically, and re-authenticates if a
+token is revoked. Either way: no token juggling required.
 
 Confirm what was picked up (the account is masked, secrets are never printed):
 

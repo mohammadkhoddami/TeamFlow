@@ -17,7 +17,10 @@ if TYPE_CHECKING:
 
 class Comment(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     __tablename__ = "comments"
-    __table_args__ = (Index("ix_comments_task_created", "task_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_comments_task_created", "task_id", "created_at"),
+        Index("ix_comments_task_root", "task_id", "root_id", "created_at"),
+    )
 
     organization_id: uuid.UUID = Field(
         sa_column=Column(
@@ -44,6 +47,25 @@ class Comment(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         ),
     )
     body: str = Field(sa_column=Column(Text, nullable=False))
+    # Threading: `parent_id` is the direct reply target, `root_id` the top-level
+    # comment of the thread (NULL for top-level comments). Both SET NULL so
+    # deleting a parent never deletes its replies.
+    parent_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("comments.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    root_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("comments.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
 
     organization: Optional["Organization"] = Relationship()
     task: Optional["Task"] = Relationship()

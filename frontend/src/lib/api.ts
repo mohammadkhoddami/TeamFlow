@@ -1,34 +1,57 @@
 import { SESSION_EXPIRED_EVENT, tokens } from './tokens'
 import type {
+  ActivityRead,
+  ApiTokenCreated,
+  ApiTokenRead,
+  ApiTokenUsage,
   AttachmentRead,
   AuditLogRead,
+  AutomationAction,
+  AutomationCondition,
+  AutomationExecutionRead,
+  AutomationRuleRead,
+  AutomationTemplateRead,
+  AutomationTrigger,
   BoardRead,
   BulkTaskAction,
   BulkTaskResult,
   BurndownReport,
+  CalendarResponse,
   CapacityMemberRead,
   CfdReport,
   ChecklistItemRead,
   CommentRead,
+  CursorPage,
   CustomFieldRead,
   CycleTimeReport,
   DashboardStats,
   DownloadGrant,
   EstimationUnit,
   ImportSummary,
+  IntegrationCreated,
+  IntegrationEventRead,
+  IntegrationRead,
   InvitationRead,
   LabelRead,
   MembershipRead,
   MembershipRole,
+  NotificationMuteRead,
   NotificationPreferenceRead,
   NotificationRead,
+  OAuthAppCreated,
+  OAuthAppRead,
   OrganizationMemberRead,
   OrganizationRead,
   Page,
   ProjectRead,
   ProjectTemplateRead,
+  ReactionSummary,
+  ReleaseRead,
+  ReleaseStatus,
+  RoadmapResponse,
   SavedFilterRead,
   SearchResponse,
+  ServiceAccountRead,
   SprintRead,
   SprintReport,
   TaskAssigneeRead,
@@ -111,6 +134,7 @@ export interface TaskCreateInput {
   assignees?: { user_id: string; role: 'assignee' | 'approver' }[]
   checklist?: string[]
   recurrence_rule?: string | null
+  release_id?: string | null
 }
 
 export interface TaskUpdateInput {
@@ -129,6 +153,7 @@ export interface TaskUpdateInput {
   actual_estimate?: number | null
   custom_fields?: Record<string, unknown>
   recurrence_rule?: string | null
+  release_id?: string | null
 }
 
 export interface BulkTaskInput {
@@ -474,6 +499,16 @@ export const tasksApi = {
   tree: (projectId: string) =>
     request<TaskTreeNode[]>(`/projects/${projectId}/tasks/tree`),
 
+  cursor: (
+    slug: string,
+    filters: TaskFilters & { cursor?: string | null },
+  ) =>
+    request<CursorPage<TaskRead>>(
+      `/organizations/${slug}/tasks/cursor${buildQuery(
+        filters as Record<string, QueryValue>,
+      )}`,
+    ),
+
   query: (slug: string, q: string, params?: { offset?: number; limit?: number }) =>
     request<Page<TaskRead>>(
       `/organizations/${slug}/tasks/query${buildQuery({
@@ -588,14 +623,29 @@ export const preferencesApi = {
 export const commentsApi = {
   list: (taskId: string) => request<CommentRead[]>(`/tasks/${taskId}/comments`),
 
-  create: (taskId: string, body: string) =>
-    request<CommentRead>(`/tasks/${taskId}/comments`, { method: 'POST', body: { body } }),
+  create: (taskId: string, body: string, parentId?: string | null) =>
+    request<CommentRead>(`/tasks/${taskId}/comments`, {
+      method: 'POST',
+      body: { body, parent_id: parentId ?? null },
+    }),
 
   update: (commentId: string, body: string) =>
     request<CommentRead>(`/comments/${commentId}`, { method: 'PATCH', body: { body } }),
 
   remove: (commentId: string) =>
     request<void>(`/comments/${commentId}`, { method: 'DELETE' }),
+
+  react: (commentId: string, emoji: string) =>
+    request<ReactionSummary>(`/comments/${commentId}/reactions`, {
+      method: 'POST',
+      body: { emoji },
+    }),
+
+  unreact: (commentId: string, emoji: string) =>
+    request<void>(
+      `/comments/${commentId}/reactions/${encodeURIComponent(emoji)}`,
+      { method: 'DELETE' },
+    ),
 }
 
 // -------------------------------------------------------- attachments api
@@ -661,6 +711,17 @@ export const notificationsApi = {
 
   markAllRead: () =>
     request<{ marked: number }>('/notifications/read-all', { method: 'POST' }),
+
+  listMutes: () => request<NotificationMuteRead[]>('/notifications/mutes'),
+
+  addMute: (projectId: string) =>
+    request<NotificationMuteRead>('/notifications/mutes', {
+      method: 'POST',
+      body: { project_id: projectId },
+    }),
+
+  removeMute: (projectId: string) =>
+    request<void>(`/notifications/mutes/${projectId}`, { method: 'DELETE' }),
 }
 
 // ------------------------------------------------------------- labels api
@@ -1064,6 +1125,288 @@ export const dataApi = {
     downloadBlob(await response.text(), `teamflow-${slug}-export.json`, 'application/json')
   },
 }
+
+// --------------------------------------------------- M3 collaboration api
+
+export const activityApi = {
+  task: (taskId: string, params?: { offset?: number; limit?: number }) =>
+    request<ActivityRead[]>(
+      `/tasks/${taskId}/activity${buildQuery(params as Record<string, QueryValue>)}`,
+    ),
+
+  project: (projectId: string, params?: { offset?: number; limit?: number }) =>
+    request<ActivityRead[]>(
+      `/projects/${projectId}/activity${buildQuery(params as Record<string, QueryValue>)}`,
+    ),
+
+  org: (slug: string, params?: { offset?: number; limit?: number }) =>
+    request<ActivityRead[]>(
+      `/organizations/${slug}/activity${buildQuery(params as Record<string, QueryValue>)}`,
+    ),
+}
+
+// ---------------------------------------------------- releases / roadmap api
+
+export const releasesApi = {
+  list: (projectId: string) =>
+    request<ReleaseRead[]>(`/projects/${projectId}/releases`),
+
+  create: (
+    projectId: string,
+    data: {
+      name: string
+      description?: string | null
+      version?: string | null
+      status?: ReleaseStatus
+      start_date?: string | null
+      release_date?: string | null
+    },
+  ) => request<ReleaseRead>(`/projects/${projectId}/releases`, { method: 'POST', body: data }),
+
+  update: (
+    projectId: string,
+    releaseId: string,
+    data: Partial<{
+      name: string
+      description: string | null
+      version: string | null
+      status: ReleaseStatus
+      start_date: string | null
+      release_date: string | null
+    }>,
+  ) =>
+    request<ReleaseRead>(`/projects/${projectId}/releases/${releaseId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  remove: (projectId: string, releaseId: string) =>
+    request<void>(`/projects/${projectId}/releases/${releaseId}`, { method: 'DELETE' }),
+
+  roadmap: (projectId: string) =>
+    request<RoadmapResponse>(`/projects/${projectId}/roadmap`),
+}
+
+// ------------------------------------------------------------- calendar api
+
+export const calendarApi = {
+  get: (
+    slug: string,
+    params?: { start?: string; end?: string; project_id?: string; assignee?: string },
+  ) =>
+    request<CalendarResponse>(
+      `/organizations/${slug}/calendar${buildQuery(params as Record<string, QueryValue>)}`,
+    ),
+}
+
+// ----------------------------------------------------------- automation api
+
+export interface AutomationRuleInput {
+  name: string
+  description?: string | null
+  project_id?: string | null
+  trigger_type: AutomationTrigger
+  trigger_config?: Record<string, unknown> | null
+  conditions?: AutomationCondition[] | null
+  actions: AutomationAction[]
+  is_active?: boolean
+}
+
+export const automationsApi = {
+  list: (slug: string, params?: { project_id?: string; active_only?: boolean }) =>
+    request<AutomationRuleRead[]>(
+      `/organizations/${slug}/automations${buildQuery(params as Record<string, QueryValue>)}`,
+    ),
+
+  templates: (slug: string) =>
+    request<AutomationTemplateRead[]>(`/organizations/${slug}/automations/templates`),
+
+  executions: (
+    slug: string,
+    params?: { rule_id?: string; status?: string; offset?: number; limit?: number },
+  ) =>
+    request<AutomationExecutionRead[]>(
+      `/organizations/${slug}/automations/executions${buildQuery(
+        params as Record<string, QueryValue>,
+      )}`,
+    ),
+
+  create: (slug: string, data: AutomationRuleInput) =>
+    request<AutomationRuleRead>(`/organizations/${slug}/automations`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  update: (slug: string, ruleId: string, data: Partial<AutomationRuleInput>) =>
+    request<AutomationRuleRead>(`/organizations/${slug}/automations/${ruleId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  remove: (slug: string, ruleId: string) =>
+    request<void>(`/organizations/${slug}/automations/${ruleId}`, { method: 'DELETE' }),
+}
+
+// ---------------------------------------------------------- integrations api
+
+export const integrationsApi = {
+  list: (slug: string, provider?: string) =>
+    request<IntegrationRead[]>(
+      `/organizations/${slug}/integrations${buildQuery({ provider })}`,
+    ),
+
+  create: (
+    slug: string,
+    data: {
+      provider: string
+      name: string
+      config?: Record<string, unknown>
+      events?: string[]
+    },
+  ) =>
+    request<IntegrationCreated>(`/organizations/${slug}/integrations`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  update: (
+    slug: string,
+    integrationId: string,
+    data: Partial<{
+      name: string
+      config: Record<string, unknown>
+      events: string[]
+      is_active: boolean
+      rotate_secret: boolean
+    }>,
+  ) =>
+    request<IntegrationCreated>(`/organizations/${slug}/integrations/${integrationId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  remove: (slug: string, integrationId: string) =>
+    request<void>(`/organizations/${slug}/integrations/${integrationId}`, {
+      method: 'DELETE',
+    }),
+
+  events: (
+    slug: string,
+    params?: { integration_id?: string; offset?: number; limit?: number },
+  ) =>
+    request<IntegrationEventRead[]>(
+      `/organizations/${slug}/integrations/events${buildQuery(
+        params as Record<string, QueryValue>,
+      )}`,
+    ),
+}
+
+// ---------------------------------------------------- API tokens / OAuth api
+
+export const tokensApi = {
+  list: (slug: string, mine = false) =>
+    request<ApiTokenRead[]>(`/organizations/${slug}/api-tokens${buildQuery({ mine })}`),
+
+  create: (
+    slug: string,
+    data: {
+      name: string
+      scopes: string[]
+      expires_in_days?: number | null
+      rate_limit_per_minute?: number | null
+      service_account_id?: string | null
+    },
+  ) =>
+    request<ApiTokenCreated>(`/organizations/${slug}/api-tokens`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  update: (
+    slug: string,
+    tokenId: string,
+    data: Partial<{
+      name: string
+      scopes: string[]
+      is_active: boolean
+      rate_limit_per_minute: number | null
+    }>,
+  ) =>
+    request<ApiTokenRead>(`/organizations/${slug}/api-tokens/${tokenId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  rotate: (slug: string, tokenId: string) =>
+    request<ApiTokenCreated>(`/organizations/${slug}/api-tokens/${tokenId}/rotate`, {
+      method: 'POST',
+    }),
+
+  revoke: (slug: string, tokenId: string) =>
+    request<void>(`/organizations/${slug}/api-tokens/${tokenId}`, { method: 'DELETE' }),
+
+  usage: (slug: string, tokenId: string) =>
+    request<ApiTokenUsage>(`/organizations/${slug}/api-tokens/${tokenId}/usage`),
+
+  listServiceAccounts: (slug: string) =>
+    request<ServiceAccountRead[]>(`/organizations/${slug}/service-accounts`),
+
+  createServiceAccount: (
+    slug: string,
+    data: { name: string; description?: string | null; scopes: string[] },
+  ) =>
+    request<ServiceAccountRead>(`/organizations/${slug}/service-accounts`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  updateServiceAccount: (
+    slug: string,
+    accountId: string,
+    data: Partial<{ name: string; description: string | null; scopes: string[]; is_active: boolean }>,
+  ) =>
+    request<ServiceAccountRead>(`/organizations/${slug}/service-accounts/${accountId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  removeServiceAccount: (slug: string, accountId: string) =>
+    request<void>(`/organizations/${slug}/service-accounts/${accountId}`, {
+      method: 'DELETE',
+    }),
+
+  listOAuthApps: (slug: string) =>
+    request<OAuthAppRead[]>(`/organizations/${slug}/oauth-apps`),
+
+  createOAuthApp: (
+    slug: string,
+    data: { name: string; description?: string | null; redirect_uris?: string[]; scopes: string[] },
+  ) =>
+    request<OAuthAppCreated>(`/organizations/${slug}/oauth-apps`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  updateOAuthApp: (
+    slug: string,
+    appId: string,
+    data: Partial<{ name: string; description: string | null; redirect_uris: string[]; scopes: string[]; is_active: boolean }>,
+  ) =>
+    request<OAuthAppRead>(`/organizations/${slug}/oauth-apps/${appId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  rotateOAuthSecret: (slug: string, appId: string) =>
+    request<OAuthAppCreated>(`/organizations/${slug}/oauth-apps/${appId}/rotate`, {
+      method: 'POST',
+    }),
+
+  removeOAuthApp: (slug: string, appId: string) =>
+    request<void>(`/organizations/${slug}/oauth-apps/${appId}`, { method: 'DELETE' }),
+}
+
+export const API_BASE = API_BASE_URL
 
 function downloadBlob(content: string, filename: string, contentType: string): void {
   const blob = new Blob([content], { type: contentType })

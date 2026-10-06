@@ -59,13 +59,24 @@ from app.repositories import (
     LabelRepository,
     MembershipRepository,
     ProjectRepository,
+    ReleaseRepository,
     SprintRepository,
     TaskAssigneeRepository,
     TaskRepository,
     TaskStatusHistoryRepository,
 )
+from app.models import Release
 from app.schemas import TaskCreate, TaskUpdate
-from app.services import audit, cache, events, preferences, recurrence, workflows
+from app.services import (
+    activities,
+    audit,
+    automations,
+    cache,
+    events,
+    preferences,
+    recurrence,
+    workflows,
+)
 from app.services import custom_fields as custom_field_service
 
 
@@ -283,9 +294,22 @@ def task_event_payload(task: Task) -> dict:
         "parent_id": str(task.parent_id) if task.parent_id else None,
         "assignee_id": str(task.assignee_id) if task.assignee_id else None,
         "sprint_id": str(task.sprint_id) if task.sprint_id else None,
+        "release_id": str(task.release_id) if task.release_id else None,
         "estimate": task.estimate,
         "due_date": task.due_date.isoformat() if task.due_date else None,
     }
+
+
+async def _assert_release_in_project(
+    db: AsyncSession,
+    org_id: uuid.UUID,
+    project_id: uuid.UUID,
+    release_id: uuid.UUID,
+) -> Release:
+    release = await ReleaseRepository(db).get_in_org(release_id, org_id)
+    if release is None or release.project_id != project_id:
+        raise ValidationFailedError("Release not found in this project")
+    return release
 
 
 async def refetch_task(db: AsyncSession, task_id: uuid.UUID) -> Task:
@@ -345,6 +369,9 @@ async def _apply_create_fields(
     if data.sprint_id is not None:
         await _assert_sprint_in_project(db, org.id, project.id, data.sprint_id)
         task.sprint_id = data.sprint_id
+    if data.release_id is not None:
+        await _assert_release_in_project(db, org.id, project.id, data.release_id)
+        task.release_id = data.release_id
     if data.assignee_id is not None:
         await _assert_assignee_in_org(db, org.id, data.assignee_id)
         task.assignee_id = data.assignee_id
@@ -358,6 +385,8 @@ async def create_task(
     project: Project,
     data: TaskCreate,
     ip: str | None = None,
+    *,
+    run_automations: bool = True,
 ) -> Task:
     task = await _apply_create_fields(db, org, project, data, actor)
 
@@ -432,14 +461,29 @@ async def create_task(
             type="task_assigned",
             title=f"You were assigned: {task.title}",
             organization_id=org.id,
+            project_id=project.id,
+            task_id=task.id,
             data={"task_id": str(task.id), "project_id": str(project.id)},
         )
+    await activities.record(
+        db,
+        organization_id=org.id,
+        project_id=project.id,
+        task_id=task.id,
+        actor_id=actor.id,
+        verb="task_created",
+        summary=f"created {task.key or task.title}",
+        data={"title": task.title, "type": task.type, "priority": task.priority},
+    )
     await db.commit()
 
     task = await refetch_task(db, task.id)
     payload = task_event_payload(task)
     await events.publish_project_event(project.id, "task.created", payload)
     await events.dispatch_webhooks(
+        db, organization_id=org.id, event="task.created", data=payload
+    )
+    await events.dispatch_integrations(
         db, organization_id=org.id, event="task.created", data=payload
     )
     for user_id, _role in assignee_entries:
@@ -455,6 +499,18 @@ async def create_task(
             org_slug=org.slug,
         )
     await cache.invalidate_dashboard(org.id)
+    if run_automations:
+        # Snapshot the PK first: automation actions commit/rollback, which can
+        # expire the instance; reload before returning so serializers never
+        # touch expired attributes.
+        task_id = task.id
+        try:
+            await automations.execute_rules_for_event(
+                db, event="task_created", task=task, org=org, actor=actor
+            )
+        except Exception:
+            logger.exception("Automation execution failed for task %s", task_id)
+        task = await refetch_task(db, task_id)
     return task
 
 
@@ -465,6 +521,8 @@ async def update_task(
     task: Task,
     data: TaskUpdate,
     ip: str | None = None,
+    *,
+    run_automations: bool = True,
 ) -> Task:
     """Permission note: every org member may update tasks (collaboration-first);
     deletion and project management are the gated actions."""
@@ -494,6 +552,11 @@ async def update_task(
         if data.sprint_id is not None:
             await _assert_sprint_in_project(db, org.id, task.project_id, data.sprint_id)
         task.sprint_id = data.sprint_id
+
+    if "release_id" in changed and data.release_id != task.release_id:
+        if data.release_id is not None:
+            await _assert_release_in_project(db, org.id, task.project_id, data.release_id)
+        task.release_id = data.release_id
 
     if "estimate" in changed:
         task.estimate = data.estimate
@@ -576,6 +639,8 @@ async def update_task(
                 type="task_assigned",
                 title=f"You were assigned: {task.title}",
                 organization_id=org.id,
+                project_id=task.project_id,
+                task_id=task.id,
                 data={"task_id": str(task.id), "project_id": str(task.project_id)},
             )
     completed_now = (
@@ -585,6 +650,28 @@ async def update_task(
     )
     if completed_now:
         await _notify_task_completed(db, org, task, actor)
+    if "status" in changed and task.status != old_status:
+        await activities.record(
+            db,
+            organization_id=org.id,
+            project_id=task.project_id,
+            task_id=task.id,
+            actor_id=actor.id,
+            verb="status_changed",
+            summary=f"moved {task.key or task.title} to {task.status}",
+            data={"from": old_status, "to": task.status},
+        )
+    else:
+        await activities.record(
+            db,
+            organization_id=org.id,
+            project_id=task.project_id,
+            task_id=task.id,
+            actor_id=actor.id,
+            verb="task_updated",
+            summary=f"updated {task.key or task.title}",
+            data={"fields": sorted(changed)},
+        )
     await db.commit()
 
     task = await refetch_task(db, task.id)
@@ -592,6 +679,9 @@ async def update_task(
     event_type = "task.completed" if completed_now else "task.updated"
     await events.publish_project_event(task.project_id, "task.updated", payload)
     await events.dispatch_webhooks(
+        db, organization_id=org.id, event=event_type, data=payload
+    )
+    await events.dispatch_integrations(
         db, organization_id=org.id, event=event_type, data=payload
     )
     if "assignee_id" in changed and task.assignee_id and task.assignee_id != actor.id:
@@ -612,6 +702,34 @@ async def update_task(
         except Exception:
             logger.exception("Failed to spawn next occurrence for task %s", task.id)
     await cache.invalidate_dashboard(org.id)
+    if run_automations:
+        context = {
+            "changes": sorted(changed),
+            "from_status": old_status,
+            "from_category": old_category,
+            "to_status": task.status,
+            "to_category": task.status_category,
+        }
+        # Snapshot the PK before automation commits/rollbacks can expire it.
+        task_id = task.id
+        try:
+            await automations.execute_rules_for_event(
+                db, event="task_updated", task=task, org=org, actor=actor, context=context
+            )
+            task = await refetch_task(db, task_id)
+            if task.status != old_status:
+                await automations.execute_rules_for_event(
+                    db,
+                    event="status_changed",
+                    task=task,
+                    org=org,
+                    actor=actor,
+                    context=context,
+                )
+                task = await refetch_task(db, task_id)
+        except Exception:
+            logger.exception("Automation execution failed for task %s", task_id)
+            task = await refetch_task(db, task_id)
     return task
 
 
@@ -633,6 +751,8 @@ async def _notify_task_completed(
             type="task_completed",
             title=f"Completed: {task.title}",
             organization_id=org.id,
+            project_id=task.project_id,
+            task_id=task.id,
             data={"task_id": str(task.id), "project_id": str(task.project_id)},
         )
 
@@ -644,12 +764,17 @@ async def move_task(
     task: Task,
     new_status: str,
     ip: str | None = None,
+    *,
+    run_automations: bool = True,
 ) -> Task:
     if new_status == task.status:
         return task
     # update_task validates the move against the project workflow (which may be
     # custom), records status history and enforces WIP limits.
-    return await update_task(db, actor, org, task, TaskUpdate(status=new_status), ip)
+    return await update_task(
+        db, actor, org, task, TaskUpdate(status=new_status), ip,
+        run_automations=run_automations,
+    )
 
 
 async def archive_task(

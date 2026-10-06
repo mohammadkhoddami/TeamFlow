@@ -1,11 +1,38 @@
 """Public schema surface: routers import from here only."""
 
+from app.schemas.activity import ActivityRead
+from app.schemas.api_token import (
+    ApiTokenCreate,
+    ApiTokenCreated,
+    ApiTokenRead,
+    ApiTokenUpdate,
+    ApiTokenUsage,
+    OAuthAppCreate,
+    OAuthAppCreated,
+    OAuthAppRead,
+    OAuthAppUpdate,
+    OAuthTokenResponse,
+    ServiceAccountCreate,
+    ServiceAccountRead,
+    ServiceAccountUpdate,
+)
 from app.schemas.attachment import (
     AttachmentCreate,
     AttachmentRead,
     DownloadGrant,
     UploadGrant,
 )
+from app.schemas.automation import (
+    AutomationAction,
+    AutomationCondition,
+    AutomationExecutionRead,
+    AutomationRuleCreate,
+    AutomationRuleRead,
+    AutomationRuleUpdate,
+    AutomationRunSummary,
+    AutomationTemplateRead,
+)
+from app.schemas.calendar import CalendarResponse, CalendarTaskRead
 from app.schemas.auth import (
     OAuthExchange,
     OtpRequest,
@@ -35,8 +62,14 @@ from app.schemas.checklist import (
     TaskAssigneeRead,
     TaskAssigneesUpdate,
 )
-from app.schemas.comment import CommentCreate, CommentRead, CommentUpdate
-from app.schemas.common import Page
+from app.schemas.comment import (
+    CommentCreate,
+    CommentRead,
+    CommentUpdate,
+    ReactionCreate,
+    ReactionSummary,
+)
+from app.schemas.common import CursorPage, Page
 from app.schemas.custom_field import (
     CustomFieldCreate,
     CustomFieldRead,
@@ -44,6 +77,13 @@ from app.schemas.custom_field import (
     CustomFieldUpdate,
     CustomFieldValueRead,
     slugify_key,
+)
+from app.schemas.integration import (
+    IntegrationCreate,
+    IntegrationCreated,
+    IntegrationEventRead,
+    IntegrationRead,
+    IntegrationUpdate,
 )
 from app.schemas.dashboard import (
     AuditLogRead,
@@ -64,7 +104,12 @@ from app.schemas.link import (
     TaskLinkSummary,
     TaskLinkTypeLiteral,
 )
-from app.schemas.notification import NotificationRead, UnreadCount
+from app.schemas.notification import (
+    NotificationMuteCreate,
+    NotificationMuteRead,
+    NotificationRead,
+    UnreadCount,
+)
 from app.schemas.organization import (
     InvitationCreate,
     InvitationRead,
@@ -83,6 +128,15 @@ from app.schemas.preference import (
     NotificationPreferenceUpdate,
 )
 from app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
+from app.schemas.release import (
+    ReleaseCreate,
+    ReleaseRead,
+    ReleaseStatusLiteral,
+    ReleaseUpdate,
+    RoadmapEpic,
+    RoadmapResponse,
+    RoadmapTaskRef,
+)
 from app.schemas.report import (
     BurndownPoint,
     BurndownReport,
@@ -161,10 +215,24 @@ from app.schemas.worklog import (
 )
 
 __all__ = [
+    "ActivityRead",
+    "ApiTokenCreate",
+    "ApiTokenCreated",
+    "ApiTokenRead",
+    "ApiTokenUpdate",
+    "ApiTokenUsage",
     "AssigneeRoleLiteral",
     "AttachmentCreate",
     "AttachmentRead",
     "AuditLogRead",
+    "AutomationAction",
+    "AutomationCondition",
+    "AutomationExecutionRead",
+    "AutomationRuleCreate",
+    "AutomationRuleRead",
+    "AutomationRuleUpdate",
+    "AutomationRunSummary",
+    "AutomationTemplateRead",
     "BoardCreate",
     "BoardRead",
     "BoardUpdate",
@@ -174,6 +242,8 @@ __all__ = [
     "BulkTaskResult",
     "BurndownPoint",
     "BurndownReport",
+    "CalendarResponse",
+    "CalendarTaskRead",
     "CapacityEntry",
     "CapacityMemberRead",
     "CapacityUpdate",
@@ -187,6 +257,7 @@ __all__ = [
     "CommentRead",
     "CommentSearchHit",
     "CommentUpdate",
+    "CursorPage",
     "CustomFieldCreate",
     "CustomFieldRead",
     "CustomFieldTypeLiteral",
@@ -200,6 +271,11 @@ __all__ = [
     "ImportFormatLiteral",
     "ImportIssue",
     "ImportSummary",
+    "IntegrationCreate",
+    "IntegrationCreated",
+    "IntegrationEventRead",
+    "IntegrationRead",
+    "IntegrationUpdate",
     "InvitationCreate",
     "InvitationRead",
     "LabelCreate",
@@ -211,9 +287,16 @@ __all__ = [
     "MembershipUpdate",
     "NotificationPreferenceBase",
     "NotificationPreferenceRead",
+    "NotificationMuteCreate",
+    "NotificationMuteRead",
     "NotificationPreferenceUpdate",
     "NotificationRead",
+    "OAuthAppCreate",
+    "OAuthAppCreated",
+    "OAuthAppRead",
+    "OAuthAppUpdate",
     "OAuthExchange",
+    "OAuthTokenResponse",
     "OrganizationCreate",
     "OrganizationMemberRead",
     "OrganizationRead",
@@ -230,12 +313,24 @@ __all__ = [
     "ProjectSearchHit",
     "ProjectTemplateRead",
     "ProjectUpdate",
+    "ReactionCreate",
+    "ReactionSummary",
     "RefreshedToken",
+    "ReleaseCreate",
+    "ReleaseRead",
+    "ReleaseStatusLiteral",
+    "ReleaseUpdate",
+    "RoadmapEpic",
+    "RoadmapResponse",
+    "RoadmapTaskRef",
     "SaveProjectTemplate",
     "SavedFilterCreate",
     "SavedFilterRead",
     "SavedFilterUpdate",
     "SearchResponse",
+    "ServiceAccountCreate",
+    "ServiceAccountRead",
+    "ServiceAccountUpdate",
     "SortableField",
     "SprintComplete",
     "SprintCreate",

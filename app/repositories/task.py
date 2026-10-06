@@ -5,10 +5,12 @@ query always apply identical filters. Sorting is whitelist-based; user input
 never reaches ORDER BY directly (no column-name injection).
 """
 
+import base64
+import json
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, ColumnElement, Text, case
+from sqlalchemy import Column, ColumnElement, Text, and_, case
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import aliased
 from sqlmodel import func, or_, select
@@ -295,6 +297,21 @@ class TaskFilters:
         return conds
 
 
+def encode_cursor(created_at: datetime, task_id: uuid.UUID) -> str:
+    """Opaque keyset cursor: (created_at, id) of the last row on the page."""
+    raw = json.dumps({"t": created_at.isoformat(), "id": str(task_id)}).encode()
+    return base64.urlsafe_b64encode(raw).decode()
+
+
+def decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
+    """Raises ValueError on malformed cursors (mapped to 422 by the route)."""
+    try:
+        data = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
+        return datetime.fromisoformat(data["t"]), uuid.UUID(data["id"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Invalid cursor") from exc
+
+
 def parse_sort(sort: str | None) -> ColumnElement | Column:
     """'-priority' -> Task.priority DESC; unknown fields fall back to created_at."""
     if not sort:
@@ -347,6 +364,46 @@ class TaskRepository:
         count_stmt = select(func.count(Task.id)).where(*conds)
         total = (await self.db.execute(count_stmt)).scalar_one()
         return items, total
+
+    async def list_cursor(
+        self,
+        organization_id: uuid.UUID,
+        filters: TaskFilters,
+        *,
+        cursor: str | None = None,
+        limit: int = DEFAULT_PAGE_SIZE,
+    ) -> tuple[list[Task], str | None]:
+        """Keyset pagination over (created_at DESC, id DESC).
+
+        Unlike OFFSET, the query cost does not grow with page depth: Postgres
+        walks `ix_tasks_created` and stops after limit+1 rows. This is the
+        hot-path listing for large orgs (M3 #37).
+        """
+        limit = min(limit, MAX_PAGE_SIZE)
+        conds = [Task.organization_id == organization_id, *filters.conditions()]
+        if cursor:
+            last_time, last_id = decode_cursor(cursor)
+            conds.append(
+                or_(
+                    Task.created_at < last_time,
+                    and_(Task.created_at == last_time, Task.id < last_id),
+                )
+            )
+        statement = (
+            select(Task)
+            .where(*conds)
+            .order_by(Task.created_at.desc(), Task.id.desc())
+            .limit(limit + 1)
+        )
+        rows = list((await self.db.execute(statement)).scalars().all())
+        has_more = len(rows) > limit
+        items = rows[:limit]
+        next_cursor = (
+            encode_cursor(items[-1].created_at, items[-1].id)
+            if has_more and items
+            else None
+        )
+        return items, next_cursor
 
     async def list_children(
         self,

@@ -126,6 +126,7 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         Index("ix_tasks_org_archived", "organization_id", "archived_at"),
         Index("ix_tasks_org_category", "organization_id", "status_category"),
         Index("ix_tasks_org_recurrence", "organization_id", "recurrence_rule"),
+        Index("ix_tasks_org_release", "organization_id", "release_id"),
         UniqueConstraint("project_id", "number", name="uq_tasks_project_number"),
     )
 
@@ -194,6 +195,14 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         sa_column=Column(
             SAUuid(as_uuid=True),
             ForeignKey("tasks.id", ondelete="SET NULL", name="fk_tasks_recurrence_source"),
+            nullable=True,
+        ),
+    )
+    release_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("releases.id", ondelete="SET NULL", name="fk_tasks_release_id"),
             nullable=True,
         ),
     )

@@ -6,6 +6,8 @@
 // The parser only produces data — `components/Markdown.tsx` renders it as
 // React elements, so raw HTML in a description is never interpreted.
 
+export type TableAlignment = 'left' | 'center' | 'right'
+
 export type MarkdownBlock =
   | { kind: 'heading'; level: number; text: string }
   | { kind: 'paragraph'; text: string }
@@ -14,6 +16,8 @@ export type MarkdownBlock =
   | { kind: 'list'; ordered: boolean; items: string[] }
   | { kind: 'taskList'; items: { checked: boolean; text: string }[] }
   | { kind: 'divider' }
+  | { kind: 'image'; alt: string; src: string }
+  | { kind: 'table'; header: string[]; align: TableAlignment[]; rows: string[][] }
 
 export type InlineToken =
   | { kind: 'text'; text: string }
@@ -22,6 +26,7 @@ export type InlineToken =
   | { kind: 'strike'; text: string }
   | { kind: 'code'; text: string }
   | { kind: 'link'; text: string; href: string }
+  | { kind: 'image'; alt: string; src: string }
 
 const HEADING = /^(#{1,6})\s+(.*)$/
 const FENCE = /^```\s*([\w+#-]*)\s*$/
@@ -30,6 +35,27 @@ const QUOTE_LINE = /^\s*>\s?(.*)$/
 const TASK_ITEM = /^\s*[-*+]\s+\[([ xX])\]\s+(.*)$/
 const UL_ITEM = /^\s*[-*+]\s+(?!\[[ xX]\]\s)(.*)$/
 const OL_ITEM = /^\s*\d+[.)]\s+(.*)$/
+const IMAGE_LINE = /^!\[([^\]\n]*)\]\(([^)\s]+)\)$/
+const TABLE_DIVIDER = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/
+
+function isTableStart(line: string, next: string | undefined): boolean {
+  return line.includes('|') && next !== undefined && TABLE_DIVIDER.test(next)
+}
+
+function splitTableRow(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '')
+  return trimmed.split('|').map((cell) => cell.trim())
+}
+
+function tableAlignments(divider: string): TableAlignment[] {
+  return splitTableRow(divider).map((cell) => {
+    const left = cell.startsWith(':')
+    const right = cell.endsWith(':')
+    if (left && right) return 'center'
+    if (right) return 'right'
+    return 'left'
+  })
+}
 
 function isBlockStart(line: string): boolean {
   return (
@@ -40,7 +66,8 @@ function isBlockStart(line: string): boolean {
     QUOTE_LINE.test(line) ||
     TASK_ITEM.test(line) ||
     UL_ITEM.test(line) ||
-    OL_ITEM.test(line)
+    OL_ITEM.test(line) ||
+    IMAGE_LINE.test(line)
   )
 }
 
@@ -110,6 +137,26 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
       continue
     }
 
+    const image = IMAGE_LINE.exec(line)
+    if (image) {
+      blocks.push({ kind: 'image', alt: image[1], src: image[2] })
+      index += 1
+      continue
+    }
+
+    if (isTableStart(line, lines[index + 1])) {
+      const header = splitTableRow(line)
+      const align = tableAlignments(lines[index + 1])
+      index += 2
+      const rows: string[][] = []
+      while (index < lines.length && lines[index].includes('|')) {
+        rows.push(splitTableRow(lines[index]))
+        index += 1
+      }
+      blocks.push({ kind: 'table', header, align, rows })
+      continue
+    }
+
     if (QUOTE_LINE.test(line)) {
       const quoteLines: string[] = []
       while (index < lines.length) {
@@ -160,13 +207,21 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
   return blocks
 }
 
+// Images must come before links in the alternation: `![alt](src)` starts with
+// `[` one character in, so a link-first pattern would tear images apart.
 const INLINE_PATTERN =
-  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|(\*[^*\n]+\*)|(_[^_\n]+_)|(~~[^~\n]+~~)|(\[[^\]\n]+\]\(([^)\s]+)\))/g
+  /(!\[([^\]\n]*)\]\(([^)\s]+)\))|(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|(\*[^*\n]+\*)|(_[^_\n]+_)|(~~[^~\n]+~~)|(\[[^\]\n]+\]\(([^)\s]+)\))/g
 
 const URL_PATTERN = /https?:\/\/[^\s<>()]+/g
 
 export function isSafeHref(href: string): boolean {
   return /^(https?:\/\/|mailto:|\/|#)/i.test(href)
+}
+
+// Inline attachments are addressed by their attachment id; remote images must
+// be http(s). Everything else (javascript:, data:, ...) renders as text.
+export function isSafeImageSrc(src: string): boolean {
+  return /^(https?:\/\/|\/|attachment:\/\/)/i.test(src)
 }
 
 function isSafeWordBoundary(source: string, index: number): boolean {
@@ -203,9 +258,27 @@ export function parseInline(source: string): InlineToken[] {
     if (match.index > lastIndex) {
       pushText(tokens, source.slice(lastIndex, match.index))
     }
-    const [full, code, strongStar, strongUnderscore, emStar, emUnderscore, strike, link, href] =
-      match
-    if (code) {
+    const [
+      full,
+      ,
+      imageAlt,
+      imageSrc,
+      code,
+      strongStar,
+      strongUnderscore,
+      emStar,
+      emUnderscore,
+      strike,
+      link,
+      href,
+    ] = match
+    if (imageAlt !== undefined && imageSrc !== undefined) {
+      if (isSafeImageSrc(imageSrc)) {
+        tokens.push({ kind: 'image', alt: imageAlt, src: imageSrc })
+      } else {
+        pushText(tokens, full)
+      }
+    } else if (code) {
       tokens.push({ kind: 'code', text: code.slice(1, -1) })
     } else if (strongStar) {
       tokens.push({ kind: 'strong', text: strongStar.slice(2, -2) })

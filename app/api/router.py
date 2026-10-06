@@ -3,9 +3,13 @@
 from fastapi import APIRouter
 
 from app.api.routes import (
+    activities,
+    api_tokens,
     attachments,
     audit,
     auth,
+    automations,
+    calendar,
     capacity,
     checklists,
     comments,
@@ -13,6 +17,7 @@ from app.api.routes import (
     dashboard,
     data,
     health,
+    integrations,
     invitations,
     labels,
     links,
@@ -20,6 +25,7 @@ from app.api.routes import (
     organizations,
     preferences,
     projects,
+    releases,
     reports,
     saved_filters,
     search,
@@ -74,9 +80,22 @@ api_router.include_router(labels.label_router)
 api_router.include_router(labels.task_label_router)
 api_router.include_router(comments.router)
 api_router.include_router(comments.comment_router)
+api_router.include_router(comments.reaction_router)
 api_router.include_router(attachments.router)
 api_router.include_router(attachments.attachment_router)
 api_router.include_router(notifications.router)
 api_router.include_router(webhooks.router)
 api_router.include_router(audit.audit_router)
 api_router.include_router(dashboard.dashboard_router)
+# --- M3: collaboration & ecosystem ---
+api_router.include_router(activities.task_activity_router)
+api_router.include_router(activities.project_activity_router)
+api_router.include_router(activities.org_activity_router)
+api_router.include_router(api_tokens.router)
+api_router.include_router(api_tokens.oauth_router)
+api_router.include_router(automations.router)
+api_router.include_router(calendar.router)
+api_router.include_router(integrations.router)
+api_router.include_router(integrations.public_router)
+api_router.include_router(releases.project_release_router)
+api_router.include_router(releases.project_roadmap_router)

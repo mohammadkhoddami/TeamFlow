@@ -56,6 +56,10 @@ celery_app.conf.update(
             "task": "teamflow.generate_recurring_tasks",
             "schedule": 24 * 3600,
         },
+        "run-scheduled-automations-hourly": {
+            "task": "teamflow.run_scheduled_automations",
+            "schedule": 3600,
+        },
     },
 )
 
@@ -70,6 +74,8 @@ celery_app.conf.task_queues = (
 celery_app.conf.task_routes = {
     "teamflow.send_email": {"queue": "emails"},
     "teamflow.deliver_webhook": {"queue": "webhooks"},
+    "teamflow.post_webhook_url": {"queue": "webhooks"},
+    "teamflow.deliver_integration": {"queue": "webhooks"},
 }
 
 # Long-lived HTTP client for webhook delivery, one per worker process.

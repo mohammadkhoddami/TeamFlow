@@ -4,7 +4,10 @@ import { AppLayout } from './components/AppLayout'
 import { OrgLayout } from './components/OrgLayout'
 import { GuestRoute, ProtectedRoute } from './components/ProtectedRoute'
 import { StandaloneLayout } from './components/StandaloneLayout'
+import { ApiTokensPage } from './pages/ApiTokensPage'
 import { AuditPage } from './pages/AuditPage'
+import { AutomationsPage } from './pages/AutomationsPage'
+import { IntegrationsPage } from './pages/IntegrationsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { InvitationsPage } from './pages/InvitationsPage'
@@ -55,10 +58,13 @@ export default function App() {
             <Route path="projects/:projectId" element={<ProjectPage />} />
             <Route path="tasks" element={<TasksPage />} />
             <Route path="reports" element={<ReportsPage />} />
+            <Route path="automations" element={<AutomationsPage />} />
+            <Route path="integrations" element={<IntegrationsPage />} />
             <Route path="timesheet" element={<TimesheetPage />} />
             <Route path="members" element={<MembersPage />} />
             <Route path="labels" element={<LabelsPage />} />
             <Route path="webhooks" element={<WebhooksPage />} />
+            <Route path="api-tokens" element={<ApiTokensPage />} />
             <Route path="audit" element={<AuditPage />} />
             <Route path="notifications" element={<NotificationsPage />} />
             <Route path="settings" element={<SettingsPage />} />
