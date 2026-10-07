@@ -17,6 +17,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
+from app.core.outbound import validate_outbound_url
 from app.models import Organization, Plugin, User
 from app.services import audit
 from app.workers.celery_app import celery_app
@@ -118,9 +119,9 @@ async def get_plugin_for_org(
 
 
 def _validate_webhook_url(url: str | None) -> str:
-    if not url or not url.startswith(("http://", "https://")):
+    if not url:
         raise ValidationFailedError("A plugin webhook_url (http/https) is required")
-    return url
+    return validate_outbound_url(url)
 
 
 async def install(

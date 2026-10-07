@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.csv_utils import csv_safe
 from app.core.exceptions import ValidationFailedError
 from app.models import (
     Attachment,
@@ -747,22 +748,22 @@ async def export_project_csv(
     for task in tasks:
         writer.writerow(
             [
-                task.key or "",
-                task.title,
-                task.type,
-                task.status,
-                task.status_category,
-                task.priority,
-                users.get(task.assignee_id, "") if task.assignee_id else "",
-                ",".join(labels.get(label.id, "") for label in task.labels),
-                task.due_date.isoformat() if task.due_date else "",
+                csv_safe(task.key),
+                csv_safe(task.title),
+                csv_safe(task.type),
+                csv_safe(task.status),
+                csv_safe(task.status_category),
+                csv_safe(task.priority),
+                csv_safe(users.get(task.assignee_id, "") if task.assignee_id else ""),
+                csv_safe(",".join(labels.get(label.id, "") for label in task.labels)),
+                csv_safe(task.due_date.isoformat() if task.due_date else ""),
                 task.estimate if task.estimate is not None else "",
                 task.remaining_estimate if task.remaining_estimate is not None else "",
                 task.actual_estimate if task.actual_estimate is not None else "",
-                by_id[task.parent_id].key if task.parent_id in by_id else "",
-                task.created_at.isoformat(),
-                task.completed_at.isoformat() if task.completed_at else "",
-                task.description or "",
+                csv_safe(by_id[task.parent_id].key if task.parent_id in by_id else ""),
+                csv_safe(task.created_at.isoformat()),
+                csv_safe(task.completed_at.isoformat() if task.completed_at else ""),
+                csv_safe(task.description),
             ]
         )
     return buffer.getvalue()

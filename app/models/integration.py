@@ -18,6 +18,7 @@ from sqlalchemy import Uuid as SAUuid
 from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.base import TimeStampedMixin, UUIDMixin
+from app.models.types import EncryptedString
 
 if TYPE_CHECKING:
     from app.models.organization import Organization
@@ -66,7 +67,9 @@ class Integration(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     # Non-secret provider settings (chat webhook URL, repo slug, ...).
     config: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
     # Inbound webhook secret / ICS feed token (shown once at creation).
-    secret: str | None = Field(default=None, sa_column=Column(String(128), nullable=True))
+    secret: str | None = Field(
+        default=None, sa_column=Column(EncryptedString, nullable=True)
+    )
     # Outbound event filter for chat providers (task.created, comment.created, ...).
     events: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     is_active: bool = Field(

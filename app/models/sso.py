@@ -8,11 +8,21 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, String
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy import Uuid as SAUuid
 from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.base import TimeStampedMixin, UUIDMixin
+from app.models.types import EncryptedString
 
 if TYPE_CHECKING:
     from app.models.organization import Organization
@@ -36,7 +46,7 @@ class SsoConfig(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     )
     issuer: str = Field(sa_column=Column(String(512), nullable=False))
     client_id: str = Field(sa_column=Column(String(255), nullable=False))
-    client_secret: str = Field(sa_column=Column(String(512), nullable=False))
+    client_secret: str = Field(sa_column=Column(EncryptedString, nullable=False))
     scopes: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     is_enabled: bool = Field(
         default=True,
@@ -61,6 +71,48 @@ class SsoConfig(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
 
     organization: Optional["Organization"] = Relationship(
         sa_relationship_kwargs={"lazy": "joined"}
+    )
+
+
+class SsoIdentity(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
+    """Binds an IdP subject to a user *within one organization*.
+
+    The org admin controls the `issuer`, so an SSO login must only resolve to
+    an identity previously bound for this org - never to an arbitrary global
+    account that happens to share the asserted email address.
+    """
+
+    __tablename__ = "sso_identities"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "issuer",
+            "subject",
+            name="uq_sso_identity_org_issuer_subject",
+        ),
+        Index("ix_sso_identities_org_user", "organization_id", "user_id"),
+    )
+
+    organization_id: uuid.UUID = Field(
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("organizations.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    user_id: uuid.UUID = Field(
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
+    )
+    issuer: str = Field(sa_column=Column(String(512), nullable=False))
+    subject: str = Field(sa_column=Column(String(255), nullable=False))
+    last_login_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
 
 

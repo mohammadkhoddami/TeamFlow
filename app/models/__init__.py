@@ -54,7 +54,7 @@ from app.models.release import Release, ReleaseStatus
 from app.models.saved_filter import SavedFilter
 from app.models.sprint import Sprint, SprintState
 from app.models.sprint_capacity import SprintCapacity
-from app.models.sso import ScimToken, SsoConfig
+from app.models.sso import ScimToken, SsoConfig, SsoIdentity
 from app.models.task import (
     Task,
     TaskLabelLink,
@@ -133,6 +133,7 @@ __all__ = [
     "SprintCapacity",
     "SprintState",
     "SsoConfig",
+    "SsoIdentity",
     "SwimlaneBy",
     "Task",
     "TaskAssignee",

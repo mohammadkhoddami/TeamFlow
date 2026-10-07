@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 
 from dateutil.rrule import rrulestr
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import ValidationFailedError
@@ -110,7 +111,14 @@ async def spawn_next_occurrence(
         )
     else:
         occurrence.status_category = task.status_category
-    occurrence = await TaskRepository(db).add(occurrence)
+    try:
+        # `uq_tasks_recurrence_occurrence` is the idempotency backstop: if a
+        # concurrent completion (or overlapping beat sweep) already created
+        # this occurrence, the flush fails and this call is a no-op.
+        occurrence = await TaskRepository(db).add(occurrence)
+    except IntegrityError:
+        await db.rollback()
+        return None
 
     label_ids = [label.id for label in task.labels]
     if label_ids:

@@ -26,7 +26,13 @@ export function OAuthCallbackPage() {
     }
 
     completeOAuth(code)
-      .then(() => navigate('/organizations', { replace: true }))
+      .then((outcome) => {
+        if (outcome.mfaRequired) {
+          navigate('/login', { replace: true, state: { mfaToken: outcome.mfaToken } })
+          return
+        }
+        navigate('/organizations', { replace: true })
+      })
       .catch((err) => {
         setError(err instanceof ApiError ? err.message : 'Google sign-in failed')
       })

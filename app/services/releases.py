@@ -82,11 +82,14 @@ async def list_releases(
 
 
 async def get_release_for_org(
-    db: AsyncSession, release_id: uuid.UUID, organization_id: uuid.UUID
+    db: AsyncSession,
+    release_id: uuid.UUID,
+    organization_id: uuid.UUID,
+    project_id: uuid.UUID,
 ) -> Release:
     release = await ReleaseRepository(db).get_in_org(release_id, organization_id)
-    if release is None:
-        # 404 hides cross-org release IDs (IDOR containment).
+    if release is None or release.project_id != project_id:
+        # 404 hides cross-org and cross-project release IDs (IDOR containment).
         raise NotFoundError("Release not found")
     return release
 

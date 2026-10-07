@@ -19,6 +19,23 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _encrypt_existing(bind, table: str, column: str) -> None:
+    """Encrypts legacy plaintext secrets in place (no-op on fresh schemas)."""
+    from app.core.crypto import encrypt_secret
+
+    rows = bind.execute(
+        sa.text(
+            f"SELECT id, {column} FROM {table} "
+            f"WHERE {column} IS NOT NULL AND {column} NOT LIKE 'gAAAA%'"
+        )
+    ).fetchall()
+    for row_id, value in rows:
+        bind.execute(
+            sa.text(f"UPDATE {table} SET {column} = :value WHERE id = :id"),
+            {"value": encrypt_secret(value), "id": row_id},
+        )
+
+
 def upgrade() -> None:
     """Upgrade schema."""
     # --- users: service-account shadow users --------------------------------
@@ -209,7 +226,9 @@ def upgrade() -> None:
         sa.Column('provider', sa.String(length=32), nullable=False),
         sa.Column('name', sa.String(length=128), nullable=False),
         sa.Column('config', sa.JSON(), nullable=False),
-        sa.Column('secret', sa.String(length=128), nullable=True),
+        # Encrypted at rest (Fernet); TEXT because ciphertext exceeds the
+        # original 128-char plaintext bound.
+        sa.Column('secret', sa.Text(), nullable=True),
         sa.Column('events', sa.JSON(), nullable=False),
         sa.Column('is_active', sa.Boolean(), server_default='true', nullable=False),
         sa.Column('last_event_at', sa.DateTime(timezone=True), nullable=True),
@@ -223,6 +242,7 @@ def upgrade() -> None:
     )
     op.create_index('ix_integrations_organization_id', 'integrations', ['organization_id'])
     op.create_index('ix_integrations_org_provider', 'integrations', ['organization_id', 'provider'])
+    _encrypt_existing(op.get_bind(), 'integrations', 'secret')
 
     op.create_table(
         'integration_events',

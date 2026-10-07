@@ -2,10 +2,10 @@
 
 Stdlib-only RFC 6238 implementation (HMAC-SHA1, 30-second steps, 6 digits,
 ±1 step window) so no new dependency is introduced. Recovery codes are
-single-use: only sha256 hashes are stored and a successful match rewrites the
-list. Enrollment is two-phase — `setup_mfa` stores a disabled credential and
-only `enable_mfa` (after a valid code) activates it, so an abandoned setup
-never locks anyone out.
+single-use and stored bcrypt-hashed (legacy unsalted-SHA-256 rows are still
+accepted and upgraded on use). Enrollment is two-phase — `setup_mfa` stores a
+disabled credential and only `enable_mfa` (after a valid code) activates it,
+so an abandoned setup never locks anyone out.
 
 The login challenge token lives in Redis (`teamflow:mfa:{token}` -> user id,
 300s TTL) and is consumed with GETDEL, so an intercepted challenge cannot be
@@ -24,7 +24,9 @@ from urllib.parse import quote, urlencode
 from redis.asyncio import Redis
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
+from app.core import security
 from app.core.exceptions import ConflictError, NotFoundError, UnauthorizedError
 from app.models import MfaCredential, User, utcnow
 
@@ -91,7 +93,7 @@ def otpauth_uri(secret: str, account: str, issuer: str = "TeamFlow") -> str:
 
 
 def hash_recovery_code(code: str) -> str:
-    return hashlib.sha256(code.strip().upper().encode()).hexdigest()
+    return security.hash_password(code.strip().upper())
 
 
 def generate_recovery_codes(
@@ -106,13 +108,23 @@ def generate_recovery_codes(
     return plain, [hash_recovery_code(code) for code in plain]
 
 
+def _recovery_code_matches(code: str, stored: str) -> bool:
+    candidate = code.strip().upper()
+    if stored.startswith("$2"):
+        return security.verify_password(candidate, stored)
+    # Legacy unsalted SHA-256 rows from before the bcrypt migration.
+    return hmac.compare_digest(
+        hashlib.sha256(candidate.encode()).hexdigest(), stored
+    )
+
+
 def _consume_recovery_code(credential: MfaCredential, code: str) -> bool:
-    digest = hash_recovery_code(code)
     stored = credential.recovery_codes or []
-    if digest not in stored:
-        return False
-    credential.recovery_codes = [item for item in stored if item != digest]
-    return True
+    for item in stored:
+        if _recovery_code_matches(code, item):
+            credential.recovery_codes = [entry for entry in stored if entry != item]
+            return True
+    return False
 
 
 async def get_credential(db: AsyncSession, user_id: uuid.UUID) -> MfaCredential | None:
@@ -133,7 +145,8 @@ async def setup_mfa(db: AsyncSession, user: User) -> tuple[str, str, list[str]]:
     if credential and credential.is_enabled:
         raise ConflictError("MFA is already enabled")
     secret = generate_secret()
-    plain_codes, hashed_codes = generate_recovery_codes()
+    # bcrypt-hashing 10 codes is CPU-bound; keep the event loop free.
+    plain_codes, hashed_codes = await run_in_threadpool(generate_recovery_codes)
     if credential is None:
         credential = MfaCredential(user_id=user.id, secret=secret)
     credential.secret = secret
@@ -164,8 +177,8 @@ async def disable_mfa(db: AsyncSession, user: User, code: str) -> None:
     credential = await get_credential(db, user.id)
     if credential is None or not credential.is_enabled:
         raise NotFoundError("MFA is not enabled")
-    if not verify_totp(credential.secret, code) and not _consume_recovery_code(
-        credential, code
+    if not verify_totp(credential.secret, code) and not await run_in_threadpool(
+        _consume_recovery_code, credential, code
     ):
         raise UnauthorizedError("Invalid authentication code")
     await db.delete(credential)
@@ -179,8 +192,8 @@ async def verify_login_code(db: AsyncSession, user: User, code: str) -> bool:
     credential = await get_credential(db, user.id)
     if credential is None or not credential.is_enabled:
         return False
-    if not verify_totp(credential.secret, code) and not _consume_recovery_code(
-        credential, code
+    if not verify_totp(credential.secret, code) and not await run_in_threadpool(
+        _consume_recovery_code, credential, code
     ):
         return False
     credential.last_used_at = utcnow()

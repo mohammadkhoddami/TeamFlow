@@ -20,6 +20,9 @@ from app.core.config import settings
 request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
 user_id_ctx: ContextVar[str] = ContextVar("user_id", default="-")
 org_id_ctx: ContextVar[str] = ContextVar("org_id", default="-")
+# When the caller authenticated with an org-scoped OAuth token, requests are
+# confined to that organization even if the token's owner is a member of others.
+token_org_ctx: ContextVar[str | None] = ContextVar("token_org", default=None)
 
 
 class ContextFilter(logging.Filter):

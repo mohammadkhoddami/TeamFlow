@@ -24,6 +24,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy import Uuid as SAUuid
 from sqlmodel import Field, Relationship, SQLModel
@@ -128,6 +129,16 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         Index("ix_tasks_org_recurrence", "organization_id", "recurrence_rule"),
         Index("ix_tasks_org_release", "organization_id", "release_id"),
         UniqueConstraint("project_id", "number", name="uq_tasks_project_number"),
+        # One occurrence per (source, due date): concurrent completions or
+        # overlapping beat sweeps cannot double-generate a recurrence.
+        Index(
+            "uq_tasks_recurrence_occurrence",
+            "organization_id",
+            "recurrence_source_id",
+            "due_date",
+            unique=True,
+            postgresql_where=text("recurrence_source_id IS NOT NULL"),
+        ),
     )
 
     organization_id: uuid.UUID = Field(

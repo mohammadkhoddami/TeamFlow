@@ -6,7 +6,8 @@ from typing import Literal
 
 from sqlmodel import Field, SQLModel
 
-RoleLiteral = Literal["owner", "admin", "manager", "member"]
+# Ownership is never assignable through SSO/SCIM provisioning.
+RoleLiteral = Literal["admin", "manager", "member"]
 
 
 class SsoConfigUpdate(SQLModel):

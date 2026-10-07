@@ -10,6 +10,8 @@ Threading rules:
 import re
 import uuid
 
+from sqlalchemy import func
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import NotFoundError, PermissionDeniedError, ValidationFailedError
@@ -22,7 +24,7 @@ from app.models import (
     Task,
     User,
 )
-from app.repositories import CommentRepository, ProjectRepository, UserRepository
+from app.repositories import CommentRepository, ProjectRepository
 from app.schemas import CommentCreate, CommentRead, CommentUpdate
 from app.services import activities, audit, automations, events, plugins, preferences
 from app.services import reactions as reaction_service
@@ -35,6 +37,22 @@ MAX_REPLY_DEPTH = 2
 def extract_mentions(body: str) -> list[str]:
     """Mentions are plain emails inside the body: mention john@acme.com."""
     return list(dict.fromkeys(EMAIL_RE.findall(body)))
+
+
+async def _resolve_mentioned_user(
+    db: AsyncSession, organization_id: uuid.UUID, email: str
+) -> User | None:
+    """Only active members of the comment's organization can be mentioned."""
+    statement = (
+        select(User)
+        .join(Membership, Membership.user_id == User.id)
+        .where(
+            func.lower(User.email) == email.lower(),
+            Membership.organization_id == organization_id,
+            Membership.is_active == True,  # noqa: E712 - SQL expression
+        )
+    )
+    return (await db.execute(statement)).scalars().first()
 
 
 async def _resolve_thread(
@@ -90,11 +108,13 @@ async def create_comment(
         data={"comment_id": str(comment.id), "reply": parent_id is not None},
     )
 
-    # Mentioned users (must be real users) get 'mention'; watchers + assignee
-    # (minus actor and explicit mentions) get 'comment_created'.
+    # Mentioned users (must be active members of this org - a mention must
+    # never notify or email someone from another tenant) get 'mention';
+    # watchers + assignee (minus actor and explicit mentions) get
+    # 'comment_created'.
     mentioned: dict[str, User] = {}
     for email in extract_mentions(data.body):
-        user = await UserRepository(db).get_by_email(email)
+        user = await _resolve_mentioned_user(db, org.id, email)
         if user:
             mentioned[email] = user
 

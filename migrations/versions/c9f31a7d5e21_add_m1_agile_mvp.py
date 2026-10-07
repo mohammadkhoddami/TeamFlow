@@ -72,6 +72,13 @@ def upgrade() -> None:
     )
     op.create_index('ix_sprints_organization_id', 'sprints', ['organization_id'])
     op.create_index('ix_sprints_project_id', 'sprints', ['project_id'])
+    op.create_index(
+        'uq_sprints_one_active',
+        'sprints',
+        ['project_id'],
+        unique=True,
+        postgresql_where=sa.text("state = 'active'"),
+    )
 
     # --- tasks: issue numbers, estimates, sprint, backlog rank, archive ----
     op.add_column('tasks', sa.Column('key', sa.String(length=32), nullable=True))
@@ -190,10 +197,28 @@ def upgrade() -> None:
             sa.text("UPDATE projects SET key = :key, issue_counter = :n WHERE id = :pid"),
             {"key": candidate, "n": len(rows), "pid": project_id},
         )
-    # Projects without tasks still need a key.
-    bind.execute(
-        sa.text("UPDATE projects SET key = UPPER(LEFT(REGEXP_REPLACE(name, '[^A-Za-z0-9]', '', 'g'), 4)) WHERE key IS NULL")
-    )
+    # Defensive pass: any project still without a key goes through the same
+    # per-org dedup as above, otherwise the uq_projects_org_key constraint
+    # could abort the migration with duplicate/empty keys.
+    remaining = bind.execute(
+        sa.text(
+            "SELECT id, organization_id, name FROM projects "
+            "WHERE key IS NULL ORDER BY created_at"
+        )
+    ).fetchall()
+    for project_id, organization_id, name in remaining:
+        used = used_keys.setdefault(organization_id, set())
+        base = _derive_key(name or "")
+        candidate = base
+        suffix = 2
+        while candidate in used:
+            candidate = f"{base[:2]}{suffix}"
+            suffix += 1
+        used.add(candidate)
+        bind.execute(
+            sa.text("UPDATE projects SET key = :key WHERE id = :pid"),
+            {"key": candidate, "pid": project_id},
+        )
 
     # --- full-text search indexes (expression GIN) --------------------------
     op.create_index(
@@ -238,6 +263,7 @@ def downgrade() -> None:
     op.drop_column('tasks', 'number')
     op.drop_column('tasks', 'key')
 
+    op.drop_index('uq_sprints_one_active', table_name='sprints')
     op.drop_index('ix_sprints_project_id', table_name='sprints')
     op.drop_index('ix_sprints_organization_id', table_name='sprints')
     op.drop_index('ix_sprints_org_project_state', table_name='sprints')

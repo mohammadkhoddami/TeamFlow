@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy import Uuid as SAUuid
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -37,6 +37,14 @@ class Sprint(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     __tablename__ = "sprints"
     __table_args__ = (
         Index("ix_sprints_org_project_state", "organization_id", "project_id", "state"),
+        # Only one active sprint per project, enforced by the database rather
+        # than a check-then-act in the service.
+        Index(
+            "uq_sprints_one_active",
+            "project_id",
+            unique=True,
+            postgresql_where=text("state = 'active'"),
+        ),
     )
 
     organization_id: uuid.UUID = Field(

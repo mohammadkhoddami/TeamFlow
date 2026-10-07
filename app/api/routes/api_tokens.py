@@ -100,8 +100,10 @@ async def rotate_token(
     current_user: CurrentUser,
     db: DB,
 ) -> ApiTokenCreated:
-    org, _membership = org_membership
-    token, plain = await token_service.rotate_token(db, current_user, org, token_id)
+    org, membership = org_membership
+    token, plain = await token_service.rotate_token(
+        db, current_user, org, membership, token_id
+    )
     read = ApiTokenRead.model_validate(token)
     return ApiTokenCreated(**read.model_dump(), token=plain)
 

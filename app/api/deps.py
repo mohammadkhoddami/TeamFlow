@@ -29,7 +29,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core import security
 from app.core.db import get_db
 from app.core.exceptions import NotFoundError, UnauthorizedError
-from app.core.logging import org_id_ctx, user_id_ctx
+from app.core.logging import org_id_ctx, token_org_ctx, user_id_ctx
 from app.core.redis import get_redis_client
 from app.models import (
     Attachment,
@@ -78,9 +78,11 @@ async def get_current_user(request: Request, token: Token, db: DB) -> User:
 
     # Check the OAuth prefix first: "tfo_..." also starts with "tf_".
     if token.startswith(api_tokens.OAUTH_TOKEN_PREFIX):
-        user = await api_tokens.authenticate_oauth_token(
+        user, token_org = await api_tokens.authenticate_oauth_token(
             db, token, method=request.method, path=request.url.path
         )
+        # Bind the request to the app's org; tenant boundaries compare below.
+        token_org_ctx.set(str(token_org))
         user_id_ctx.set(str(user.id))
         return user
     if token.startswith(api_tokens.TOKEN_PREFIX):
@@ -95,6 +97,10 @@ async def get_current_user(request: Request, token: Token, db: DB) -> User:
 
     try:
         payload = security.decode_token(token)
+        # Refresh tokens are signed with the same key and must never be usable
+        # as bearer credentials (they are only accepted by /auth/refresh).
+        if payload.get("type") != security.TOKEN_TYPE_ACCESS:
+            raise UnauthorizedError("Invalid or expired token")
         user_id = uuid.UUID(payload["sub"])
     except (PyJWTError, KeyError, ValueError):
         raise UnauthorizedError("Invalid or expired token") from None
@@ -109,6 +115,14 @@ async def get_current_user(request: Request, token: Token, db: DB) -> User:
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
+def _assert_token_org(organization_id: uuid.UUID) -> None:
+    """OAuth tokens are confined to the organization that owns the app; other
+    credential types leave the context var unset and are unrestricted."""
+    bound = token_org_ctx.get()
+    if bound is not None and bound != str(organization_id):
+        raise NotFoundError("Organization not found")
+
+
 async def get_org_membership(
     slug: str, current_user: CurrentUser, db: DB
 ) -> tuple[Organization, Membership]:
@@ -116,8 +130,9 @@ async def get_org_membership(
     current user is an active member. Every org-scoped route declares this
     dependency, which is where tenant isolation is enforced in one place."""
     org = await OrganizationRepository(db).get_by_slug(slug)
-    if not org:
+    if not org or not org.is_active:
         raise NotFoundError("Organization not found")
+    _assert_token_org(org.id)
     membership = await MembershipRepository(db).get_for_user(current_user.id, org.id)
     if not membership or not membership.is_active:
         # 404 (not 403) so non-members cannot even confirm the org exists.
@@ -134,6 +149,7 @@ async def _assert_project_visible(
 ) -> None:
     """Private projects are concealed (404) from non-admin members without an
     explicit `project_members` row."""
+    _assert_token_org(project.organization_id)
     if project.visibility != "private":
         return
     if membership.role in (MembershipRole.ADMIN, MembershipRole.OWNER):
@@ -144,6 +160,23 @@ async def _assert_project_visible(
     )
     if (await db.execute(statement)).scalars().first() is None:
         raise NotFoundError("Project not found")
+
+
+async def _assert_task_project_visible(
+    db: DB, task_id: uuid.UUID, membership: Membership
+) -> None:
+    """Resolves the task's project and applies the private-project boundary.
+    Used by every task-derived id-addressed resource (comments, attachments)."""
+    project = (
+        await db.execute(
+            select(Project)
+            .join(Task, Task.project_id == Project.id)
+            .where(Task.id == task_id)
+        )
+    ).scalar_one_or_none()
+    if project is None:
+        raise NotFoundError("Project not found")
+    await _assert_project_visible(db, project, membership)
 
 
 async def get_project_access(
@@ -187,12 +220,7 @@ async def get_task_access(
     )
     if not membership or not membership.is_active:
         raise NotFoundError("Task not found")
-    project = (
-        await db.execute(select(Project).where(Project.id == task.project_id))
-    ).scalar_one_or_none()
-    if not project:
-        raise NotFoundError("Task not found")
-    await _assert_project_visible(db, project, membership)
+    await _assert_task_project_visible(db, task.id, membership)
     org = await OrganizationRepository(db).get(task.organization_id)
     if not org:
         raise NotFoundError("Task not found")
@@ -217,6 +245,12 @@ async def get_sprint_access(
     )
     if not membership or not membership.is_active:
         raise NotFoundError("Sprint not found")
+    project = (
+        await db.execute(select(Project).where(Project.id == sprint.project_id))
+    ).scalar_one_or_none()
+    if project is None:
+        raise NotFoundError("Sprint not found")
+    await _assert_project_visible(db, project, membership)
     org = await OrganizationRepository(db).get(sprint.organization_id)
     if not org:
         raise NotFoundError("Sprint not found")
@@ -241,6 +275,7 @@ async def get_attachment_access(
     )
     if not membership or not membership.is_active:
         raise NotFoundError("Attachment not found")
+    await _assert_task_project_visible(db, attachment.task_id, membership)
     org = await OrganizationRepository(db).get(attachment.organization_id)
     if not org:
         raise NotFoundError("Attachment not found")
@@ -266,6 +301,7 @@ async def get_comment_access(
     )
     if not membership or not membership.is_active:
         raise NotFoundError("Comment not found")
+    await _assert_task_project_visible(db, comment.task_id, membership)
     org = await OrganizationRepository(db).get(comment.organization_id)
     if not org:
         raise NotFoundError("Comment not found")

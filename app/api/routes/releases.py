@@ -64,7 +64,9 @@ async def get_release(
     release_id: uuid.UUID, project_access: ProjectAccess, db: DB
 ) -> ReleaseRead:
     project, org, _m = project_access
-    release = await release_service.get_release_for_org(db, release_id, org.id)
+    release = await release_service.get_release_for_org(
+        db, release_id, org.id, project.id
+    )
     total, done = await _counts_for(db, project, release.id)
     return _read(release, total, done)
 
@@ -79,7 +81,9 @@ async def update_release(
     db: DB,
 ) -> ReleaseRead:
     project, org, _m = project_access
-    release = await release_service.get_release_for_org(db, release_id, org.id)
+    release = await release_service.get_release_for_org(
+        db, release_id, org.id, project.id
+    )
     updated = await release_service.update_release(
         db, current_user, org, release, data, ip=_ip(request)
     )
@@ -97,8 +101,10 @@ async def delete_release(
     request: Request,
     db: DB,
 ) -> None:
-    _project, org, _m = project_access
-    release = await release_service.get_release_for_org(db, release_id, org.id)
+    project, org, _m = project_access
+    release = await release_service.get_release_for_org(
+        db, release_id, org.id, project.id
+    )
     await release_service.delete_release(db, current_user, org, release, ip=_ip(request))
 
 

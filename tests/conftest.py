@@ -27,6 +27,9 @@ os.environ.setdefault(
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
 os.environ.setdefault("EMAIL_BACKEND", "console")
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")  # per-test opt-in
+# Worker tests deliver to real 127.0.0.1 receivers; the SSRF guard has its own
+# unit tests (tests/unit/test_outbound_urls.py) with the flag disabled.
+os.environ.setdefault("OUTBOUND_ALLOW_PRIVATE_HOSTS", "true")
 
 import pytest
 import pytest_asyncio

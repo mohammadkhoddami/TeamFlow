@@ -148,8 +148,12 @@ async def authenticate_token(
 
 async def authenticate_oauth_token(
     db: AsyncSession, plain: str, *, method: str, path: str
-) -> User:
-    """Resolve an OAuth2 access token to the app creator's user."""
+) -> tuple[User, uuid.UUID]:
+    """Resolve an OAuth2 access token to (app creator, app organization).
+
+    The returned organization is binding: an app registered in tenant A must
+    never act in tenant B, even when its creator happens to be a member of B
+    (confused-deputy prevention). Callers enforce it per request."""
     token = await OAuthTokenRepository(db).get_by_hash(hash_token(plain))
     if token is None or not token.is_active:
         raise UnauthorizedError("Invalid or expired token")
@@ -168,7 +172,7 @@ async def authenticate_oauth_token(
         raise UnauthorizedError("OAuth app owner is inactive")
     app.last_used_at = datetime.now(UTC)
     await db.commit()
-    return user
+    return user, token.organization_id
 
 
 # --- tokens ----------------------------------------------------------------
@@ -278,11 +282,18 @@ async def update_token(
 
 
 async def rotate_token(
-    db: AsyncSession, actor: User, org: Organization, token_id: uuid.UUID
+    db: AsyncSession,
+    actor: User,
+    org: Organization,
+    membership: Membership,
+    token_id: uuid.UUID,
 ) -> tuple[ApiToken, str]:
     token = await _get_token(db, org, token_id)
-    if token.user_id != actor.id and token.service_account is None:
-        raise PermissionDeniedError("Only the owner can rotate this token")
+    # Personal tokens are self-service; any other token (including every
+    # service-account token, whose owner is a synthetic user) needs elevated
+    # role - otherwise any member could mint a fresh plaintext secret for it.
+    if token.user_id != actor.id:
+        _require_elevated(membership, "other members' API tokens")
     plain = _new_secret(TOKEN_PREFIX)
     token.token_prefix = plain[:12]
     token.token_hash = hash_token(plain)

@@ -22,13 +22,13 @@ from app.schemas import (
 COMMENT_SEARCH_VECTOR = sa_func.to_tsvector(
     "english", sa_func.coalesce(Comment.body, "")
 )
+# Must stay byte-identical to the `ix_projects_search_vector` expression in
+# migration c9f31a7d5e21 (use `||`, not concat(), or the GIN index is unused).
 PROJECT_SEARCH_VECTOR = sa_func.to_tsvector(
     "english",
-    sa_func.concat(
-        sa_func.coalesce(Project.name, ""),
-        " ",
-        sa_func.coalesce(Project.description, ""),
-    ),
+    sa_func.coalesce(Project.name, "")
+    .op("||")(" ")
+    .op("||")(sa_func.coalesce(Project.description, "")),
 )
 
 MAX_RESULTS = 25

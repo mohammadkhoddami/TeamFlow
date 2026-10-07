@@ -8,11 +8,12 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, String
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey
 from sqlalchemy import Uuid as SAUuid
 from sqlmodel import Field, Relationship, SQLModel
 
 from app.models.base import TimeStampedMixin, UUIDMixin
+from app.models.types import EncryptedString
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -30,7 +31,7 @@ class MfaCredential(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
             index=True,
         ),
     )
-    secret: str = Field(sa_column=Column(String(64), nullable=False))
+    secret: str = Field(sa_column=Column(EncryptedString, nullable=False))
     is_enabled: bool = Field(
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default="false"),

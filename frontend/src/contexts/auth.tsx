@@ -21,8 +21,8 @@ interface AuthContextValue {
   loading: boolean
   login: (email: string, password: string) => Promise<LoginOutcome>
   verifyMfa: (mfaToken: string, code: string) => Promise<void>
-  loginWithOtp: (email: string, code: string) => Promise<void>
-  completeOAuth: (code: string) => Promise<void>
+  loginWithOtp: (email: string, code: string) => Promise<LoginOutcome>
+  completeOAuth: (code: string) => Promise<LoginOutcome>
   register: (data: {
     email: string
     password: string
@@ -101,15 +101,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const loginWithOtp = useCallback(
-    async (email: string, code: string) => {
-      await applyTokens(await authApi.verifyOtp(email, code))
+    async (email: string, code: string): Promise<LoginOutcome> => {
+      const response = await authApi.verifyOtp(email, code)
+      if ('mfa_required' in response) {
+        return { mfaRequired: true, mfaToken: response.mfa_token }
+      }
+      await applyTokens(response)
+      return { mfaRequired: false }
     },
     [applyTokens],
   )
 
   const completeOAuth = useCallback(
-    async (code: string) => {
-      await applyTokens(await authApi.exchangeOAuthCode(code))
+    async (code: string): Promise<LoginOutcome> => {
+      const response = await authApi.exchangeOAuthCode(code)
+      if ('mfa_required' in response) {
+        return { mfaRequired: true, mfaToken: response.mfa_token }
+      }
+      await applyTokens(response)
+      return { mfaRequired: false }
     },
     [applyTokens],
   )

@@ -30,6 +30,7 @@ from app.core.exceptions import (
     UnauthorizedError,
     ValidationFailedError,
 )
+from app.core.outbound import validate_outbound_url
 from app.models import (
     AuditAction,
     Integration,
@@ -93,11 +94,12 @@ async def create_integration(
 
 def _validate_config(provider: str, config: dict) -> None:
     if provider in CHAT_PROVIDERS:
-        url = (config or {}).get("webhook_url", "")
-        if not str(url).startswith(("http://", "https://")):
+        url = str((config or {}).get("webhook_url", ""))
+        if not url:
             raise ValidationFailedError(
                 f"{provider} integrations require config.webhook_url (http/https)"
             )
+        validate_outbound_url(url)
     if provider in VCS_PROVIDERS:
         auto = (config or {}).get("auto_transition") or {}
         if not isinstance(auto, dict):
@@ -199,13 +201,22 @@ def feed_path(integration: Integration) -> str | None:
     return None
 
 
+# Config values that act as credentials (chat webhook URLs are bearer
+# secrets) must never round-trip through read endpoints.
+_SECRET_CONFIG_KEYS = ("webhook_url",)
+
+
 def to_read(integration: Integration) -> dict:
+    config = dict(integration.config or {})
+    for key in _SECRET_CONFIG_KEYS:
+        config.pop(key, None)
     return {
         "id": integration.id,
         "organization_id": integration.organization_id,
         "provider": integration.provider,
         "name": integration.name,
-        "config": integration.config or {},
+        "config": config,
+        "has_webhook_url": bool((integration.config or {}).get("webhook_url")),
         "events": integration.events or [],
         "is_active": integration.is_active,
         "last_event_at": integration.last_event_at,

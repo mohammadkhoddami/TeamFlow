@@ -118,7 +118,14 @@ async def assert_transition(
         raise ValidationFailedError(
             f"Cannot move task from '{current_key}' to '{new_key}'"
         )
-    if project.wip_enforced and target.wip_limit:
+    if project.wip_enforced and target.wip_limit is not None:
+        # Serialize concurrent moves into this status: the project row lock is
+        # held until the caller's transaction commits the status change, so
+        # the count cannot go stale between the check and the update. An
+        # explicit limit of 0 means "no work allowed", not "unlimited".
+        await db.execute(
+            select(Project.id).where(Project.id == project.id).with_for_update()
+        )
         count = (
             await db.execute(
                 select(Task.id)

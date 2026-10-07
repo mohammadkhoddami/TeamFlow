@@ -6,10 +6,12 @@ magic-link tokens while keeping acceptance strictly scoped.
 """
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.config import settings
 from app.core.exceptions import (
     ConflictError,
     NotFoundError,
@@ -33,6 +35,13 @@ from app.repositories import (
 from app.schemas import InvitationCreate
 from app.services import audit, events
 from app.services.organizations import get_organization_for_user, role_rank
+
+
+def _is_expired(invitation: Invitation) -> bool:
+    return (
+        invitation.expires_at is not None
+        and invitation.expires_at <= datetime.now(UTC)
+    )
 
 
 async def create_invitation(
@@ -60,8 +69,14 @@ async def create_invitation(
             raise ConflictError("User is already a member of this organization")
 
     invitation_repo = InvitationRepository(db)
-    if await invitation_repo.get_pending_for_email(org.id, email):
-        raise ConflictError("A pending invitation already exists for this email")
+    pending = await invitation_repo.get_pending_for_email(org.id, email)
+    if pending is not None:
+        if _is_expired(pending):
+            # A stale invite must not block a fresh one.
+            pending.status = InvitationStatus.EXPIRED
+            await invitation_repo.update(pending)
+        else:
+            raise ConflictError("A pending invitation already exists for this email")
 
     invitation = await invitation_repo.add(
         Invitation(
@@ -69,6 +84,8 @@ async def create_invitation(
             organization_id=org.id,
             role=data.role,
             invited_by_id=actor.id,
+            expires_at=datetime.now(UTC)
+            + timedelta(days=settings.invitation_ttl_days),
         )
     )
     await audit.log(
@@ -120,6 +137,11 @@ async def accept_invitation(
         raise NotFoundError("Invitation not found")
     if invitation.status != InvitationStatus.PENDING:
         raise ValidationFailedError(f"Invitation is {invitation.status}")
+    if _is_expired(invitation):
+        invitation.status = InvitationStatus.EXPIRED
+        await InvitationRepository(db).update(invitation)
+        await db.commit()
+        raise ValidationFailedError("Invitation has expired")
 
     org = await OrganizationRepository(db).get(invitation.organization_id)
     if not org or not org.is_active:
@@ -165,6 +187,11 @@ async def decline_invitation(
         raise NotFoundError("Invitation not found")
     if invitation.status != InvitationStatus.PENDING:
         raise ValidationFailedError(f"Invitation is {invitation.status}")
+    if _is_expired(invitation):
+        invitation.status = InvitationStatus.EXPIRED
+        await InvitationRepository(db).update(invitation)
+        await db.commit()
+        raise ValidationFailedError("Invitation has expired")
     invitation.status = InvitationStatus.DECLINED
     await InvitationRepository(db).update(invitation)
     await audit.log(

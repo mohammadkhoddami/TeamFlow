@@ -18,6 +18,23 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _encrypt_existing(bind, table: str, column: str) -> None:
+    """Encrypts legacy plaintext secrets in place (no-op on fresh schemas)."""
+    from app.core.crypto import encrypt_secret
+
+    rows = bind.execute(
+        sa.text(
+            f"SELECT id, {column} FROM {table} "
+            f"WHERE {column} IS NOT NULL AND {column} NOT LIKE 'gAAAA%'"
+        )
+    ).fetchall()
+    for row_id, value in rows:
+        bind.execute(
+            sa.text(f"UPDATE {table} SET {column} = :value WHERE id = :id"),
+            {"value": encrypt_secret(value), "id": row_id},
+        )
+
+
 def upgrade() -> None:
     """Upgrade schema."""
     # --- custom roles (referenced by memberships below) ---------------------
@@ -41,6 +58,16 @@ def upgrade() -> None:
     # --- org / user / project settings columns ------------------------------
     op.add_column('organizations', sa.Column('accent_color', sa.String(length=16), nullable=True))
     op.add_column('organizations', sa.Column('audit_retention_days', sa.Integer(), nullable=True))
+    # Invitations become stale after a while. Backfill pending rows with a
+    # 14-day window from creation so old invites cannot be redeemed forever.
+    op.add_column(
+        'invitations',
+        sa.Column('expires_at', sa.DateTime(timezone=True), nullable=True),
+    )
+    op.execute(
+        "UPDATE invitations SET expires_at = created_at + interval '14 days' "
+        "WHERE status = 'pending' AND expires_at IS NULL"
+    )
     op.add_column(
         'users',
         sa.Column('locale', sa.String(length=8), server_default='en', nullable=False),
@@ -64,7 +91,8 @@ def upgrade() -> None:
         'mfa_credentials',
         sa.Column('id', sa.Uuid(), nullable=False),
         sa.Column('user_id', sa.Uuid(), nullable=False),
-        sa.Column('secret', sa.String(length=64), nullable=False),
+        # Encrypted at rest (Fernet); TEXT because ciphertext is longer.
+        sa.Column('secret', sa.Text(), nullable=False),
         sa.Column('is_enabled', sa.Boolean(), server_default='false', nullable=False),
         sa.Column('recovery_codes', sa.JSON(), nullable=False),
         sa.Column('confirmed_at', sa.DateTime(timezone=True), nullable=True),
@@ -85,7 +113,7 @@ def upgrade() -> None:
         sa.Column('provider', sa.String(length=16), server_default='oidc', nullable=False),
         sa.Column('issuer', sa.String(length=512), nullable=False),
         sa.Column('client_id', sa.String(length=255), nullable=False),
-        sa.Column('client_secret', sa.String(length=512), nullable=False),
+        sa.Column('client_secret', sa.Text(), nullable=False),
         sa.Column('scopes', sa.JSON(), nullable=False),
         sa.Column('is_enabled', sa.Boolean(), server_default='true', nullable=False),
         sa.Column('auto_provision', sa.Boolean(), server_default='true', nullable=False),
@@ -118,6 +146,33 @@ def upgrade() -> None:
     )
     op.create_index('ix_scim_tokens_organization_id', 'scim_tokens', ['organization_id'])
     op.create_index('ix_scim_tokens_token_hash', 'scim_tokens', ['token_hash'])
+
+    # Per-org binding of IdP subjects to users; SSO logins may only resolve
+    # through a row here, never through a global email lookup.
+    op.create_table(
+        'sso_identities',
+        sa.Column('id', sa.Uuid(), nullable=False),
+        sa.Column('organization_id', sa.Uuid(), nullable=False),
+        sa.Column('user_id', sa.Uuid(), nullable=False),
+        sa.Column('issuer', sa.String(length=512), nullable=False),
+        sa.Column('subject', sa.String(length=255), nullable=False),
+        sa.Column('last_login_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(['organization_id'], ['organizations.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id'),
+        sa.UniqueConstraint(
+            'organization_id', 'issuer', 'subject',
+            name='uq_sso_identity_org_issuer_subject',
+        ),
+    )
+    op.create_index('ix_sso_identities_organization_id', 'sso_identities', ['organization_id'])
+    op.create_index('ix_sso_identities_user_id', 'sso_identities', ['user_id'])
+    op.create_index('ix_sso_identities_org_user', 'sso_identities', ['organization_id', 'user_id'])
+
+    # Automated provisioning must never grant ownership.
+    op.execute("UPDATE sso_configs SET default_role = 'member' WHERE default_role = 'owner'")
     op.create_index('ix_scim_tokens_org', 'scim_tokens', ['organization_id'])
 
     # --- goals + task links -------------------------------------------------
@@ -231,7 +286,7 @@ def upgrade() -> None:
         sa.Column('webhook_url', sa.String(length=512), nullable=True),
         sa.Column('events', sa.JSON(), nullable=False),
         sa.Column('scopes', sa.JSON(), nullable=False),
-        sa.Column('secret', sa.String(length=64), nullable=True),
+        sa.Column('secret', sa.Text(), nullable=True),
         sa.Column('is_active', sa.Boolean(), server_default='true', nullable=False),
         sa.Column('installed_by_id', sa.Uuid(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
@@ -280,6 +335,15 @@ def upgrade() -> None:
     op.create_index('ix_project_members_project_id', 'project_members', ['project_id'])
     op.create_index('ix_project_members_user_id', 'project_members', ['user_id'])
 
+    # Encrypt any legacy plaintext secrets now that the columns are TEXT.
+    bind = op.get_bind()
+    _encrypt_existing(bind, 'mfa_credentials', 'secret')
+    _encrypt_existing(bind, 'sso_configs', 'client_secret')
+    _encrypt_existing(bind, 'plugins', 'secret')
+    # Integrations predate this migration; encrypt rows from databases that
+    # were already at b8f4d2e6a9c1 before the encryption change.
+    _encrypt_existing(bind, 'integrations', 'secret')
+
 
 def downgrade() -> None:
     """Downgrade schema."""
@@ -291,6 +355,7 @@ def downgrade() -> None:
     op.drop_table('dashboards')
     op.drop_table('goal_links')
     op.drop_table('goals')
+    op.drop_table('sso_identities')
     op.drop_table('scim_tokens')
     op.drop_table('sso_configs')
     op.drop_table('mfa_credentials')
@@ -301,5 +366,6 @@ def downgrade() -> None:
     op.drop_column('users', 'locale')
     op.drop_column('organizations', 'audit_retention_days')
     op.drop_column('organizations', 'accent_color')
+    op.drop_column('invitations', 'expires_at')
 
     op.drop_table('custom_roles')

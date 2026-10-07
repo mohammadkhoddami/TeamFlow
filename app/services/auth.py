@@ -158,15 +158,27 @@ async def login(
     if not user.is_active:
         raise UnauthorizedError("Account is deactivated")
 
-    # MFA users get a one-time challenge instead of tokens; /auth/mfa/verify
-    # consumes it and only then mints the session. OTP and Google logins are
-    # documented as not MFA-gated (they authenticate a different factor).
+    return await _login_outcome(db, redis, user, AuditAction.USER_LOGIN, ip=ip)
+
+
+async def _login_outcome(
+    db: AsyncSession,
+    redis: Redis,
+    user: User,
+    action: str,
+    ip: str | None = None,
+    meta: dict | None = None,
+) -> dict:
+    """MFA users get a one-time challenge instead of tokens; /auth/mfa/verify
+    consumes it and only then mints the session. Every credential type (password,
+    email OTP, Google) goes through here so MFA cannot be bypassed by choosing a
+    different login method."""
     if await mfa.enabled(db, user.id):
         token = await mfa.store_login_token(redis, str(user.id))
         logger.info("MFA challenge issued for %s", user.email)
         return {"mfa_required": True, "mfa_token": token}
 
-    session = await _start_session(db, redis, user, AuditAction.USER_LOGIN, ip=ip)
+    session = await _start_session(db, redis, user, action, ip=ip, meta=meta)
     return session.model_dump()
 
 
@@ -375,7 +387,7 @@ async def request_otp(
 
 async def verify_otp(
     db: AsyncSession, redis: Redis, data: OtpVerify, ip: str | None = None
-) -> Token:
+) -> dict:
     email = data.email.lower()
     if not await token_store.verify_otp(
         redis, email, data.code, settings.otp_max_attempts
@@ -409,7 +421,7 @@ async def verify_otp(
     if not user.is_active:
         raise UnauthorizedError("Account is deactivated")
 
-    return await _start_session(
+    return await _login_outcome(
         db, redis, user, AuditAction.USER_LOGIN_OTP, ip=ip,
         meta={"email": email, "method": "otp"},
     )
@@ -511,15 +523,16 @@ async def _find_or_create_google_user(
 
 async def exchange_oauth_login_code(
     db: AsyncSession, redis: Redis, code: str, ip: str | None = None
-) -> Token:
-    """Turns the one-time OAuth hand-off code into a real token pair."""
+) -> dict:
+    """Turns the one-time OAuth hand-off code into a token pair or an MFA
+    challenge when the account has MFA enabled."""
     user_id = await token_store.consume_oauth_login_code(redis, code)
     if not user_id:
         raise UnauthorizedError("Invalid or expired login code")
     user = await UserRepository(db).get(uuid.UUID(user_id))
     if not user or not user.is_active:
         raise UnauthorizedError("User no longer active")
-    return await _start_session(
+    return await _login_outcome(
         db, redis, user, AuditAction.USER_LOGIN_GOOGLE, ip=ip,
         meta={"email": user.email, "method": "google"},
     )

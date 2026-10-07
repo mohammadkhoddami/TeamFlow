@@ -27,15 +27,30 @@ from urllib.parse import urlencode
 import httpx
 import jwt
 from redis.asyncio import Redis
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.core import security
 from app.core.config import settings
-from app.core.exceptions import ExternalServiceError, UnauthorizedError
+from app.core.exceptions import (
+    ExternalServiceError,
+    UnauthorizedError,
+    ValidationFailedError,
+)
+from app.core.outbound import assert_deliverable_url
 from app.core.redis import get_redis_client
-from app.models import AuditAction, Membership, SsoConfig, User
+from app.models import (
+    AuditAction,
+    Membership,
+    MembershipRole,
+    SsoConfig,
+    SsoIdentity,
+    User,
+    utcnow,
+)
 from app.repositories import MembershipRepository, UserRepository
 from app.services import audit, token_store
 
@@ -63,6 +78,11 @@ async def _load_discovery(redis: Redis, issuer: str) -> dict:
             pass  # corrupted cache entry: re-fetch below
 
     url = f"{issuer.rstrip('/')}/.well-known/openid-configuration"
+    try:
+        # The issuer is admin-controlled; block SSRF to internal services.
+        assert_deliverable_url(url)
+    except ValidationFailedError as exc:
+        raise ExternalServiceError("Identity provider URL is not allowed") from exc
     try:
         async with httpx.AsyncClient(timeout=settings.http_timeout_seconds) as client:
             response = await client.get(url)
@@ -183,6 +203,12 @@ async def complete_callback(
     jwks_uri = discovery.get("jwks_uri")
     if not token_endpoint or not jwks_uri:
         raise ExternalServiceError("Identity provider discovery is incomplete")
+    try:
+        # Endpoints come from the (admin-controlled) discovery document.
+        assert_deliverable_url(str(token_endpoint))
+        assert_deliverable_url(str(jwks_uri))
+    except ValidationFailedError as exc:
+        raise ExternalServiceError("Identity provider endpoints are not allowed") from exc
 
     token_payload = {
         "grant_type": "authorization_code",
@@ -215,14 +241,27 @@ async def complete_callback(
     email = str(claims.get("email", "")).lower().strip()
     if not email:
         raise UnauthorizedError("SSO account has no email address")
+    # A tenant admin controls the issuer, so an unverified or absent
+    # `email_verified` must never be trusted for linking/provisioning.
+    if claims.get("email_verified") is not True:
+        raise UnauthorizedError(
+            "The identity provider has not verified this email address"
+        )
 
     # Captured before provisioning: a concurrent-creation rollback inside
     # `_find_or_create_user` would expire the `config` instance.
     organization_id = config.organization_id
-    default_role = config.default_role
+    issuer = config.issuer
+    default_role = (
+        config.default_role
+        if config.default_role in MembershipRole.ASSIGNABLE
+        else MembershipRole.MEMBER
+    )
     auto_provision = config.auto_provision
 
-    user = await _find_or_create_user(db, config, claims, email)
+    user = await _find_or_create_user(
+        db, organization_id, issuer, auto_provision, claims, email
+    )
     if not user.is_active:
         raise UnauthorizedError("Account is deactivated")
 
@@ -257,14 +296,79 @@ async def complete_callback(
     return handoff
 
 
+async def _link_identity(
+    db: AsyncSession,
+    organization_id: uuid.UUID,
+    issuer: str,
+    subject: str,
+    user_id: uuid.UUID,
+) -> None:
+    """Binds (org, issuer, subject) -> user. A concurrent first login may win
+    the unique constraint; ON CONFLICT keeps the loser idempotent."""
+    now = utcnow()
+    await db.execute(
+        pg_insert(SsoIdentity.__table__)
+        .values(
+            id=uuid.uuid4(),
+            organization_id=organization_id,
+            issuer=issuer,
+            subject=subject,
+            user_id=user_id,
+            last_login_at=now,
+            created_at=now,
+        )
+        .on_conflict_do_nothing(constraint="uq_sso_identity_org_issuer_subject")
+    )
+
+
 async def _find_or_create_user(
-    db: AsyncSession, config: SsoConfig, claims: dict, email: str
+    db: AsyncSession,
+    organization_id: uuid.UUID,
+    issuer: str,
+    auto_provision: bool,
+    claims: dict,
+    email: str,
 ) -> User:
-    repo = UserRepository(db)
-    user = await repo.get_by_email(email)
-    if user is not None:
+    subject = str(claims.get("sub") or "").strip()
+    if not subject:
+        raise UnauthorizedError("SSO identity token has no subject")
+
+    # 1. A previously bound identity for this org+issuer+subject wins outright.
+    identity = (
+        await db.execute(
+            select(SsoIdentity).where(
+                SsoIdentity.organization_id == organization_id,
+                SsoIdentity.issuer == issuer,
+                SsoIdentity.subject == subject,
+            )
+        )
+    ).scalar_one_or_none()
+    if identity is not None:
+        user = await db.get(User, identity.user_id)
+        if user is None:
+            raise UnauthorizedError("Linked account no longer exists")
+        identity.last_login_at = utcnow()
+        db.add(identity)
         return user
-    if not config.auto_provision:
+
+    # 2. No link yet: linking an existing global account is only allowed for
+    #    members of this org. Otherwise any tenant admin who controls an IdP
+    #    could impersonate users of other tenants by asserting their email.
+    repo = UserRepository(db)
+    existing = await repo.get_by_email(email)
+    if existing is not None:
+        membership = await MembershipRepository(db).get_for_user(
+            existing.id, organization_id
+        )
+        if membership is None:
+            raise UnauthorizedError(
+                "An account with this email already exists; ask an "
+                "organization admin to add you"
+            )
+        await _link_identity(db, organization_id, issuer, subject, existing.id)
+        return existing
+
+    if not auto_provision:
         raise UnauthorizedError("Account is not provisioned for this organization")
 
     full_name = str(claims.get("name") or claims.get("preferred_username") or email)[:255]
@@ -275,16 +379,26 @@ async def _find_or_create_user(
     try:
         user = await repo.add(user)
     except IntegrityError:
-        # A concurrent first-login raced; the loser just logs in.
+        # A concurrent first-login raced; the loser links to the winner.
         await db.rollback()
-        user = await repo.get_by_email(email)
-        if user is None:
+        existing = await repo.get_by_email(email)
+        if existing is None:
             raise UnauthorizedError("Could not provision the account") from None
-        return user
+        membership = await MembershipRepository(db).get_for_user(
+            existing.id, organization_id
+        )
+        if membership is None:
+            raise UnauthorizedError(
+                "An account with this email already exists; ask an "
+                "organization admin to add you"
+            )
+        await _link_identity(db, organization_id, issuer, subject, existing.id)
+        return existing
     await audit.log(
         db,
         AuditAction.USER_REGISTERED,
         actor_id=user.id,
         meta={"email": email, "method": "sso"},
     )
+    await _link_identity(db, organization_id, issuer, subject, user.id)
     return user

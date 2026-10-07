@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from sqlmodel import select
 
 from app.api.deps import DB, OrgMembership
+from app.core.csv_utils import csv_safe
 from app.core.exceptions import PermissionDeniedError
 from app.models import AuditLog, MembershipRole
 from app.repositories import AuditLogRepository
@@ -146,15 +147,19 @@ async def export_audit_logs(
     for row in rows:
         writer.writerow(
             [
-                row["id"],
-                row["action"],
-                row["target_type"] or "",
-                row["target_id"] or "",
-                row["actor_id"] or "",
-                row["created_at"],
-                json.dumps(row["meta"], sort_keys=True, default=str) if row["meta"] else "",
-                row["prev_hash"],
-                row["hash"],
+                csv_safe(row["id"]),
+                csv_safe(row["action"]),
+                csv_safe(row["target_type"] or ""),
+                csv_safe(row["target_id"] or ""),
+                csv_safe(row["actor_id"] or ""),
+                csv_safe(row["created_at"]),
+                csv_safe(
+                    json.dumps(row["meta"], sort_keys=True, default=str)
+                    if row["meta"]
+                    else ""
+                ),
+                csv_safe(row["prev_hash"]),
+                csv_safe(row["hash"]),
             ]
         )
     return Response(

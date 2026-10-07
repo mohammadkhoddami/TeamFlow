@@ -9,6 +9,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import (
@@ -146,7 +147,15 @@ async def start_sprint(
     sprint.state = SprintState.ACTIVE
     if sprint.start_date is None:
         sprint.start_date = datetime.now(UTC)
-    sprint = await SprintRepository(db).update(sprint)
+    try:
+        # The partial unique index `uq_sprints_one_active` is the real guard:
+        # two concurrent starts cannot both commit.
+        sprint = await SprintRepository(db).update(sprint)
+    except IntegrityError:
+        await db.rollback()
+        raise ValidationFailedError(
+            "Another sprint in this project was just started"
+        ) from None
     await audit.log(
         db, AuditAction.PROJECT_UPDATED, actor_id=actor.id,
         organization_id=org.id, target_type="sprint", target_id=sprint.id, ip=ip,

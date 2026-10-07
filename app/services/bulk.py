@@ -97,7 +97,7 @@ async def bulk_operate(
     if data.action == "delete":
         deleted = 0
         for task in ordered:
-            if not task_service._can_delete(membership, task, actor):
+            if not await task_service._can_delete(db, membership, task, actor):
                 failures.append(
                     BulkTaskFailure(task_id=task.id, reason="Not allowed to delete")
                 )

@@ -56,13 +56,13 @@ def fts_condition(column_expression, term: str) -> ColumnElement[bool]:
     return column_expression.op("@@")(func.websearch_to_tsquery("english", term))
 
 
+# Must stay byte-identical to the `ix_tasks_search_vector` expression in
+# migration c9f31a7d5e21 (use `||`, not concat(), or the GIN index is unused).
 TASK_SEARCH_VECTOR = sa_func.to_tsvector(
     "english",
-    sa_func.concat(
-        sa_func.coalesce(Task.title, ""),
-        " ",
-        sa_func.coalesce(Task.description, ""),
-    ),
+    sa_func.coalesce(Task.title, "")
+    .op("||")(" ")
+    .op("||")(sa_func.coalesce(Task.description, "")),
 )
 
 

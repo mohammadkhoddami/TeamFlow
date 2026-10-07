@@ -20,6 +20,7 @@ from app.schemas import (
     IntegrationRead,
     IntegrationUpdate,
 )
+from app.services import permissions
 from app.services.integrations import hub as integration_service
 
 router = APIRouter(prefix="/organizations/{slug}/integrations", tags=["integrations"])
@@ -51,7 +52,8 @@ async def create_integration(
     request: Request,
     db: DB,
 ) -> IntegrationCreated:
-    org, _m = org_membership
+    org, membership = org_membership
+    await permissions.require_permission(db, membership, "integrations.manage")
     integration, secret = await integration_service.create_integration(
         db, current_user, org, data, ip=_ip(request)
     )
@@ -95,7 +97,8 @@ async def update_integration(
     request: Request,
     db: DB,
 ) -> IntegrationCreated:
-    org, _m = org_membership
+    org, membership = org_membership
+    await permissions.require_permission(db, membership, "integrations.manage")
     integration = await integration_service.get_integration_for_org(
         db, integration_id, org.id
     )
@@ -115,7 +118,8 @@ async def delete_integration(
     request: Request,
     db: DB,
 ) -> None:
-    org, _m = org_membership
+    org, membership = org_membership
+    await permissions.require_permission(db, membership, "integrations.manage")
     integration = await integration_service.get_integration_for_org(
         db, integration_id, org.id
     )

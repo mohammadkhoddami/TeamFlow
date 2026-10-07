@@ -40,7 +40,11 @@ export function OtpPage() {
     setBusy(true)
     setError(null)
     try {
-      await loginWithOtp(email, code)
+      const outcome = await loginWithOtp(email, code)
+      if (outcome.mfaRequired) {
+        navigate('/login', { replace: true, state: { mfaToken: outcome.mfaToken } })
+        return
+      }
       navigate('/organizations', { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Sign-in failed')

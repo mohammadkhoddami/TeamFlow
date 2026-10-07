@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import select
 
 from app.api.deps import DB, CurrentUser
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.models import PushSubscription
 from app.repositories import MembershipRepository, OrganizationRepository, ProjectRepository
 from app.schemas import (
@@ -145,8 +145,9 @@ async def list_push_subscriptions(
 async def subscribe_push(
     data: PushSubscribeRequest, current_user: CurrentUser, db: DB
 ) -> PushSubscriptionRead:
-    """Upsert by endpoint: re-subscribing the same device updates keys and
-    (re)binds the endpoint to the current user."""
+    """Upsert keyed on the browser endpoint. Re-subscribing the same device
+    refreshes its keys; an endpoint owned by another account is never silently
+    rebound (that would let anyone who learns an endpoint silence its owner)."""
     subscription = (
         await db.execute(
             select(PushSubscription).where(PushSubscription.endpoint == data.endpoint)
@@ -160,8 +161,11 @@ async def subscribe_push(
             user_agent=data.user_agent,
         )
         db.add(subscription)
+    elif subscription.user_id != current_user.id:
+        raise ConflictError(
+            "This browser subscription is registered to another account"
+        )
     else:
-        subscription.user_id = current_user.id
         subscription.keys = data.keys.model_dump()
         if data.user_agent is not None:
             subscription.user_agent = data.user_agent

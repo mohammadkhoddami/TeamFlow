@@ -3,8 +3,9 @@
 Authenticated with a per-org SCIM bearer token (no JWT): the presented
 `scim_...` value is hashed and looked up in `scim_tokens`. The token's
 organization is the tenant boundary for every operation. Users are org
-members; DELETE and PATCH active=false deactivate both the User and the
-Membership. Errors follow RFC 7644 (`Error` schema).
+members; DELETE and PATCH active=false deactivate the *membership only* -
+the global User row is shared across orgs and must never be flipped by a
+single tenant's directory sync. Errors follow RFC 7644 (`Error` schema).
 """
 
 import hashlib
@@ -246,12 +247,6 @@ async def create_user(data: ScimUserCreate, auth: ScimAuth, db: DB):
     org, _token = auth
     email = data.userName.strip().lower()
 
-    existing = (
-        await db.execute(select(User).where(func.lower(User.email) == email))
-    ).scalar_one_or_none()
-    if existing is not None:
-        return _scim_error(409, "A user with this userName already exists")
-
     config = (
         await db.execute(
             select(SsoConfig).where(SsoConfig.organization_id == org.id)
@@ -259,9 +254,35 @@ async def create_user(data: ScimUserCreate, auth: ScimAuth, db: DB):
     ).scalar_one_or_none()
     role = (
         config.default_role
-        if config and config.default_role in MembershipRole.ALL
+        if config and config.default_role in MembershipRole.ASSIGNABLE
         else MembershipRole.MEMBER
     )
+
+    existing = (
+        await db.execute(select(User).where(func.lower(User.email) == email))
+    ).scalar_one_or_none()
+    if existing is not None:
+        # Reuse the global account through this org's membership. 409 only if
+        # already a member here, so tenants cannot probe each other's users.
+        membership = (
+            await db.execute(
+                select(Membership).where(
+                    Membership.user_id == existing.id,
+                    Membership.organization_id == org.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if membership is not None:
+            return _scim_error(409, "A user with this userName already exists")
+        membership = Membership(
+            user_id=existing.id,
+            organization_id=org.id,
+            role=role,
+            is_active=data.active,
+        )
+        db.add(membership)
+        await db.commit()
+        return _user_resource(existing, membership)
     full_name = (data.name.formatted if data.name and data.name.formatted else email)[:255]
     hashed = await run_in_threadpool(
         security.hash_password, secrets.token_urlsafe(32)
@@ -326,7 +347,6 @@ async def patch_user(
                 active = _parse_bool(value)
                 if active is None:
                     return _scim_error(400, "active must be true or false")
-                user.is_active = active
                 membership.is_active = active
             elif target == "name.formatted":
                 if value is None:
@@ -347,9 +367,7 @@ async def delete_user(user_id: uuid.UUID, auth: ScimAuth, db: DB):
     found = await _get_org_member(db, org.id, user_id)
     if found is None:
         return _scim_error(404, "User not found")
-    user, membership = found
-    user.is_active = False
+    _user, membership = found
     membership.is_active = False
-    db.add(user)
     db.add(membership)
     await db.commit()

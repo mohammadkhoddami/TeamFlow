@@ -16,7 +16,10 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [mfaToken, setMfaToken] = useState<string | null>(null)
+  // OTP and Google callbacks hand off here with a pending MFA challenge.
+  const [mfaToken, setMfaToken] = useState<string | null>(
+    () => (location.state as { mfaToken?: string } | null)?.mfaToken ?? null,
+  )
   const [mfaCode, setMfaCode] = useState('')
   const [ssoOpen, setSsoOpen] = useState(false)
   const [ssoSlug, setSsoSlug] = useState('')

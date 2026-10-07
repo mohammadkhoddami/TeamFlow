@@ -125,6 +125,9 @@ class Settings(BaseSettings):
     # --- Idempotency ---
     idempotency_ttl_hours: int = 24
 
+    # --- Invitations ---
+    invitation_ttl_days: int = 14
+
     # --- Admin panel (server-rendered, superuser-only) ---
     admin_enabled: bool = True
     admin_base_url: str = "/admin"
@@ -137,6 +140,15 @@ class Settings(BaseSettings):
     # honor HTTP(S)_PROXY env vars for webhook delivery; set false on hosts
     # with a system proxy that cannot reach internal/receiver URLs.
     webhook_httpx_trust_env: bool = True
+    # SSRF guard: allow outbound webhook/SSO URLs to target private hosts.
+    # Development only (docker-compose receivers); never enable in production.
+    outbound_allow_private_hosts: bool = False
+
+    # --- Secrets at rest ---
+    # urlsafe base64 Fernet key; empty = derive from secret_key (dev fallback).
+    # Rotating/losing it makes stored TOTP seeds, SSO client secrets and
+    # webhook signing secrets unrecoverable.
+    secrets_encryption_key: str = ""
 
     # --- Web push (optional; empty keys disable delivery gracefully) ---
     push_vapid_public_key: str = ""

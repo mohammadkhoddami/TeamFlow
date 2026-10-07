@@ -353,7 +353,7 @@ export const authApi = {
     }),
 
   verifyOtp: (email: string, code: string) =>
-    request<TokenPair>('/auth/otp/verify', {
+    request<LoginResponse>('/auth/otp/verify', {
       method: 'POST',
       body: { email, code },
       auth: false,
@@ -364,7 +364,7 @@ export const authApi = {
   googleStartUrl: (): string => `${API_BASE_URL}/auth/google/start`,
 
   exchangeOAuthCode: (code: string) =>
-    request<TokenPair>('/auth/oauth/exchange', {
+    request<LoginResponse>('/auth/oauth/exchange', {
       method: 'POST',
       body: { code },
       auth: false,

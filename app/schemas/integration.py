@@ -50,6 +50,8 @@ class IntegrationRead(SQLModel):
     webhook_path: str | None = None
     feed_path: str | None = None
     has_secret: bool = False
+    # True when config.webhook_url is set; the value itself is never returned.
+    has_webhook_url: bool = False
     created_at: datetime
 
 

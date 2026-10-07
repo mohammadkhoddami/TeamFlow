@@ -15,6 +15,7 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.csv_utils import csv_safe
 from app.core.exceptions import NotFoundError
 from app.models import Sprint, Task, TaskStatus, TaskStatusHistory
 from app.repositories import SprintRepository, TaskStatusHistoryRepository
@@ -328,5 +329,5 @@ def rows_to_csv(rows: list[dict], headers: list[str]) -> str:
     writer = csv.DictWriter(buffer, fieldnames=headers, extrasaction="ignore")
     writer.writeheader()
     for row in rows:
-        writer.writerow({key: row.get(key, "") for key in headers})
+        writer.writerow({key: csv_safe(row.get(key, "")) for key in headers})
     return buffer.getvalue()

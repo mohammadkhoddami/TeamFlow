@@ -12,6 +12,7 @@ from sqlalchemy import Uuid as SAUuid
 from sqlmodel import Field, SQLModel
 
 from app.models.base import TimeStampedMixin, UUIDMixin
+from app.models.types import EncryptedString
 
 
 class Plugin(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
@@ -37,7 +38,9 @@ class Plugin(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     )
     events: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     scopes: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
-    secret: str | None = Field(default=None, sa_column=Column(String(64), nullable=True))
+    secret: str | None = Field(
+        default=None, sa_column=Column(EncryptedString, nullable=True)
+    )
     is_active: bool = Field(
         default=True,
         sa_column=Column(Boolean, nullable=False, server_default="true"),

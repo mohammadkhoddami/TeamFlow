@@ -44,6 +44,13 @@ def upgrade() -> None:
     )
     op.create_index('ix_tasks_org_category', 'tasks', ['organization_id', 'status_category'])
     op.create_index('ix_tasks_org_recurrence', 'tasks', ['organization_id', 'recurrence_rule'])
+    op.create_index(
+        'uq_tasks_recurrence_occurrence',
+        'tasks',
+        ['organization_id', 'recurrence_source_id', 'due_date'],
+        unique=True,
+        postgresql_where=sa.text("recurrence_source_id IS NOT NULL"),
+    )
     # Legacy statuses are exactly the four canonical categories.
     op.execute("UPDATE tasks SET status_category = status")
 
@@ -310,6 +317,7 @@ def downgrade() -> None:
     op.drop_table('boards')
     op.drop_table('workflow_statuses')
 
+    op.drop_index('uq_tasks_recurrence_occurrence', table_name='tasks')
     op.drop_index('ix_tasks_org_recurrence', table_name='tasks')
     op.drop_index('ix_tasks_org_category', table_name='tasks')
     op.drop_constraint('fk_tasks_recurrence_source', 'tasks', type_='foreignkey')

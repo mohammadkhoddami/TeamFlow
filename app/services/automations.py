@@ -25,6 +25,7 @@ from app.core.exceptions import (
     NotFoundError,
     ValidationFailedError,
 )
+from app.core.outbound import validate_outbound_url
 from app.models import (
     AuditAction,
     AutomationExecution,
@@ -45,7 +46,6 @@ from app.repositories import (
     MembershipRepository,
     ProjectRepository,
     TaskRepository,
-    UserRepository,
 )
 from app.schemas import (
     AutomationRuleCreate,
@@ -215,13 +215,17 @@ async def _validate_actions(
             if role is not None and role not in ROLE_VALUES:
                 raise ValidationFailedError("notify role must be owner/admin/manager/member")
             if data.get("user_id"):
-                user = await UserRepository(db).get(uuid.UUID(str(data["user_id"])))
-                if user is None:
-                    raise ValidationFailedError("notify user not found")
+                target_id = uuid.UUID(str(data["user_id"]))
+                membership = await MembershipRepository(db).get_for_user(
+                    target_id, org.id
+                )
+                if membership is None or not membership.is_active:
+                    raise ValidationFailedError(
+                        "notify user must be an active member of this organization"
+                    )
         elif kind == "webhook":
-            url = data.get("url") or ""
-            if not url.startswith(("http://", "https://")):
-                raise ValidationFailedError("webhook action requires an http(s) url")
+            url = str(data.get("url") or "")
+            validate_outbound_url(url)
         elif kind == "add_label":
             if not data.get("label_id"):
                 raise ValidationFailedError("add_label action requires label_id")

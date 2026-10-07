@@ -24,6 +24,8 @@ from sqlalchemy import func as sa_func
 
 from app.core.config import settings
 from app.core.db_sync import session_scope
+from app.core.exceptions import ValidationFailedError
+from app.core.outbound import assert_deliverable_url
 from app.models import IdempotencyKey
 from app.services.integrations import webhook_signing
 
@@ -81,6 +83,18 @@ def deliver_webhook(self, delivery_id: str) -> dict:
         delivery.attempts = max(delivery.attempts, attempt)
         url, event = webhook.url, delivery.event
         # session_scope commits attempts bump + everything below on exit
+
+    # SSRF gate at delivery time: the host is re-resolved here, so a DNS record
+    # changed after save cannot redirect the worker at internal services.
+    try:
+        assert_deliverable_url(url)
+    except ValidationFailedError as exc:
+        with session_scope() as db:
+            delivery = db.get(WebhookDelivery, uuid.UUID(delivery_id))
+            if delivery is not None:
+                delivery.status = DeliveryStatus.FAILED
+                delivery.last_error = f"blocked: {exc.detail}"
+        return {"status": "blocked", "delivery_id": delivery_id}
 
     headers = {
         "Content-Type": "application/json",
@@ -493,6 +507,12 @@ def post_webhook_url(self, url: str, payload: dict) -> dict:
 
     from app.workers.celery_app import http_client
 
+    try:
+        assert_deliverable_url(url)
+    except ValidationFailedError as exc:
+        logger.warning("Blocked automation webhook URL: %s", exc.detail)
+        return {"status": "blocked", "detail": exc.detail}
+
     client = http_client or httpx.Client(timeout=settings.webhook_timeout_seconds)
     try:
         response = client.post(url, json=payload)
@@ -528,6 +548,12 @@ def deliver_plugin(self, plugin_id: str, event: str, data: dict) -> dict:
             "Plugin %s has no webhook_url/secret; dropping %s", plugin_id, event
         )
         return {"status": "skipped", "plugin_id": plugin_id}
+
+    try:
+        assert_deliverable_url(url)
+    except ValidationFailedError as exc:
+        logger.warning("Blocked plugin %s webhook URL: %s", plugin_id, exc.detail)
+        return {"status": "blocked", "plugin_id": plugin_id}
 
     body = json.dumps({"event": event, "data": data, "plugin_id": plugin_id}).encode()
     timestamp = str(int(datetime.now(UTC).timestamp()))
@@ -645,6 +671,16 @@ def deliver_integration(self, event_id: str) -> dict:
                 record.status = "failed"
                 record.detail = "missing webhook_url"
         return {"status": "failed", "event_id": event_id}
+
+    try:
+        assert_deliverable_url(webhook_url)
+    except ValidationFailedError as exc:
+        with session_scope() as db:
+            record = db.get(IntegrationEvent, uuid.UUID(event_id))
+            if record is not None:
+                record.status = "failed"
+                record.detail = f"blocked: {exc.detail}"
+        return {"status": "blocked", "event_id": event_id}
 
     from app.workers.celery_app import http_client
 
