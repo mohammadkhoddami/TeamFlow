@@ -167,6 +167,175 @@ tenant isolation (IDOR -> 404), task transitions/query filters, idempotency
 replay, attachments (fake storage), webhook signing + retries + idempotency,
 rate limiting, notifications, audit trail, dashboard aggregation, WebSockets,
 and the admin panel (superuser-only login, CRUD, audit redaction, guards).
+M3 adds threaded comments/reactions/activity, notification mutes, the
+automation engine (conditions, actions, schedule runs, failure logging),
+API tokens/service accounts/OAuth grants, releases/roadmap/calendar,
+VCS + chat + calendar integrations, and cursor-pagination + query-budget
+tests (`tests/integration/test_m3_*.py`). M4 adds MFA (TOTP + recovery),
+OIDC SSO + SCIM provisioning, custom roles/permissions with private project
+visibility, audit export + retention, goals/OKR roll-ups, dashboards, public
+intake forms, the heuristic AI breakdown, plugins and push subscriptions
+(`tests/integration/test_m4_*.py`). The frontend has Vitest coverage for the
+Markdown (tables/images), i18n and theming layers (`npm test`).
+
+## Agile features (M1)
+
+Phase 1 of the competitive plan is implemented on top of the existing board:
+
+- **Issue keys** — every project gets a `PROJECTKEY` (derived from its name,
+  editable) and tasks receive atomic, sequential keys (`TEAM-123`) shown on
+  cards, drawers, the tasks table, emails and the MCP server.
+- **Sprints & backlog** — project-scoped sprints (name, goal, dates, state),
+  one active sprint per project, start/complete with carry-over to a chosen
+  sprint or back to the backlog, a backlog view with manual ordering, and a
+  sprint filter on the board. Endpoints under `/projects/{id}/sprints` and
+  `/sprints/{id}`.
+- **Estimates** — per-task `estimate`/`remaining`/`actual` values with a
+  per-project estimation unit (points/hours/none); sprint totals aggregate
+  points for reports.
+- **TeamQL + saved filters** — `GET /organizations/{slug}/tasks/query?q=...`
+  parses a small query language (`status in (todo, in_progress) AND priority =
+  high AND assignee = me ORDER BY due`); filters can be saved/shared per org
+  (`/organizations/{slug}/saved-filters`) and reused from the tasks page.
+- **Global full-text search** — `GET /organizations/{slug}/search?q=...`
+  searches tasks, comments and projects through PostgreSQL expression GIN
+  indexes (`websearch_to_tsquery`); bound to Ctrl/Cmd+K in the UI.
+- **Bulk operations** — `POST /organizations/{slug}/tasks/bulk` supports
+  update, move, clone, delete, archive/restore and move-to-project for up to
+  200 tasks, with per-task failure reporting. Archive is a soft delete.
+- **Email preferences & digests** — per-user subscription matrix
+  (assigned/mentioned/comments/due), immediate/daily/weekly/off cadence,
+  token-based unsubscribe, and `task_assigned`/`mention`/`comment_created`/
+  `task_completed` emails actually enqueued. A daily Celery job sends digests.
+- **Quick wins** — dark mode (system/light/dark), mention autocomplete in the
+  Markdown editor, the advertised `member.joined` webhook is now dispatched,
+  and `NotificationType.TASK_COMPLETED` is emitted to watchers.
+
+## Planning depth (M2)
+
+Phase 2 adds Jira-class planning while keeping the simple default:
+
+- **Custom workflows & boards** — per-project statuses with categories,
+  transition rules, WIP limits (optional enforcement) and multiple saved boards
+  with TeamQL filters and swimlanes (assignee/priority/label). The classic
+  four-column flow stays the default until a project saves its own workflow.
+  `GET/PUT /projects/{id}/workflow`, `/projects/{id}/boards`, `/organizations/{slug}/boards/{id}`.
+- **Custom fields** — typed fields (text/number/date/select/multi-select/user/
+  checkbox) per project, stored as JSON values; filterable through TeamQL
+  (`cf_<key> = value`). `/projects/{id}/custom-fields`.
+- **Task links & dependencies** — blocks / is blocked by / relates to /
+  duplicates / clones with cycle prevention and a derived `is_blocked` flag
+  (`?blocked=true` filter). `/tasks/{id}/links`.
+- **Agile reports** — burndown, velocity, cumulative flow (status-history
+  aware), cycle/lead time (avg/P50/P85, CSV export) and sprint reports.
+  `/projects/{id}/reports/*`, `/sprints/{id}/report`.
+- **Velocity & capacity** — per-sprint member capacity with overload
+  detection. `GET/PUT /sprints/{id}/capacity`.
+- **Time tracking** — worklogs per task/user, `actual_estimate` kept in sync
+  with logged hours, and an org timesheet with weekly totals.
+  `/tasks/{id}/worklogs`, `/organizations/{slug}/timesheet`.
+- **Templates** — built-in Scrum/Kanban/Bug-triage presets, save any project
+  as a template (workflow, labels, fields, boards, hierarchy) and task
+  templates with checklists. `/organizations/{slug}/project-templates`,
+  `/task-templates/{id}/apply`.
+- **Recurring tasks** — RFC 5545 RRULEs; completing a task (or the daily
+  sweep) spawns the next occurrence idempotently.
+- **Multiple assignees & checklists** — role-bearing assignees
+  (assignee/approver) plus checklist items with progress.
+- **Import & export** — Jira/Asana/generic CSV and Trello JSON importers
+  (dry-run supported) and a full workspace JSON export (optionally with
+  attachment URLs) plus per-project CSV. `POST /organizations/{slug}/imports`,
+  `GET /organizations/{slug}/export`.
+
+## Collaboration & ecosystem (M3)
+
+Phase 3 makes TeamFlow a collaboration hub and opens it to the ecosystem:
+
+- **Automation rules** — visual if-this-then-that rules: triggers (task
+  created/updated, status changed, comment created, schedule), conditions and
+  actions (assign, transition, comment, notify, webhook, add label, set
+  priority). Starter templates and a per-rule execution log.
+  `/organizations/{slug}/automations`, `.../templates`, `.../executions`;
+  schedule triggers run hourly via Celery beat.
+- **Releases & roadmap** — dated releases with scope progress plus a roadmap
+  timeline grouping work by epic. `/projects/{id}/releases`,
+  `/projects/{id}/roadmap`; `Task.release_id` scopes a task to a release.
+- **Calendar** — month/week view of due dates with drag-to-reschedule
+  (`GET /organizations/{slug}/calendar`, reschedule via `PATCH /tasks/{id}`).
+- **Threaded comments, reactions & activity feed** — replies
+  (`Comment.parent_id/root_id`), emoji reactions (curated set) and per-task/
+  project activity feeds. `/tasks/{id}/comments`, `/comments/{id}/reactions`,
+  `/tasks/{id}/activity`, `/projects/{id}/activity`.
+- **Rich content** — the Markdown editor/renderer now supports GFM tables,
+  images (including inline attachments via `attachment://<uuid>`) and keeps
+  the Markdown source as the single representation.
+- **Notification center upgrade** — notifications carry task/project pointers
+  for grouping, plus per-project mutes checked at fan-out time.
+  `/notifications/mutes`.
+- **Integrations** — GitHub/GitLab/Bitbucket webhooks link commits/PRs by issue
+  key and can auto-transition tasks; Slack/Teams receive event messages via an
+  incoming webhook; Google Calendar subscribes to a tokenized ICS feed.
+  `/organizations/{slug}/integrations`, public receivers
+  `POST /integrations/{provider}/{id}`, `GET /integrations/google-calendar/{id}/feed.ics`.
+- **API tokens, service accounts & OAuth apps** — personal access tokens
+  (`tf_...`), scoped service accounts (hidden from rosters) and OAuth2
+  client-credentials apps (`POST /oauth/token`), each with usage and optional
+  per-minute rate limits. The MCP server accepts `TEAMFLOW_TOKEN`.
+  `/organizations/{slug}/api-tokens`, `.../service-accounts`, `.../oauth-apps`.
+- **Performance & scale proof** — cursor (keyset) pagination on
+  `GET /organizations/{slug}/tasks/cursor`, query budgets enforced by tests,
+  a k6 load-test script and documented targets in `docs/performance.md`.
+
+## Enterprise & moat (M4)
+
+Phase 4 makes TeamFlow enterprise-ready and opens the ecosystem:
+
+- **SSO & provisioning** — generic OIDC enterprise SSO per workspace
+  (discovery, PKCE, JWKS-verified ID tokens, auto-provisioning with a default
+  role) and SCIM 2.0 user provisioning (`/api/v1/scim/v2/Users` +
+  ServiceProviderConfig/Schemas) with per-org bearer tokens.
+  `GET /auth/sso/{slug}/config|start|callback`, `GET/PUT
+  /organizations/{slug}/sso`, `GET/POST/DELETE /organizations/{slug}/scim-tokens`.
+- **MFA** — TOTP (RFC 6238, stdlib) with one-time recovery codes and a
+  two-phase login challenge; enrollment/enable/disable endpoints and
+  session revocation via logout-all.
+  `GET /auth/mfa`, `POST /auth/mfa/setup|enable|disable|verify`.
+- **Granular permissions** — custom roles (permission catalog:
+  tasks.delete/tasks.manage/projects.manage/members.manage/org.manage/
+  audit.view/integrations.manage), membership-bound custom roles, private
+  projects with project-level membership (viewer/member/manager) and
+  concealment (404) for non-members. `GET/POST /organizations/{slug}/roles`,
+  `GET/POST/PATCH/DELETE /projects/{id}/members`.
+- **Audit & compliance** — configurable per-org audit retention with a
+  cleanup job, tamper-evident export (sha256 hash chain) as CSV or JSON, and
+  compliance notes. `GET /organizations/{slug}/audit-logs/export`.
+- **Dashboard builder** — configurable org/project dashboards with widget
+  types (stats, status mix, per-member load, overdue list, activity) and a
+  server-rendered data endpoint. `/organizations/{slug}/dashboards/*`.
+- **Goals / OKRs** — objectives with due dates and statuses linked to
+  epics/tasks with automatic progress roll-up. `/organizations/{slug}/goals`.
+- **Forms / request intake** — public or private forms per project with typed
+  fields and required-field validation; submissions create real tasks.
+  `/projects/{id}/forms`, public `GET/POST /forms/{slug}`.
+- **AI-native features (heuristic, no external provider)** — natural-language
+  work breakdown that proposes an epic/story/task tree from a description and
+  materializes it with hierarchy rules. `POST
+  /organizations/{slug}/ai/breakdown` and `.../apply`.
+- **Mobile & PWA** — installable manifest + service worker (offline app
+  shell, push/notificationclick handlers) and web-push subscription
+  management; `pywebpush` optional behind VAPID settings.
+  `/notifications/push/*`.
+- **i18n, RTL & Jalali** — locale framework (English/Persian chrome),
+  automatic RTL layout for `fa`, and locale-aware Jalali dates via `Intl`;
+  locale persists per user (`PATCH /auth/me`).
+- **Theming** — org accent color applied live to the design tokens plus
+  workspace-level audit retention settings (dark mode shipped in M1).
+- **Plugin API & directory** — first-party directory with one-click install,
+  per-plugin signing secrets, event subscriptions and HMAC webhook delivery
+  via Celery. `/organizations/{slug}/plugins`, `.../plugins/directory`.
+- **Expanded MCP coverage** — the MCP server now exposes 26 tools including
+  sprints, releases, roadmap, calendar, automations, goals, forms and
+  dashboards, and accepts `TEAMFLOW_TOKEN`.
 
 ## Key behaviors
 
@@ -308,6 +477,17 @@ TEAMFLOW_EMAIL=other@example.com
 TEAMFLOW_PASSWORD=other-secret
 TEAMFLOW_ORG=other-org
 ```
+
+Agents and CI can skip passwords entirely with a personal access token
+(created under **API access** in the web UI, M3 #24):
+
+```env
+TEAMFLOW_TOKEN=tf_...
+TEAMFLOW_ORG=arsen
+```
+
+With `TEAMFLOW_TOKEN` the MCP server never calls `/auth/login`; the token's
+scopes, expiry and rate limit apply. Email+password remains the fallback.
 
 Give `TEAMFLOW_API_URL` the base URL only (`https://arsene.ir/flow`) - `/api/v1`
 is appended automatically. `TEAMFLOW_ORG` is only needed when the account

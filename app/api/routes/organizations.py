@@ -3,9 +3,12 @@
 import uuid
 
 from fastapi import APIRouter, Query, Request, status
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app import services
 from app.api.deps import DB, CurrentUser, OrgMembership
+from app.models import CustomRole
 from app.schemas import (
     MembershipCreate,
     MembershipRead,
@@ -90,6 +93,14 @@ async def delete_organization(
 members_router = APIRouter(prefix="/organizations/{slug}/members", tags=MEMBER_TAGS)
 
 
+async def _serialize_membership(db: AsyncSession, membership) -> MembershipRead:
+    payload = MembershipRead.model_validate(membership)
+    if membership.custom_role_id:
+        custom_role = await db.get(CustomRole, membership.custom_role_id)
+        payload.custom_role_name = custom_role.name if custom_role else None
+    return payload
+
+
 @members_router.get("", response_model=list[MembershipRead])
 async def list_members(
     membership: OrgMembership,
@@ -99,7 +110,19 @@ async def list_members(
 ) -> list[MembershipRead]:
     org, _m = membership
     items = await services.organizations.list_members(db, org.id, offset=offset, limit=limit)
-    return [MembershipRead.model_validate(m) for m in items]
+    role_ids = {m.custom_role_id for m in items if m.custom_role_id}
+    names: dict[uuid.UUID, str] = {}
+    if role_ids:
+        roles = (
+            await db.execute(select(CustomRole).where(CustomRole.id.in_(role_ids)))
+        ).scalars()
+        names = {role.id: role.name for role in roles}
+    return [
+        MembershipRead.model_validate(m).model_copy(
+            update={"custom_role_name": names.get(m.custom_role_id)}
+        )
+        for m in items
+    ]
 
 
 @members_router.post("", status_code=status.HTTP_201_CREATED, response_model=MembershipRead)
@@ -128,9 +151,16 @@ async def update_member(
 ) -> MembershipRead:
     org, _m = membership
     m = await services.organizations.update_member_role(
-        db, current_user, org.slug, user_id, data.role, ip=_ip(request)
+        db,
+        current_user,
+        org.slug,
+        user_id,
+        data.role,
+        ip=_ip(request),
+        custom_role_id=data.custom_role_id,
+        update_custom_role="custom_role_id" in data.model_fields_set,
     )
-    return MembershipRead.model_validate(m)
+    return await _serialize_membership(db, m)
 
 
 @members_router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

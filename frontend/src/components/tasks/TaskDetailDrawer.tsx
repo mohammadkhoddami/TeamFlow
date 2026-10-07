@@ -5,18 +5,25 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../../contexts/auth'
 import { useToast } from '../../contexts/toast'
 import { ApiError, tasksApi } from '../../lib/api'
-import { qk, useInvalidateTasks, useLabels, useTaskChildren } from '../../lib/hooks'
 import {
+  qk,
+  useInvalidateTasks,
+  useLabels,
+  useReleases,
+  useSprints,
+  useTaskChildren,
+  useWorkflow,
+} from '../../lib/hooks'
+import {
+  CATEGORY_BADGE,
   PRIORITIES,
   PRIORITY_BADGE,
   PRIORITY_LABELS,
-  STATUS_BADGE,
-  STATUS_LABELS,
-  STATUS_TRANSITIONS,
   TASK_TYPES,
   TYPE_BADGE,
   TYPE_LABELS,
   allowedParentTypes,
+  statusName,
   type TaskPriority,
   type TaskRead,
   type TaskStatus,
@@ -35,9 +42,17 @@ import {
   Select,
 } from '../ui'
 import { MarkdownEditor } from '../MarkdownEditor'
+import { ActivityFeed } from './ActivityFeed'
 import { AttachmentsSection } from './AttachmentsSection'
 import { CommentsSection } from './CommentsSection'
 import { LabelPicker } from './LabelPicker'
+import {
+  AssigneesEditor,
+  ChecklistSection,
+  CustomFieldsEditor,
+  LinksSection,
+  WorklogSection,
+} from './TaskExtras'
 
 export function TaskDetailDrawer({
   task,
@@ -75,6 +90,10 @@ export function TaskDetailDrawer({
 
   const current = detail.data ?? task
   const children = useTaskChildren(current?.id)
+  const sprints = useSprints(current?.project_id)
+  const releases = useReleases(current?.project_id)
+  const workflow = useWorkflow(current?.project_id)
+  const [customRule, setCustomRule] = useState('')
 
   useEffect(() => {
     if (current) {
@@ -118,7 +137,12 @@ export function TaskDetailDrawer({
 
   const watching = current.watcher_ids.includes(user?.id ?? '')
   const canDelete = role !== 'member' || current.created_by_id === user?.id
-  const statusOptions: TaskStatus[] = [current.status, ...STATUS_TRANSITIONS[current.status]]
+  const workflowMap = new Map((workflow.data ?? []).map((entry) => [entry.key, entry]))
+  const currentWorkflowStatus = workflowMap.get(current.status)
+  const statusOptions: string[] = currentWorkflowStatus
+    ? [current.status, ...currentWorkflowStatus.transitions.filter((key) => workflowMap.has(key))]
+    : [current.status]
+  const RECURRENCE_PRESETS = ['FREQ=DAILY', 'FREQ=WEEKLY', 'FREQ=MONTHLY']
   const watchers = members.filter((membership) => current.watcher_ids.includes(membership.user_id))
   const titleDirty = title.trim() !== current.title && title.trim().length > 0
 
@@ -154,10 +178,23 @@ export function TaskDetailDrawer({
         <div className="min-w-0 pr-2">
           <div className="flex items-center gap-2">
             <Badge className={TYPE_BADGE[current.type]}>{TYPE_LABELS[current.type]}</Badge>
-            <Badge className={STATUS_BADGE[current.status]}>{STATUS_LABELS[current.status]}</Badge>
+            <Badge className={CATEGORY_BADGE[current.status_category]}>
+              {statusName(workflow.data, current.status)}
+            </Badge>
+            {current.is_blocked && (
+              <Badge className="bg-red-100 text-red-700">blocked</Badge>
+            )}
             <Badge className={PRIORITY_BADGE[current.priority]}>
               {PRIORITY_LABELS[current.priority]}
             </Badge>
+            {current.key && (
+              <span className="font-mono text-[11px] text-slate-400">{current.key}</span>
+            )}
+            {current.estimate != null && (
+              <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                {current.estimate} pts
+              </span>
+            )}
           </div>
           {current.parent && (
             <button
@@ -198,7 +235,7 @@ export function TaskDetailDrawer({
             >
               {statusOptions.map((status) => (
                 <option key={status} value={status}>
-                  {STATUS_LABELS[status]}
+                  {statusName(workflow.data, status)}
                   {status === current.status ? ' (current)' : ''}
                 </option>
               ))}
@@ -269,6 +306,103 @@ export function TaskDetailDrawer({
               }}
             />
           </Field>
+          <Field label="Sprint">
+            <Select
+              value={current.sprint_id ?? ''}
+              onChange={(event) => patch.mutate({ sprint_id: event.target.value || null })}
+            >
+              <option value="">Backlog (no sprint)</option>
+              {(sprints.data ?? [])
+                .filter(
+                  (sprint) =>
+                    sprint.state !== 'completed' || sprint.id === current.sprint_id,
+                )
+                .map((sprint) => (
+                  <option key={sprint.id} value={sprint.id}>
+                    {sprint.name}
+                    {sprint.state === 'active' ? ' (active)' : ''}
+                    {sprint.state === 'completed' ? ' (completed)' : ''}
+                  </option>
+                ))}
+            </Select>
+          </Field>
+          <Field label="Release">
+            <Select
+              value={current.release_id ?? ''}
+              onChange={(event) => patch.mutate({ release_id: event.target.value || null })}
+            >
+              <option value="">No release</option>
+              {(releases.data ?? []).map((release) => (
+                <option key={release.id} value={release.id}>
+                  {release.name}
+                  {release.release_date ? ` · ${release.release_date.slice(0, 10)}` : ''}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Estimate" hint="Points or hours per project setting">
+            <Input
+              type="number"
+              min={0}
+              step="0.5"
+              defaultValue={current.estimate ?? ''}
+              key={`estimate-${current.id}-${current.estimate}`}
+              onBlur={(event) => {
+                const raw = event.target.value.trim()
+                const next = raw === '' ? null : Number(raw)
+                if (next !== current.estimate) patch.mutate({ estimate: next })
+              }}
+            />
+          </Field>
+          <Field label="Remaining">
+            <Input
+              type="number"
+              min={0}
+              step="0.5"
+              defaultValue={current.remaining_estimate ?? ''}
+              key={`remaining-${current.id}-${current.remaining_estimate}`}
+              onBlur={(event) => {
+                const raw = event.target.value.trim()
+                const next = raw === '' ? null : Number(raw)
+                if (next !== current.remaining_estimate) {
+                  patch.mutate({ remaining_estimate: next })
+                }
+              }}
+            />
+          </Field>
+          <Field label="Recurrence" hint="Completing this task creates the next occurrence">
+            <Select
+              value={
+                current.recurrence_rule == null
+                  ? ''
+                  : RECURRENCE_PRESETS.includes(current.recurrence_rule)
+                    ? current.recurrence_rule
+                    : 'custom'
+              }
+              onChange={(event) => {
+                if (event.target.value === 'custom') {
+                  setCustomRule(current.recurrence_rule ?? '')
+                } else {
+                  patch.mutate({ recurrence_rule: event.target.value || null })
+                }
+              }}
+            >
+              <option value="">Does not repeat</option>
+              <option value="FREQ=DAILY">Daily</option>
+              <option value="FREQ=WEEKLY">Weekly</option>
+              <option value="FREQ=MONTHLY">Monthly</option>
+              <option value="custom">Custom RRULE…</option>
+            </Select>
+            {customRule !== '' && (
+              <Input
+                className="mt-1 font-mono text-xs"
+                value={customRule}
+                placeholder="FREQ=WEEKLY;BYDAY=MO,WE,FR"
+                onChange={(event) => setCustomRule(event.target.value)}
+                onBlur={() => patch.mutate({ recurrence_rule: customRule || null })}
+              />
+            )}
+          </Field>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
@@ -306,6 +440,16 @@ export function TaskDetailDrawer({
           />
         </section>
 
+        <CustomFieldsEditor task={current} />
+
+        <ChecklistSection taskId={current.id} />
+
+        <AssigneesEditor taskId={current.id} />
+
+        <LinksSection task={current} />
+
+        <WorklogSection task={current} />
+
         <section className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-baseline gap-2">
@@ -337,7 +481,9 @@ export function TaskDetailDrawer({
                     {child.done_child_count}/{child.child_count}
                   </span>
                 )}
-                <Badge className={STATUS_BADGE[child.status]}>{STATUS_LABELS[child.status]}</Badge>
+                <Badge className={CATEGORY_BADGE[child.status_category]}>
+                  {statusName(workflow.data, child.status)}
+                </Badge>
               </button>
             ))}
             {children.data?.length === 0 && (
@@ -372,9 +518,19 @@ export function TaskDetailDrawer({
           />
         </section>
 
-        <AttachmentsSection taskId={current.id} />
+        <AttachmentsSection
+          taskId={current.id}
+          onInsertMarkdown={(markdown) =>
+            setDescription((value) => `${value ? `${value}\n\n` : ''}${markdown}`)
+          }
+        />
 
         <CommentsSection taskId={current.id} />
+
+        <section className="space-y-1">
+          <h3 className="text-sm font-semibold text-slate-800">Activity</h3>
+          <ActivityFeed scope={{ type: 'task', id: current.id }} />
+        </section>
 
         <section className="grid gap-2 rounded-lg border border-slate-200 px-3 py-3 text-xs text-slate-500 sm:grid-cols-2">
           <p>

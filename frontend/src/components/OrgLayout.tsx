@@ -1,6 +1,7 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect } from 'react'
 import { Navigate, Outlet, useParams } from 'react-router-dom'
 
+import { applyAccent } from '../lib/accent'
 import { useOrgMembers, useOrganizations } from '../lib/hooks'
 import type { MembershipRead, MembershipRole, OrganizationRead } from '../lib/types'
 import { ErrorState, PageSpinner } from './ui'
@@ -20,10 +21,24 @@ export function useOrg(): OrgContextValue {
   return context
 }
 
+/** Like useOrg, but returns null outside org routes (shared components). */
+export function useOrgOptional(): OrgContextValue | null {
+  return useContext(OrgContext)
+}
+
 export function OrgLayout() {
   const { slug } = useParams<{ slug: string }>()
   const organizations = useOrganizations()
   const members = useOrgMembers(slug)
+
+  const match = organizations.data?.find((entry) => entry.organization.slug === slug)
+
+  // Workspace accent overrides the Tailwind brand ramp while inside the org.
+  useEffect(() => {
+    if (!match) return
+    applyAccent(match.organization.accent_color)
+    return () => applyAccent(null)
+  }, [match])
 
   if (organizations.isLoading) return <PageSpinner label="Loading workspace…" />
   if (organizations.isError) {
@@ -34,7 +49,6 @@ export function OrgLayout() {
     )
   }
 
-  const match = organizations.data?.find((entry) => entry.organization.slug === slug)
   if (!match) return <Navigate to="/organizations" replace />
 
   return (

@@ -48,11 +48,23 @@ celery_app.conf.update(
             "task": "teamflow.notify_due_tasks",
             "schedule": 24 * 3600,
         },
+        "send-notification-digests-daily": {
+            "task": "teamflow.send_notification_digests",
+            "schedule": 24 * 3600,
+        },
+        "generate-recurring-tasks-daily": {
+            "task": "teamflow.generate_recurring_tasks",
+            "schedule": 24 * 3600,
+        },
+        "run-scheduled-automations-hourly": {
+            "task": "teamflow.run_scheduled_automations",
+            "schedule": 3600,
+        },
     },
 )
 
 # Queues: default (misc), emails, webhooks — workers can scale independently.
-from kombu import Queue  # noqa: E402
+from kombu import Queue
 
 celery_app.conf.task_queues = (
     Queue("default"),
@@ -62,6 +74,10 @@ celery_app.conf.task_queues = (
 celery_app.conf.task_routes = {
     "teamflow.send_email": {"queue": "emails"},
     "teamflow.deliver_webhook": {"queue": "webhooks"},
+    "teamflow.post_webhook_url": {"queue": "webhooks"},
+    "teamflow.deliver_integration": {"queue": "webhooks"},
+    "teamflow.deliver_plugin": {"queue": "webhooks"},
+    # teamflow.send_push intentionally stays on the default queue.
 }
 
 # Long-lived HTTP client for webhook delivery, one per worker process.
@@ -87,4 +103,4 @@ def shutdown_worker(**kwargs: object) -> None:
 
 
 # Task registration: Celery discovers these at import time.
-from app.workers import tasks as worker_tasks  # noqa: E402,F401
+from app.workers import tasks as worker_tasks  # noqa: F401

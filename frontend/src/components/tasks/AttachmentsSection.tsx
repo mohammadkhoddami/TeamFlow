@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, Paperclip, Trash2, Upload } from 'lucide-react'
+import { Download, ImagePlus, Paperclip, Trash2, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 import { useToast } from '../../contexts/toast'
@@ -10,7 +10,13 @@ import { Badge, Button, Spinner } from '../ui'
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
-export function AttachmentsSection({ taskId }: { taskId: string }) {
+export function AttachmentsSection({
+  taskId,
+  onInsertMarkdown,
+}: {
+  taskId: string
+  onInsertMarkdown?: (markdown: string) => void
+}) {
   const toast = useToast()
   const queryClient = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -119,6 +125,17 @@ export function AttachmentsSection({ taskId }: { taskId: string }) {
             </div>
             {attachment.status !== 'uploaded' && (
               <Badge className="bg-amber-100 text-amber-700">{attachment.status}</Badge>
+            )}
+            {onInsertMarkdown && attachment.content_type.startsWith('image/') && (
+              <button
+                className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-700"
+                onClick={() =>
+                  onInsertMarkdown(`![${attachment.filename}](attachment://${attachment.id})`)
+                }
+                title="Insert into description"
+              >
+                <ImagePlus className="h-4 w-4" />
+              </button>
             )}
             <button
               className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"

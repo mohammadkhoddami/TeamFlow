@@ -53,6 +53,25 @@ class Notification(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
             nullable=True,
         ),
     )
+    # Denormalized pointers for grouping/muting by task or project (M3 #25).
+    project_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("projects.id", ondelete="CASCADE"),
+            nullable=True,
+            index=True,
+        ),
+    )
+    task_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("tasks.id", ondelete="CASCADE"),
+            nullable=True,
+            index=True,
+        ),
+    )
     type: str = Field(sa_column=Column(String(32), nullable=False))
     title: str = Field(sa_column=Column(String(255), nullable=False))
     body: str | None = Field(default=None, sa_column=Column(Text, nullable=True))

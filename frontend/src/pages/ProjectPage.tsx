@@ -1,13 +1,39 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Download, LayoutGrid, Network, Plus, Settings2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  ArrowLeft,
+  CalendarDays,
+  CalendarRange,
+  Columns3,
+  Download,
+  FileDown,
+  FileText,
+  LayoutGrid,
+  Network,
+  Plus,
+  Rocket,
+  Save,
+  Settings2,
+  SlidersHorizontal,
+  Users,
+  Workflow,
+} from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { useOrg } from '../components/OrgLayout'
+import { FormsManager } from '../components/FormsManager'
+import { ProjectMembersModal } from '../components/ProjectMembersModal'
+import { BacklogView } from '../components/tasks/BacklogView'
+import { BoardManager } from '../components/tasks/BoardManager'
+import { CalendarView } from '../components/tasks/CalendarView'
+import { CustomFieldsManager } from '../components/tasks/CustomFieldsManager'
+import { RoadmapView } from '../components/tasks/RoadmapView'
+import { SprintManager } from '../components/tasks/SprintManager'
 import { TaskBoard } from '../components/tasks/TaskBoard'
 import { TaskCreateDialog } from '../components/tasks/TaskCreateDialog'
 import { TaskDetailDrawer } from '../components/tasks/TaskDetailDrawer'
 import { TaskTree } from '../components/tasks/TaskTree'
+import { WorkflowManager } from '../components/tasks/WorkflowManager'
 import {
   Badge,
   Button,
@@ -22,10 +48,18 @@ import {
   Textarea,
 } from '../components/ui'
 import { useToast } from '../contexts/toast'
-import { ApiError, tasksApi, projectsApi } from '../lib/api'
-import { useInvalidateTasks, useProject, useTasks, useTaskTree } from '../lib/hooks'
+import { ApiError, dataApi, tasksApi, projectsApi, templatesApi } from '../lib/api'
+import {
+  useBoards,
+  useInvalidateTasks,
+  useProject,
+  useSprints,
+  useTasks,
+  useTaskTree,
+  useWorkflow,
+} from '../lib/hooks'
 import { downloadOpenTasksMarkdown } from '../lib/taskExport'
-import { canManage, type TaskRead, type TaskStatus, type TaskType } from '../lib/types'
+import { canManage, type TaskRead, type TaskType } from '../lib/types'
 import { cn, formatDate } from '../lib/utils'
 import { createProjectSocket, type SocketStatus } from '../lib/ws'
 
@@ -38,24 +72,60 @@ export function ProjectPage() {
   const invalidate = useInvalidateTasks()
 
   const project = useProject(projectId)
-  const tasks = useTasks(org.slug, { project_id: projectId, limit: 100 })
+  const sprints = useSprints(projectId)
+  const workflow = useWorkflow(projectId)
+  const boards = useBoards(projectId)
+  const [sprintFilter, setSprintFilter] = useState<string>('')
+  const [boardId, setBoardId] = useState<string>('')
+  const selectedBoard =
+    boards.data?.find((board) => board.id === boardId) ??
+    boards.data?.find((board) => board.is_default)
+  const boardFilter = selectedBoard?.filter_query?.trim() || ''
+  const taskFilters = useMemo(
+    () => ({
+      project_id: projectId,
+      limit: 100,
+      sprint_id: sprintFilter && sprintFilter !== '__backlog__' ? sprintFilter : undefined,
+      backlog_only: sprintFilter === '__backlog__' || undefined,
+    }),
+    [projectId, sprintFilter],
+  )
+  const plainTasks = useTasks(org.slug, taskFilters)
+  const filteredTasks = useQuery({
+    queryKey: ['orgs', org.slug, 'tasks', 'board-filter', boardFilter],
+    queryFn: () => tasksApi.query(org.slug, boardFilter, { limit: 100 }),
+    enabled: Boolean(boardFilter),
+  })
+  const tasks = boardFilter ? filteredTasks : plainTasks
   const tree = useTaskTree(projectId)
 
   const [socketStatus, setSocketStatus] = useState<SocketStatus>('connecting')
   const [selectedTask, setSelectedTask] = useState<TaskRead | null>(null)
   const selectedTaskIdRef = useRef<string | null>(null)
   const [creating, setCreating] = useState(false)
-  const [createStatus, setCreateStatus] = useState<TaskStatus>('todo')
+  const [createStatus, setCreateStatus] = useState<string>('todo')
   const [createParent, setCreateParent] = useState<TaskRead | null>(null)
   const [createType, setCreateType] = useState<TaskType>('task')
-  const [view, setView] = useState<'board' | 'tree'>('board')
+  const [view, setView] = useState<
+    'board' | 'tree' | 'backlog' | 'roadmap' | 'calendar' | 'forms'
+  >('board')
   const [showSubtasks, setShowSubtasks] = useState(true)
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [managingSprints, setManagingSprints] = useState(false)
+  const [managingWorkflow, setManagingWorkflow] = useState(false)
+  const [managingBoards, setManagingBoards] = useState(false)
+  const [managingFields, setManagingFields] = useState(false)
+  const [managingMembers, setManagingMembers] = useState(false)
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [templateName, setTemplateName] = useState('')
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState<'active' | 'archived'>('active')
+  const [projectKey, setProjectKey] = useState('')
+  const [estimationUnit, setEstimationUnit] = useState<'none' | 'points' | 'hours'>('points')
+  const [visibility, setVisibility] = useState<'workspace' | 'private'>('workspace')
 
   const boardTasks = tasks.data
     ? showSubtasks
@@ -69,6 +139,9 @@ export function ProjectPage() {
       setName(project.data.name)
       setDescription(project.data.description ?? '')
       setStatus(project.data.status)
+      setProjectKey(project.data.key ?? '')
+      setEstimationUnit(project.data.estimation_unit ?? 'points')
+      setVisibility(project.data.visibility ?? 'workspace')
     }
   }, [project.data, editing])
 
@@ -77,7 +150,7 @@ export function ProjectPage() {
   }, [selectedTask])
 
   const startCreate = (options?: {
-    status?: TaskStatus
+    status?: string
     parent?: TaskRead | null
     type?: TaskType
   }) => {
@@ -111,7 +184,7 @@ export function ProjectPage() {
   }, [projectId, org.slug, invalidate, queryClient])
 
   const move = useMutation({
-    mutationFn: ({ taskId, status: next }: { taskId: string; status: TaskStatus }) =>
+    mutationFn: ({ taskId, status: next }: { taskId: string; status: string }) =>
       tasksApi.move(taskId, next),
     onSuccess: () => invalidate(org.slug),
     onError: (err) =>
@@ -124,6 +197,9 @@ export function ProjectPage() {
         name: name.trim(),
         description: description.trim() || null,
         status,
+        key: projectKey.trim() ? projectKey.trim().toUpperCase() : undefined,
+        estimation_unit: estimationUnit,
+        visibility,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['projects', projectId] })
@@ -132,6 +208,17 @@ export function ProjectPage() {
       toast.success('Project updated')
     },
     onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not save project'),
+  })
+
+  const saveTemplate = useMutation({
+    mutationFn: () =>
+      templatesApi.saveProjectAsTemplate(projectId!, { name: templateName.trim() }),
+    onSuccess: () => {
+      toast.success('Project template saved')
+      setSavingTemplate(false)
+    },
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : 'Could not save template'),
   })
 
   const deleteProject = useMutation({
@@ -224,9 +311,94 @@ export function ProjectPage() {
               >
                 <Network className="h-3.5 w-3.5" /> Hierarchy
               </button>
+              <button
+                type="button"
+                onClick={() => setView('backlog')}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  view === 'backlog'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                <CalendarRange className="h-3.5 w-3.5" /> Backlog
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('roadmap')}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  view === 'roadmap'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                <Rocket className="h-3.5 w-3.5" /> Roadmap
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('calendar')}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  view === 'calendar'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                <CalendarDays className="h-3.5 w-3.5" /> Calendar
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('forms')}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  view === 'forms'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                <FileText className="h-3.5 w-3.5" /> Forms
+              </button>
             </div>
             {view === 'board' && (
               <>
+                {(boards.data ?? []).length > 0 && (
+                  <Select
+                    className="w-auto"
+                    value={selectedBoard?.id ?? ''}
+                    onChange={(event) => setBoardId(event.target.value)}
+                    title="Saved board"
+                  >
+                    {boards.data!.map((board) => (
+                      <option key={board.id} value={board.id}>
+                        {board.name}
+                        {board.is_default ? ' (default)' : ''}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+                <Select
+                  className="w-auto"
+                  value={sprintFilter}
+                  onChange={(event) => setSprintFilter(event.target.value)}
+                  title="Filter the board by sprint"
+                >
+                  <option value="">All tasks</option>
+                  <option value="__backlog__">Backlog only</option>
+                  {(sprints.data ?? []).map((sprint) => (
+                    <option key={sprint.id} value={sprint.id}>
+                      {sprint.name}
+                      {sprint.state === 'active' ? ' (active)' : ''}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setManagingSprints(true)}
+                >
+                  <CalendarRange className="h-3.5 w-3.5" /> Sprints
+                </Button>
                 <Checkbox
                   label="Subtasks"
                   checked={showSubtasks}
@@ -249,6 +421,44 @@ export function ProjectPage() {
               </>
             )}
             {canManage(role) && (
+              <>
+                <Button variant="secondary" size="sm" onClick={() => setManagingMembers(true)}>
+                  <Users className="h-3.5 w-3.5" /> Members
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setManagingWorkflow(true)}>
+                  <Workflow className="h-3.5 w-3.5" /> Workflow
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setManagingBoards(true)}>
+                  <Columns3 className="h-3.5 w-3.5" /> Boards
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setManagingFields(true)}>
+                  <SlidersHorizontal className="h-3.5 w-3.5" /> Fields
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setTemplateName(`${project.data.name} template`)
+                    setSavingTemplate(true)
+                  }}
+                >
+                  <Save className="h-3.5 w-3.5" /> Template
+                </Button>
+              </>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              title="Download all project tasks as CSV"
+              onClick={() =>
+                void dataApi
+                  .downloadProjectCsv(project.data.id, `${project.data.name}.csv`)
+                  .catch(() => toast.error('Could not export CSV'))
+              }
+            >
+              <FileDown className="h-3.5 w-3.5" /> CSV
+            </Button>
+            {canManage(role) && (
               <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
                 <Settings2 className="h-3.5 w-3.5" /> Project settings
               </Button>
@@ -269,12 +479,25 @@ export function ProjectPage() {
           {tasks.data && (
             <TaskBoard
               tasks={boardTasks}
+              statuses={workflow.data ?? []}
+              swimlaneBy={selectedBoard?.swimlane_by ?? 'none'}
+              wipEnforced={project.data.wip_enforced}
               onOpen={setSelectedTask}
               onMove={(taskId, next) => move.mutate({ taskId, status: next })}
               onAdd={(next) => startCreate({ status: next })}
             />
           )}
         </>
+      ) : view === 'backlog' ? (
+        projectId ? (
+          <BacklogView projectId={projectId} onOpen={setSelectedTask} />
+        ) : null
+      ) : view === 'roadmap' ? (
+        projectId ? <RoadmapView projectId={projectId} /> : null
+      ) : view === 'calendar' ? (
+        projectId ? <CalendarView projectId={projectId} /> : null
+      ) : view === 'forms' ? (
+        projectId ? <FormsManager projectId={projectId} /> : null
       ) : (
         <>
           {tree.isLoading && <PageSpinner label="Loading hierarchy…" />}
@@ -287,6 +510,7 @@ export function ProjectPage() {
           {tree.data && (
             <TaskTree
               nodes={tree.data}
+              statuses={workflow.data}
               onOpen={setSelectedTask}
               onAddChild={(parent) => startCreate({ parent })}
             />
@@ -351,6 +575,41 @@ export function ProjectPage() {
               <option value="archived">Archived</option>
             </Select>
           </Field>
+          <Field
+            label="Visibility"
+            hint="Private projects are only visible to the owner and explicit members"
+          >
+            <Select
+              value={visibility}
+              onChange={(event) =>
+                setVisibility(event.target.value as 'workspace' | 'private')
+              }
+            >
+              <option value="workspace">Workspace — everyone can see it</option>
+              <option value="private">Private — members only</option>
+            </Select>
+          </Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Issue key" hint="Prefix for new tasks, e.g. TEAM-42">
+              <Input
+                value={projectKey}
+                maxLength={10}
+                onChange={(event) => setProjectKey(event.target.value.toUpperCase())}
+              />
+            </Field>
+            <Field label="Estimation" hint="Points or hours on tasks and sprint totals">
+              <Select
+                value={estimationUnit}
+                onChange={(event) =>
+                  setEstimationUnit(event.target.value as 'none' | 'points' | 'hours')
+                }
+              >
+                <option value="points">Story points</option>
+                <option value="hours">Hours</option>
+                <option value="none">None</option>
+              </Select>
+            </Field>
+          </div>
           <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-3 py-3">
             <div>
               <p className="text-sm font-medium text-red-800">Delete project</p>
@@ -371,6 +630,65 @@ export function ProjectPage() {
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => deleteProject.mutate()}
       />
+
+      {projectId && (
+        <>
+          <SprintManager
+            projectId={projectId}
+            open={managingSprints}
+            onClose={() => setManagingSprints(false)}
+          />
+          <WorkflowManager
+            projectId={projectId}
+            open={managingWorkflow}
+            onClose={() => setManagingWorkflow(false)}
+          />
+          <BoardManager
+            projectId={projectId}
+            slug={org.slug}
+            open={managingBoards}
+            onClose={() => setManagingBoards(false)}
+          />
+          <CustomFieldsManager
+            projectId={projectId}
+            open={managingFields}
+            onClose={() => setManagingFields(false)}
+          />
+          <ProjectMembersModal
+            projectId={projectId}
+            open={managingMembers}
+            onClose={() => setManagingMembers(false)}
+          />
+          <Modal
+            open={savingTemplate}
+            onClose={() => setSavingTemplate(false)}
+            title="Save as project template"
+            description="Snapshots the workflow, labels, custom fields, boards and hierarchy."
+            footer={
+              <>
+                <Button variant="secondary" onClick={() => setSavingTemplate(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => saveTemplate.mutate()}
+                  loading={saveTemplate.isPending}
+                  disabled={!templateName.trim()}
+                >
+                  Save template
+                </Button>
+              </>
+            }
+          >
+            <Field label="Template name">
+              <Input
+                value={templateName}
+                maxLength={128}
+                onChange={(event) => setTemplateName(event.target.value)}
+              />
+            </Field>
+          </Modal>
+        </>
+      )}
     </div>
   )
 }

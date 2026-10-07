@@ -20,7 +20,7 @@ import {
 import { useAuth } from '../contexts/auth'
 import { useToast } from '../contexts/toast'
 import { ApiError, invitationsApi, membersApi } from '../lib/api'
-import { qk, useOrgInvitations } from '../lib/hooks'
+import { qk, useOrgInvitations, useRoles } from '../lib/hooks'
 import { ROLE_LABELS, ROLE_RANK, isAdmin, roleRank, type MembershipRole } from '../lib/types'
 import { formatDate } from '../lib/utils'
 
@@ -32,6 +32,7 @@ export function MembersPage() {
   const toast = useToast()
   const queryClient = useQueryClient()
   const invitations = useOrgInvitations(org.slug)
+  const roles = useRoles(org.slug, isAdmin(role))
 
   const [inviteOpen, setInviteOpen] = useState(false)
   const [email, setEmail] = useState('')
@@ -61,8 +62,13 @@ export function MembersPage() {
   })
 
   const changeRole = useMutation({
-    mutationFn: ({ userId, newRole }: { userId: string; newRole: string }) =>
-      membersApi.updateRole(org.slug, userId, newRole),
+    mutationFn: ({
+      userId,
+      data,
+    }: {
+      userId: string
+      data: { role?: string; custom_role_id?: string | null }
+    }) => membersApi.updateRole(org.slug, userId, data),
     onSuccess: () => {
       invalidateMembers()
       toast.success('Role updated')
@@ -160,34 +166,66 @@ export function MembersPage() {
                       </td>
                       <td className="px-4 py-2.5">
                         {canEditRole ? (
-                          <Select
-                            className="w-auto"
-                            value={membership.role}
-                            onChange={(event) =>
-                              changeRole.mutate({
-                                userId: membership.user_id,
-                                newRole: event.target.value,
-                              })
-                            }
-                          >
-                            {[membership.role, ...assignableRoles(role)]
-                              .filter((entry, index, list) => list.indexOf(entry) === index)
-                              .map((entry) => (
-                                <option key={entry} value={entry}>
-                                  {ROLE_LABELS[entry]}
-                                </option>
-                              ))}
-                          </Select>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Select
+                              className="w-auto"
+                              value={membership.role}
+                              onChange={(event) =>
+                                changeRole.mutate({
+                                  userId: membership.user_id,
+                                  data: { role: event.target.value },
+                                })
+                              }
+                            >
+                              {[membership.role, ...assignableRoles(role)]
+                                .filter((entry, index, list) => list.indexOf(entry) === index)
+                                .map((entry) => (
+                                  <option key={entry} value={entry}>
+                                    {ROLE_LABELS[entry]}
+                                  </option>
+                                ))}
+                            </Select>
+                            {(roles.data?.length ?? 0) > 0 && (
+                              <Select
+                                className="w-auto"
+                                title="Custom role"
+                                value={membership.custom_role_id ?? ''}
+                                onChange={(event) =>
+                                  changeRole.mutate({
+                                    userId: membership.user_id,
+                                    data: {
+                                      role: membership.role,
+                                      custom_role_id: event.target.value || null,
+                                    },
+                                  })
+                                }
+                              >
+                                <option value="">No custom role</option>
+                                {roles.data?.map((customRole) => (
+                                  <option key={customRole.id} value={customRole.id}>
+                                    {customRole.name}
+                                  </option>
+                                ))}
+                              </Select>
+                            )}
+                          </div>
                         ) : (
-                          <Badge
-                            className={
-                              membership.role === 'owner'
-                                ? 'bg-brand-100 text-brand-700'
-                                : 'bg-slate-100 text-slate-600'
-                            }
-                          >
-                            {ROLE_LABELS[membership.role] ?? membership.role}
-                          </Badge>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <Badge
+                              className={
+                                membership.role === 'owner'
+                                  ? 'bg-brand-100 text-brand-700'
+                                  : 'bg-slate-100 text-slate-600'
+                              }
+                            >
+                              {ROLE_LABELS[membership.role] ?? membership.role}
+                            </Badge>
+                            {membership.custom_role_name && (
+                              <Badge className="bg-violet-100 text-violet-700">
+                                {membership.custom_role_name}
+                              </Badge>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-slate-500">

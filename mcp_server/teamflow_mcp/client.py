@@ -203,6 +203,10 @@ class TeamFlowClient:
         return True
 
     async def _ensure_token(self) -> str:
+        # Static API token (M3 #24): no login, no refresh, no rate limits on
+        # /auth/login. The token carries its own scopes and expiry.
+        if self._settings.token:
+            return self._settings.token
         async with self._lock:
             if self._access_token and time.time() < self._expires_at:
                 return self._access_token

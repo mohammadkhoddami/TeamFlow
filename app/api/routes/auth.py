@@ -19,7 +19,6 @@ from app.schemas import (
     PasswordForgot,
     PasswordReset,
     RefreshedToken,
-    Token,
     TokenRefresh,
     UserCreate,
     UserRead,
@@ -56,14 +55,16 @@ async def register(
 # OAuth2PasswordRequestForm == x-www-form-urlencoded with "username"/"password".
 # That is what the Swagger "Authorize" button submits, which is why login is
 # form-encoded instead of JSON.
-@router.post("/login", response_model=Token, summary="Login (OAuth2 password flow)")
+# No response_model: MFA-enabled users get {"mfa_required", "mfa_token"}
+# (HTTP 200) while everyone else gets the regular TokenPair body unchanged.
+@router.post("/login", summary="Login (OAuth2 password flow)")
 async def login(
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
     request: Request,
     db: DB,
     redis_client: RedisDep,
     _rl: None = Depends(ip_rate_limiter("auth_ip")),
-) -> Token:
+) -> dict:
     return await auth.login(db, redis_client, form.username, form.password, ip=_ip(request))
 
 
@@ -90,14 +91,16 @@ async def otp_request(
     return {"detail": "If the account exists, a sign-in code has been sent"}
 
 
-@router.post("/otp/verify", response_model=Token, summary="Verify an email code")
+# No response_model: MFA-enabled accounts get {"mfa_required", "mfa_token"}
+# (HTTP 200) while everyone else gets the regular TokenPair body unchanged.
+@router.post("/otp/verify", summary="Verify an email code")
 async def otp_verify(
     data: OtpVerify,
     request: Request,
     db: DB,
     redis_client: RedisDep,
     _rl: None = Depends(ip_rate_limiter("otp_verify")),
-) -> Token:
+) -> dict:
     return await auth.verify_otp(db, redis_client, data, ip=_ip(request))
 
 
@@ -147,14 +150,15 @@ async def google_callback(
     return _frontend_callback(code=handoff)
 
 
+# No response_model: MFA-enabled accounts get {"mfa_required", "mfa_token"}
+# (HTTP 200) while everyone else gets the regular TokenPair body unchanged.
 @router.post(
     "/oauth/exchange",
-    response_model=Token,
     summary="Exchange a one-time OAuth code for tokens",
 )
 async def oauth_exchange(
     data: OAuthExchange, request: Request, db: DB, redis_client: RedisDep
-) -> Token:
+) -> dict:
     return await auth.exchange_oauth_login_code(
         db, redis_client, data.code, ip=_ip(request)
     )

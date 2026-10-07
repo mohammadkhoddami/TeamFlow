@@ -4,7 +4,12 @@ import { AppLayout } from './components/AppLayout'
 import { OrgLayout } from './components/OrgLayout'
 import { GuestRoute, ProtectedRoute } from './components/ProtectedRoute'
 import { StandaloneLayout } from './components/StandaloneLayout'
+import { ApiTokensPage } from './pages/ApiTokensPage'
 import { AuditPage } from './pages/AuditPage'
+import { AutomationsPage } from './pages/AutomationsPage'
+import { DashboardsPage } from './pages/DashboardsPage'
+import { GoalsPage } from './pages/GoalsPage'
+import { IntegrationsPage } from './pages/IntegrationsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { InvitationsPage } from './pages/InvitationsPage'
@@ -16,12 +21,17 @@ import { NotificationsPage } from './pages/NotificationsPage'
 import { OAuthCallbackPage } from './pages/OAuthCallbackPage'
 import { OrganizationsPage } from './pages/OrganizationsPage'
 import { OtpPage } from './pages/OtpPage'
+import { PluginsPage } from './pages/PluginsPage'
 import { ProjectPage } from './pages/ProjectPage'
 import { ProjectsPage } from './pages/ProjectsPage'
+import { PublicFormPage } from './pages/PublicFormPage'
 import { RegisterPage } from './pages/RegisterPage'
+import { ReportsPage } from './pages/ReportsPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { TimesheetPage } from './pages/TimesheetPage'
 import { TasksPage } from './pages/TasksPage'
+import { UnsubscribePage } from './pages/UnsubscribePage'
 import { WebhooksPage } from './pages/WebhooksPage'
 
 export default function App() {
@@ -33,9 +43,12 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       </Route>
-      {/* Reset / OAuth links must work even when another session is active. */}
+      {/* Reset / OAuth / unsubscribe links must work even with a session. */}
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/auth/callback" element={<OAuthCallbackPage />} />
+      <Route path="/unsubscribe" element={<UnsubscribePage />} />
+      {/* Public intake forms are open to anonymous submitters. */}
+      <Route path="/forms/:slug" element={<PublicFormPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<StandaloneLayout />}>
@@ -50,9 +63,17 @@ export default function App() {
             <Route path="projects" element={<ProjectsPage />} />
             <Route path="projects/:projectId" element={<ProjectPage />} />
             <Route path="tasks" element={<TasksPage />} />
+            <Route path="goals" element={<GoalsPage />} />
+            <Route path="dashboards" element={<DashboardsPage />} />
+            <Route path="reports" element={<ReportsPage />} />
+            <Route path="automations" element={<AutomationsPage />} />
+            <Route path="integrations" element={<IntegrationsPage />} />
+            <Route path="plugins" element={<PluginsPage />} />
+            <Route path="timesheet" element={<TimesheetPage />} />
             <Route path="members" element={<MembersPage />} />
             <Route path="labels" element={<LabelsPage />} />
             <Route path="webhooks" element={<WebhooksPage />} />
+            <Route path="api-tokens" element={<ApiTokensPage />} />
             <Route path="audit" element={<AuditPage />} />
             <Route path="notifications" element={<NotificationsPage />} />
             <Route path="settings" element={<SettingsPage />} />

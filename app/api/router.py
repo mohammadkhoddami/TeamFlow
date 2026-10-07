@@ -3,19 +3,48 @@
 from fastapi import APIRouter
 
 from app.api.routes import (
+    activities,
+    ai,
+    api_tokens,
     attachments,
     audit,
     auth,
+    automations,
+    calendar,
+    capacity,
+    checklists,
     comments,
+    custom_fields,
     dashboard,
+    dashboards,
+    data,
+    forms,
+    goals,
     health,
+    integrations,
     invitations,
     labels,
+    links,
+    mfa,
     notifications,
     organizations,
+    plugins,
+    preferences,
+    project_members,
     projects,
+    releases,
+    reports,
+    roles,
+    saved_filters,
+    scim,
+    search,
+    sprints,
+    sso,
     tasks,
+    templates,
     webhooks,
+    workflows,
+    worklogs,
 )
 
 api_router = APIRouter()
@@ -31,14 +60,67 @@ api_router.include_router(projects.project_router)
 api_router.include_router(tasks.org_task_router)
 api_router.include_router(tasks.project_task_router)
 api_router.include_router(tasks.task_router)
+api_router.include_router(sprints.project_sprint_router)
+api_router.include_router(sprints.sprint_router)
+api_router.include_router(saved_filters.router)
+api_router.include_router(search.router)
+api_router.include_router(preferences.router)
+api_router.include_router(workflows.project_workflow_router)
+api_router.include_router(workflows.project_board_router)
+api_router.include_router(workflows.board_router)
+api_router.include_router(custom_fields.router)
+api_router.include_router(links.task_link_router)
+api_router.include_router(reports.router)
+api_router.include_router(reports.sprint_report_router)
+api_router.include_router(worklogs.task_worklog_router)
+api_router.include_router(worklogs.worklog_router)
+api_router.include_router(worklogs.timesheet_router)
+api_router.include_router(capacity.router)
+api_router.include_router(templates.org_template_router)
+api_router.include_router(templates.project_template_router)
+api_router.include_router(templates.project_from_template_router)
+api_router.include_router(templates.task_template_router)
+api_router.include_router(templates.task_template_apply_router)
+api_router.include_router(checklists.task_checklist_router)
+api_router.include_router(checklists.task_assignees_router)
+api_router.include_router(data.router)
+api_router.include_router(data.project_export_router)
 api_router.include_router(labels.router)
 api_router.include_router(labels.label_router)
 api_router.include_router(labels.task_label_router)
 api_router.include_router(comments.router)
 api_router.include_router(comments.comment_router)
+api_router.include_router(comments.reaction_router)
 api_router.include_router(attachments.router)
 api_router.include_router(attachments.attachment_router)
 api_router.include_router(notifications.router)
 api_router.include_router(webhooks.router)
 api_router.include_router(audit.audit_router)
 api_router.include_router(dashboard.dashboard_router)
+# --- M4: enterprise & moat ---
+api_router.include_router(mfa.router)
+api_router.include_router(sso.router)
+api_router.include_router(sso.org_router)
+api_router.include_router(sso.scim_token_router)
+api_router.include_router(scim.router)
+api_router.include_router(roles.router)
+api_router.include_router(project_members.router)
+api_router.include_router(goals.router)
+api_router.include_router(dashboards.router)
+api_router.include_router(forms.form_router)
+api_router.include_router(forms.public_form_router)
+api_router.include_router(plugins.router)
+api_router.include_router(ai.router)
+
+# --- M3: collaboration & ecosystem ---
+api_router.include_router(activities.task_activity_router)
+api_router.include_router(activities.project_activity_router)
+api_router.include_router(activities.org_activity_router)
+api_router.include_router(api_tokens.router)
+api_router.include_router(api_tokens.oauth_router)
+api_router.include_router(automations.router)
+api_router.include_router(calendar.router)
+api_router.include_router(integrations.router)
+api_router.include_router(integrations.public_router)
+api_router.include_router(releases.project_release_router)
+api_router.include_router(releases.project_roadmap_router)

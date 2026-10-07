@@ -19,7 +19,12 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core import security
 from app.core.config import settings
-from app.core.exceptions import ConflictError, NotFoundError, UnauthorizedError
+from app.core.exceptions import (
+    ConflictError,
+    NotFoundError,
+    UnauthorizedError,
+    ValidationFailedError,
+)
 from app.core.rate_limit import hit_rate_limit
 from app.models import AuditAction, User
 from app.repositories import UserRepository
@@ -33,7 +38,7 @@ from app.schemas import (
     UserCreate,
     UserUpdate,
 )
-from app.services import audit, token_store
+from app.services import audit, mfa, token_store
 from app.services.integrations import google_oauth
 
 logger = logging.getLogger(__name__)
@@ -131,7 +136,7 @@ async def register_user(
 
 async def login(
     db: AsyncSession, redis: Redis, email: str, password: str, ip: str | None = None
-) -> Token:
+) -> dict:
     # Per-identity limit first: floods and credential stuffing burn quota
     # before any bcrypt work happens.
     await hit_rate_limit(
@@ -153,7 +158,57 @@ async def login(
     if not user.is_active:
         raise UnauthorizedError("Account is deactivated")
 
-    return await _start_session(db, redis, user, AuditAction.USER_LOGIN, ip=ip)
+    return await _login_outcome(db, redis, user, AuditAction.USER_LOGIN, ip=ip)
+
+
+async def _login_outcome(
+    db: AsyncSession,
+    redis: Redis,
+    user: User,
+    action: str,
+    ip: str | None = None,
+    meta: dict | None = None,
+) -> dict:
+    """MFA users get a one-time challenge instead of tokens; /auth/mfa/verify
+    consumes it and only then mints the session. Every credential type (password,
+    email OTP, Google) goes through here so MFA cannot be bypassed by choosing a
+    different login method."""
+    if await mfa.enabled(db, user.id):
+        token = await mfa.store_login_token(redis, str(user.id))
+        logger.info("MFA challenge issued for %s", user.email)
+        return {"mfa_required": True, "mfa_token": token}
+
+    session = await _start_session(db, redis, user, action, ip=ip, meta=meta)
+    return session.model_dump()
+
+
+async def complete_mfa_login(
+    db: AsyncSession, redis: Redis, mfa_token: str, code: str, ip: str | None = None
+) -> Token:
+    """Second step of a password login: redeems the Redis challenge token and
+    a TOTP (or single-use recovery) code, then mints the usual token pair via
+    the shared session helper so refresh-token lifecycle stays identical."""
+    user_id = await mfa.consume_login_token(redis, mfa_token)
+    if not user_id:
+        raise UnauthorizedError("Invalid or expired MFA token")
+    try:
+        user = await UserRepository(db).get(uuid.UUID(user_id))
+    except ValueError:
+        raise UnauthorizedError("Invalid or expired MFA token") from None
+    if not user or not user.is_active:
+        raise UnauthorizedError("User no longer active")
+
+    if not await mfa.verify_login_code(db, user, code):
+        await audit.log(
+            db, "user.mfa_failed", ip=ip, meta={"email": user.email},
+        )
+        await db.commit()
+        raise UnauthorizedError("Invalid authentication code")
+
+    return await _start_session(
+        db, redis, user, AuditAction.USER_LOGIN, ip=ip,
+        meta={"email": user.email, "mfa": True},
+    )
 
 
 async def refresh_tokens(db: AsyncSession, redis: Redis, refresh_token: str) -> RefreshedToken:
@@ -272,6 +327,10 @@ async def update_user(db: AsyncSession, user_id: uuid.UUID, data: UserUpdate) ->
         if await repo.get_by_email(data.email.lower()):
             raise ConflictError("A user with this email already exists")
         user.email = data.email.lower()
+    if data.locale is not None:
+        if data.locale not in ("en", "fa"):
+            raise ValidationFailedError("Unsupported locale")
+        user.locale = data.locale
 
     user = await repo.update(user)
     await db.commit()
@@ -328,7 +387,7 @@ async def request_otp(
 
 async def verify_otp(
     db: AsyncSession, redis: Redis, data: OtpVerify, ip: str | None = None
-) -> Token:
+) -> dict:
     email = data.email.lower()
     if not await token_store.verify_otp(
         redis, email, data.code, settings.otp_max_attempts
@@ -362,7 +421,7 @@ async def verify_otp(
     if not user.is_active:
         raise UnauthorizedError("Account is deactivated")
 
-    return await _start_session(
+    return await _login_outcome(
         db, redis, user, AuditAction.USER_LOGIN_OTP, ip=ip,
         meta={"email": email, "method": "otp"},
     )
@@ -464,15 +523,16 @@ async def _find_or_create_google_user(
 
 async def exchange_oauth_login_code(
     db: AsyncSession, redis: Redis, code: str, ip: str | None = None
-) -> Token:
-    """Turns the one-time OAuth hand-off code into a real token pair."""
+) -> dict:
+    """Turns the one-time OAuth hand-off code into a token pair or an MFA
+    challenge when the account has MFA enabled."""
     user_id = await token_store.consume_oauth_login_code(redis, code)
     if not user_id:
         raise UnauthorizedError("Invalid or expired login code")
     user = await UserRepository(db).get(uuid.UUID(user_id))
     if not user or not user.is_active:
         raise UnauthorizedError("User no longer active")
-    return await _start_session(
+    return await _login_outcome(
         db, redis, user, AuditAction.USER_LOGIN_GOOGLE, ip=ip,
         meta={"email": user.email, "method": "google"},
     )

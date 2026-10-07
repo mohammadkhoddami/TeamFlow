@@ -1,12 +1,20 @@
 import {
+  BarChart3,
+  Bot,
+  Clock,
   FolderKanban,
+  Gauge,
+  KeyRound,
   LayoutDashboard,
   ListTodo,
   LogOut,
   Menu,
+  Plug,
+  Puzzle,
   ScrollText,
   Settings,
   Tags,
+  Target,
   Users,
   Webhook,
   X,
@@ -16,26 +24,38 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../contexts/auth'
 import { useOrganizations } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import { isAdmin } from '../lib/types'
 import { cn } from '../lib/utils'
+import { GlobalSearch } from './GlobalSearch'
 import { NotificationBell } from './NotificationBell'
 import { useOrg } from './OrgLayout'
+import { ThemeToggle } from './ThemeToggle'
 import { Avatar } from './ui'
 
 const NAV_ITEMS = [
-  { to: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: 'projects', label: 'Projects', icon: FolderKanban },
-  { to: 'tasks', label: 'Tasks', icon: ListTodo },
-  { to: 'members', label: 'Members', icon: Users },
-  { to: 'labels', label: 'Labels', icon: Tags },
-  { to: 'webhooks', label: 'Webhooks', icon: Webhook, adminOnly: true },
-  { to: 'audit', label: 'Audit log', icon: ScrollText, adminOnly: true },
-  { to: 'settings', label: 'Settings', icon: Settings },
+  { to: 'dashboard', label: 'nav.dashboard', icon: LayoutDashboard },
+  { to: 'projects', label: 'nav.projects', icon: FolderKanban },
+  { to: 'tasks', label: 'nav.tasks', icon: ListTodo },
+  { to: 'goals', label: 'nav.goals', icon: Target },
+  { to: 'dashboards', label: 'nav.dashboards', icon: Gauge },
+  { to: 'reports', label: 'nav.reports', icon: BarChart3 },
+  { to: 'automations', label: 'nav.automations', icon: Bot },
+  { to: 'integrations', label: 'nav.integrations', icon: Plug },
+  { to: 'plugins', label: 'nav.plugins', icon: Puzzle },
+  { to: 'timesheet', label: 'nav.timesheet', icon: Clock },
+  { to: 'members', label: 'nav.members', icon: Users },
+  { to: 'labels', label: 'nav.labels', icon: Tags },
+  { to: 'webhooks', label: 'nav.webhooks', icon: Webhook, adminOnly: true },
+  { to: 'api-tokens', label: 'nav.apiTokens', icon: KeyRound },
+  { to: 'audit', label: 'nav.audit', icon: ScrollText, adminOnly: true },
+  { to: 'settings', label: 'nav.settings', icon: Settings },
 ] as const
 
 export function AppLayout() {
   const { org, role } = useOrg()
   const { user, logout } = useAuth()
+  const { t } = useI18n()
   const organizations = useOrganizations()
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -81,7 +101,7 @@ export function AppLayout() {
               }
             >
               <item.icon className="h-4 w-4" />
-              {item.label}
+              {t(item.label)}
             </NavLink>
           ),
         )}
@@ -142,6 +162,8 @@ export function AppLayout() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <GlobalSearch />
+            <ThemeToggle />
             <NotificationBell />
           </div>
         </header>

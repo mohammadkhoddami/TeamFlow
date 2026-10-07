@@ -12,12 +12,17 @@ import { authApi } from '../lib/api'
 import { SESSION_EXPIRED_EVENT, tokens } from '../lib/tokens'
 import type { TokenPair, UserRead } from '../lib/types'
 
+export type LoginOutcome =
+  | { mfaRequired: false }
+  | { mfaRequired: true; mfaToken: string }
+
 interface AuthContextValue {
   user: UserRead | null
   loading: boolean
-  login: (email: string, password: string) => Promise<void>
-  loginWithOtp: (email: string, code: string) => Promise<void>
-  completeOAuth: (code: string) => Promise<void>
+  login: (email: string, password: string) => Promise<LoginOutcome>
+  verifyMfa: (mfaToken: string, code: string) => Promise<void>
+  loginWithOtp: (email: string, code: string) => Promise<LoginOutcome>
+  completeOAuth: (code: string) => Promise<LoginOutcome>
   register: (data: {
     email: string
     password: string
@@ -77,22 +82,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = useCallback(
-    async (email: string, password: string) => {
-      await applyTokens(await authApi.login(email, password))
+    async (email: string, password: string): Promise<LoginOutcome> => {
+      const response = await authApi.login(email, password)
+      if ('mfa_required' in response) {
+        return { mfaRequired: true, mfaToken: response.mfa_token }
+      }
+      await applyTokens(response)
+      return { mfaRequired: false }
+    },
+    [applyTokens],
+  )
+
+  const verifyMfa = useCallback(
+    async (mfaToken: string, code: string) => {
+      await applyTokens(await authApi.verifyMfa(mfaToken, code))
     },
     [applyTokens],
   )
 
   const loginWithOtp = useCallback(
-    async (email: string, code: string) => {
-      await applyTokens(await authApi.verifyOtp(email, code))
+    async (email: string, code: string): Promise<LoginOutcome> => {
+      const response = await authApi.verifyOtp(email, code)
+      if ('mfa_required' in response) {
+        return { mfaRequired: true, mfaToken: response.mfa_token }
+      }
+      await applyTokens(response)
+      return { mfaRequired: false }
     },
     [applyTokens],
   )
 
   const completeOAuth = useCallback(
-    async (code: string) => {
-      await applyTokens(await authApi.exchangeOAuthCode(code))
+    async (code: string): Promise<LoginOutcome> => {
+      const response = await authApi.exchangeOAuthCode(code)
+      if ('mfa_required' in response) {
+        return { mfaRequired: true, mfaToken: response.mfa_token }
+      }
+      await applyTokens(response)
+      return { mfaRequired: false }
     },
     [applyTokens],
   )
@@ -142,6 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       login,
+      verifyMfa,
       loginWithOtp,
       completeOAuth,
       register,
@@ -153,6 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       loading,
       login,
+      verifyMfa,
       loginWithOtp,
       completeOAuth,
       register,

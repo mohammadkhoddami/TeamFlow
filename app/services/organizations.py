@@ -28,6 +28,7 @@ from app.core.exceptions import (
 )
 from app.models import (
     AuditAction,
+    CustomRole,
     Membership,
     MembershipRole,
     Organization,
@@ -39,7 +40,7 @@ from app.repositories import (
     UserRepository,
 )
 from app.schemas import OrganizationCreate, OrganizationUpdate
-from app.services import audit
+from app.services import audit, events, permissions
 
 ROLE_RANK = {
     MembershipRole.MEMBER: 1,
@@ -124,6 +125,10 @@ async def update_organization(
         org.name = data.name
     if data.is_active is not None:
         org.is_active = data.is_active
+    if "accent_color" in data.model_fields_set:
+        org.accent_color = data.accent_color
+    if "audit_retention_days" in data.model_fields_set:
+        org.audit_retention_days = data.audit_retention_days
     org = await OrganizationRepository(db).update(org)
     await audit.log(
         db, AuditAction.ORG_UPDATED, actor_id=actor.id,
@@ -191,6 +196,18 @@ async def add_member_direct(
         Membership(user_id=user.id, organization_id=org.id, role=role)
     )
     await db.commit()
+    await events.dispatch_webhooks(
+        db,
+        organization_id=org.id,
+        event="member.joined",
+        data={
+            "user_id": str(user.id),
+            "email": user.email,
+            "role": role,
+            "organization_id": str(org.id),
+            "organization_slug": org.slug,
+        },
+    )
     # Re-select so the joined-eager `user` relationship is loaded (fresh
     # instances do not trigger eager strategies; implicit lazy loads are
     # unsafe in async sessions).
@@ -204,11 +221,15 @@ async def update_member_role(
     target_user_id: uuid.UUID,
     new_role: str,
     ip: str | None = None,
+    *,
+    custom_role_id: uuid.UUID | None = None,
+    update_custom_role: bool = False,
 ) -> Membership:
     if new_role not in MembershipRole.ALL:
         raise ValidationFailedError(f"Invalid role: {new_role}")
 
     org, actor_membership = await get_organization_for_user(db, actor, slug)
+    await permissions.require_permission(db, actor_membership, "members.manage")
     target = await MembershipRepository(db).get_for_user(target_user_id, org.id)
     if not target:
         raise NotFoundError("Membership not found")
@@ -226,13 +247,27 @@ async def update_member_role(
     ):
         raise PermissionDeniedError("Not enough permissions to assign that role")
 
+    if update_custom_role:
+        if custom_role_id is not None:
+            custom_role = await db.get(CustomRole, custom_role_id)
+            if custom_role is None or custom_role.organization_id != org.id:
+                raise ValidationFailedError(
+                    "Custom role not found in this organization"
+                )
+        target.custom_role_id = custom_role_id
+
     old_role = target.role
     target.role = new_role
     target = await MembershipRepository(db).update(target)
     await audit.log(
         db, AuditAction.MEMBER_ROLE_CHANGED, actor_id=actor.id,
         organization_id=org.id, target_type="membership", target_id=target.id, ip=ip,
-        meta={"user_id": str(target.user_id), "old_role": old_role, "new_role": new_role},
+        meta={
+            "user_id": str(target.user_id),
+            "old_role": old_role,
+            "new_role": new_role,
+            "custom_role_id": str(target.custom_role_id) if target.custom_role_id else None,
+        },
     )
     await db.commit()
     return target
@@ -252,11 +287,12 @@ async def remove_member(
 
     if target.role == MembershipRole.OWNER:
         raise PermissionDeniedError("The owner cannot be removed")
-    # A member may leave the org themselves; otherwise actor must outrank target.
-    if target.user_id != actor.id and role_rank(actor_membership.role) <= role_rank(
-        target.role
-    ):
-        raise PermissionDeniedError("Not enough permissions to remove that member")
+    # A member may leave the org themselves without members.manage; removing
+    # anyone else requires the permission and an outranking role.
+    if target.user_id != actor.id:
+        await permissions.require_permission(db, actor_membership, "members.manage")
+        if role_rank(actor_membership.role) <= role_rank(target.role):
+            raise PermissionDeniedError("Not enough permissions to remove that member")
 
     removed_user_id = target.user_id
     await MembershipRepository(db).delete(target)

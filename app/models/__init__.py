@@ -5,13 +5,40 @@ Importing this package registers every table with SQLModel/SQLAlchemy metadata
 domain modules; this file only wires the public surface.
 """
 
+from app.models.activity import Activity, ActivityVerb
+from app.models.api_token import ApiToken, OAuthApp, OAuthToken, ServiceAccount
 from app.models.attachment import Attachment, AttachmentStatus
 from app.models.audit import AuditAction, AuditLog
+from app.models.automation import (
+    AutomationExecution,
+    AutomationExecutionStatus,
+    AutomationRule,
+    AutomationTrigger,
+)
 from app.models.base import TimeStampedMixin, UUIDMixin, utcnow
+from app.models.checklist import AssigneeRole, ChecklistItem, TaskAssignee
 from app.models.comment import Comment
+from app.models.custom_field import CustomField, CustomFieldType, CustomFieldValue
+from app.models.custom_role import CustomRole, ProjectMember
+from app.models.dashboard import Dashboard
+from app.models.form import Form, FormSubmission
+from app.models.goal import Goal, GoalLink
 from app.models.idempotency import IdempotencyKey, IdempotencyStatus
+from app.models.integration import (
+    Integration,
+    IntegrationEvent,
+    IntegrationEventStatus,
+    IntegrationProvider,
+)
 from app.models.label import Label
+from app.models.mfa import MfaCredential
 from app.models.notification import Notification, NotificationType
+from app.models.notification_mute import NotificationMute
+from app.models.notification_preference import (
+    DigestCadence,
+    NotificationPreference,
+    generate_unsubscribe_token,
+)
 from app.models.organization import (
     Invitation,
     InvitationStatus,
@@ -19,7 +46,15 @@ from app.models.organization import (
     MembershipRole,
     Organization,
 )
-from app.models.project import Project, ProjectStatus
+from app.models.plugin import Plugin
+from app.models.project import EstimationUnit, Project, ProjectStatus
+from app.models.push import PushSubscription
+from app.models.reaction import CommentReaction
+from app.models.release import Release, ReleaseStatus
+from app.models.saved_filter import SavedFilter
+from app.models.sprint import Sprint, SprintState
+from app.models.sprint_capacity import SprintCapacity
+from app.models.sso import ScimToken, SsoConfig, SsoIdentity
 from app.models.task import (
     Task,
     TaskLabelLink,
@@ -28,32 +63,87 @@ from app.models.task import (
     TaskType,
     TaskWatcherLink,
 )
+from app.models.task_link import TaskLink, TaskLinkType, TaskStatusHistory
+from app.models.template import ProjectTemplate, TaskTemplate
 from app.models.user import User
 from app.models.webhook import DeliveryStatus, Webhook, WebhookDelivery, WebhookEvent
+from app.models.workflow import Board, SwimlaneBy, WorkflowStatus
+from app.models.worklog import Worklog
 
 __all__ = [
-    "AuditAction",
-    "AuditLog",
+    "Activity",
+    "ActivityVerb",
+    "ApiToken",
+    "AssigneeRole",
     "Attachment",
     "AttachmentStatus",
+    "AuditAction",
+    "AuditLog",
+    "AutomationExecution",
+    "AutomationExecutionStatus",
+    "AutomationRule",
+    "AutomationTrigger",
+    "Board",
+    "ChecklistItem",
     "Comment",
+    "CommentReaction",
+    "CustomField",
+    "CustomFieldType",
+    "CustomFieldValue",
+    "CustomRole",
+    "Dashboard",
     "DeliveryStatus",
+    "DigestCadence",
+    "EstimationUnit",
+    "Form",
+    "FormSubmission",
+    "Goal",
+    "GoalLink",
     "IdempotencyKey",
     "IdempotencyStatus",
+    "Integration",
+    "IntegrationEvent",
+    "IntegrationEventStatus",
+    "IntegrationProvider",
     "Invitation",
     "InvitationStatus",
     "Label",
     "Membership",
     "MembershipRole",
+    "MfaCredential",
     "Notification",
+    "NotificationMute",
+    "NotificationPreference",
     "NotificationType",
+    "OAuthApp",
+    "OAuthToken",
     "Organization",
+    "Plugin",
     "Project",
+    "ProjectMember",
     "ProjectStatus",
+    "ProjectTemplate",
+    "PushSubscription",
+    "Release",
+    "ReleaseStatus",
+    "SavedFilter",
+    "ScimToken",
+    "ServiceAccount",
+    "Sprint",
+    "SprintCapacity",
+    "SprintState",
+    "SsoConfig",
+    "SsoIdentity",
+    "SwimlaneBy",
     "Task",
+    "TaskAssignee",
     "TaskLabelLink",
+    "TaskLink",
+    "TaskLinkType",
     "TaskPriority",
     "TaskStatus",
+    "TaskStatusHistory",
+    "TaskTemplate",
     "TaskType",
     "TaskWatcherLink",
     "TimeStampedMixin",
@@ -62,5 +152,8 @@ __all__ = [
     "Webhook",
     "WebhookDelivery",
     "WebhookEvent",
+    "WorkflowStatus",
+    "Worklog",
+    "generate_unsubscribe_token",
     "utcnow",
 ]

@@ -38,7 +38,7 @@ async def list_projects(
 ) -> list[ProjectRead]:
     org, _m = membership
     projects, _total = await services.projects.list_projects(
-        db, org.id, status=status_filter, offset=offset, limit=limit
+        db, org.id, status=status_filter, offset=offset, limit=limit, membership=_m
     )
     return [ProjectRead.model_validate(p) for p in projects]
 

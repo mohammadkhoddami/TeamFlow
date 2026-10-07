@@ -1,9 +1,82 @@
-import { Square, SquareCheck } from 'lucide-react'
-import { Fragment, createElement, useMemo } from 'react'
+import { ImageOff, Square, SquareCheck } from 'lucide-react'
+import { Fragment, createElement, useEffect, useMemo, useState } from 'react'
 
+import { attachmentsApi } from '../lib/api'
 import type { InlineToken, MarkdownBlock } from '../lib/markdown'
 import { parseInline, parseMarkdown } from '../lib/markdown'
 import { cn } from '../lib/utils'
+
+// Attachment images resolve their short-lived download URL once per id and
+// cache it for the session; `attachment://<uuid>` keeps the markdown portable.
+const grantCache = new Map<string, Promise<string | null>>()
+
+function resolveAttachment(id: string): Promise<string | null> {
+  const cached = grantCache.get(id)
+  if (cached) return cached
+  const pending = attachmentsApi
+    .downloadUrl(id)
+    .then((grant) => grant.download_url)
+    .catch(() => null)
+  grantCache.set(id, pending)
+  return pending
+}
+
+function MarkdownImage({
+  src,
+  alt,
+  className,
+}: {
+  src: string
+  alt: string
+  className?: string
+}) {
+  const [resolved, setResolved] = useState<string | null>(
+    src.startsWith('attachment://') ? null : src,
+  )
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    if (src.startsWith('attachment://')) {
+      const id = src.slice('attachment://'.length)
+      void resolveAttachment(id).then((url) => {
+        if (active) {
+          setResolved(url)
+          if (!url) setFailed(true)
+        }
+      })
+    } else {
+      setResolved(src)
+    }
+    return () => {
+      active = false
+    }
+  }, [src])
+
+  if (failed || (!resolved && !src.startsWith('attachment://'))) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-xs text-slate-500">
+        <ImageOff className="h-3.5 w-3.5" /> {alt || 'image'}
+      </span>
+    )
+  }
+  if (!resolved) {
+    return (
+      <span className="inline-block animate-pulse rounded bg-slate-100 px-6 py-3 text-xs text-slate-400">
+        {alt || 'Loading image…'}
+      </span>
+    )
+  }
+  return (
+    <img
+      src={resolved}
+      alt={alt}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className={cn('max-h-96 max-w-full rounded-lg border border-slate-200', className)}
+    />
+  )
+}
 
 function renderInline(token: InlineToken, key: number): React.ReactNode {
   switch (token.kind) {
@@ -40,6 +113,8 @@ function renderInline(token: InlineToken, key: number): React.ReactNode {
           {token.text}
         </a>
       )
+    case 'image':
+      return <MarkdownImage key={key} src={token.src} alt={token.alt} className="my-1" />
   }
 }
 
@@ -56,6 +131,12 @@ const HEADING_CLASSES: Record<number, string> = {
   5: 'text-xs font-semibold uppercase tracking-wide text-slate-600',
   6: 'text-xs font-semibold uppercase tracking-wide text-slate-500',
 }
+
+const ALIGN_CLASSES = {
+  left: 'text-left',
+  center: 'text-center',
+  right: 'text-right',
+} as const
 
 function renderBlock(block: MarkdownBlock, key: number): React.ReactNode {
   switch (block.kind) {
@@ -137,6 +218,47 @@ function renderBlock(block: MarkdownBlock, key: number): React.ReactNode {
       )
     case 'divider':
       return <hr key={key} className="border-slate-200" />
+    case 'image':
+      return <MarkdownImage key={key} src={block.src} alt={block.alt} className="my-1" />
+    case 'table':
+      return (
+        <div key={key} className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-slate-200">
+                {block.header.map((cell, index) => (
+                  <th
+                    key={index}
+                    className={cn(
+                      'px-2 py-1.5 font-semibold text-slate-700',
+                      ALIGN_CLASSES[block.align[index] ?? 'left'],
+                    )}
+                  >
+                    <Inline text={cell} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, rowIndex) => (
+                <tr key={rowIndex} className="border-b border-slate-100">
+                  {block.header.map((_, cellIndex) => (
+                    <td
+                      key={cellIndex}
+                      className={cn(
+                        'px-2 py-1.5 align-top text-slate-600',
+                        ALIGN_CLASSES[block.align[cellIndex] ?? 'left'],
+                      )}
+                    >
+                      <Inline text={row[cellIndex] ?? ''} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
   }
 }
 

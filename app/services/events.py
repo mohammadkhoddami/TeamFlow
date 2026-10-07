@@ -60,10 +60,25 @@ async def notify(
     body: str | None = None,
     data: dict | None = None,
     organization_id: uuid.UUID | None = None,
-) -> Notification:
+    project_id: uuid.UUID | None = None,
+    task_id: uuid.UUID | None = None,
+) -> Notification | None:
+    """Persist + push one notification, honoring per-project mutes.
+
+    Muted projects drop non-invitation notifications entirely (mentions
+    included: the mute is explicit); returning None lets callers know the
+    notification was suppressed.
+    """
+    if project_id is not None:
+        from app.services import mutes
+
+        if await mutes.is_muted(db, user_id, project_id):
+            return None
     notification = Notification(
         user_id=user_id,
         organization_id=organization_id,
+        project_id=project_id,
+        task_id=task_id,
         type=type,
         title=title,
         body=body,
@@ -78,6 +93,8 @@ async def notify(
             "type": type,
             "title": title,
             "organization_id": str(organization_id) if organization_id else None,
+            "project_id": str(project_id) if project_id else None,
+            "task_id": str(task_id) if task_id else None,
         },
     )
     return notification
@@ -92,6 +109,8 @@ async def notify_many(
     body: str | None = None,
     data: dict | None = None,
     organization_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+    task_id: uuid.UUID | None = None,
 ) -> None:
     for user_id in dict.fromkeys(user_ids):  # dedupe, keep order
         await notify(
@@ -102,6 +121,8 @@ async def notify_many(
             body=body,
             data=data,
             organization_id=organization_id,
+            project_id=project_id,
+            task_id=task_id,
         )
 
 
@@ -170,3 +191,48 @@ async def dispatch_webhooks(
             # Delivery row is already committed: the sweeper task re-enqueues
             # stale pending deliveries, so we log and continue.
             logger.exception("Failed to enqueue webhook delivery %s", delivery.id)
+
+
+async def dispatch_integrations(
+    db: AsyncSession,
+    *,
+    organization_id: uuid.UUID,
+    event: str,
+    data: dict[str, Any],
+) -> None:
+    """Fan an event out to active chat integrations (Slack/Teams).
+
+    Same transaction ordering as dispatch_webhooks: durable event rows are
+    committed before any enqueue so a broker outage never loses a message.
+    """
+    from app.models import IntegrationEvent
+    from app.repositories import IntegrationRepository
+
+    repo = IntegrationRepository(db)
+    integrations = await repo.list_active_for_event(organization_id, event)
+    if not integrations:
+        return
+
+    pending: list[IntegrationEvent] = []
+    for integration in integrations:
+        record = await repo.add_event(
+            IntegrationEvent(
+                organization_id=organization_id,
+                integration_id=integration.id,
+                direction="outbound",
+                event_type=event,
+                status="received",
+                data=data,
+            )
+        )
+        pending.append(record)
+
+    await db.commit()
+
+    for record in pending:
+        try:
+            await run_in_threadpool(
+                celery_app.send_task, "teamflow.deliver_integration", [str(record.id)]
+            )
+        except Exception:
+            logger.exception("Failed to enqueue integration event %s", record.id)

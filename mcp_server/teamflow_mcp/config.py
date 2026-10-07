@@ -4,13 +4,18 @@ Every setting is read from the environment with a `TEAMFLOW_` prefix, so an
 agent can point this server at any TeamFlow deployment without code changes:
 
     TEAMFLOW_API_URL    http://localhost:8000     # /api/v1 is appended if absent
-    TEAMFLOW_EMAIL      you@example.com           # login identity
-    TEAMFLOW_PASSWORD   ...                       # login secret
+    TEAMFLOW_TOKEN      tf_...                    # API token (preferred for agents/CI)
+    TEAMFLOW_EMAIL      you@example.com           # login identity (fallback)
+    TEAMFLOW_PASSWORD   ...                       # login secret (fallback)
     TEAMFLOW_ORG        my-org                    # optional default org slug
     TEAMFLOW_PROJECT    My Board                  # optional default project name or id
     TEAMFLOW_TIMEOUT    30                        # seconds
     TEAMFLOW_VERIFY_SSL true
     TEAMFLOW_TRUST_ENV  true                      # set false to bypass a system proxy
+
+When ``TEAMFLOW_TOKEN`` is set, the server authenticates with the token and
+never logs in with a password — create one under *API access* in the web UI
+(or ``POST /api/v1/organizations/{slug}/api-tokens``).
 
 Credentials are resolved per project, so one globally registered MCP server can
 serve every repository with its own identity. Values for each key come from, in
@@ -118,6 +123,9 @@ class Settings(BaseSettings):
     )
 
     api_url: str = "http://localhost:8000"
+    # Personal access token (M3 #24); preferred over email/password for
+    # agents, CI and automations.
+    token: str = ""
     email: str = ""
     password: str = ""
     org: str = ""
@@ -141,7 +149,7 @@ class Settings(BaseSettings):
 
     @property
     def credentials_configured(self) -> bool:
-        return bool(self.email and self.password)
+        return bool(self.token) or bool(self.email and self.password)
 
     @property
     def credentials_are_placeholders(self) -> bool:

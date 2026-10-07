@@ -14,7 +14,18 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, Optional
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy import Uuid as SAUuid
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -24,6 +35,7 @@ if TYPE_CHECKING:
     from app.models.label import Label
     from app.models.organization import Organization
     from app.models.project import Project
+    from app.models.sprint import Sprint
     from app.models.user import User
 
 
@@ -111,6 +123,22 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         Index("ix_tasks_created", "created_at"),
         Index("ix_tasks_org_parent", "organization_id", "parent_id"),
         Index("ix_tasks_org_type", "organization_id", "type"),
+        Index("ix_tasks_org_sprint", "organization_id", "sprint_id"),
+        Index("ix_tasks_org_archived", "organization_id", "archived_at"),
+        Index("ix_tasks_org_category", "organization_id", "status_category"),
+        Index("ix_tasks_org_recurrence", "organization_id", "recurrence_rule"),
+        Index("ix_tasks_org_release", "organization_id", "release_id"),
+        UniqueConstraint("project_id", "number", name="uq_tasks_project_number"),
+        # One occurrence per (source, due date): concurrent completions or
+        # overlapping beat sweeps cannot double-generate a recurrence.
+        Index(
+            "uq_tasks_recurrence_occurrence",
+            "organization_id",
+            "recurrence_source_id",
+            "due_date",
+            unique=True,
+            postgresql_where=text("recurrence_source_id IS NOT NULL"),
+        ),
     )
 
     organization_id: uuid.UUID = Field(
@@ -133,9 +161,62 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     description: str | None = Field(
         default=None, sa_column=Column(Text, nullable=True)
     )
-    status: str = Field(sa_column=Column(String(16), nullable=False))
+    status: str = Field(sa_column=Column(String(32), nullable=False))
+    # Denormalized workflow category of `status` (todo/in_progress/in_review/
+    # done) so done-checks, reports and aggregates work with custom statuses.
+    status_category: str = Field(
+        sa_column=Column(String(16), nullable=False, server_default="todo")
+    )
     priority: str = Field(sa_column=Column(String(16), nullable=False))
     type: str = Field(sa_column=Column(String(16), nullable=False, server_default="task"))
+    # Human-readable issue key, denormalized for display everywhere tasks are
+    # referenced (e.g. "TEAM-123"). `number` stays unique per project.
+    key: str | None = Field(default=None, sa_column=Column(String(32), nullable=True))
+    number: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
+    # Estimation: points or hours depending on the project's estimation unit.
+    estimate: float | None = Field(default=None, sa_column=Column(Float, nullable=True))
+    remaining_estimate: float | None = Field(
+        default=None, sa_column=Column(Float, nullable=True)
+    )
+    actual_estimate: float | None = Field(
+        default=None, sa_column=Column(Float, nullable=True)
+    )
+    # Manual backlog ordering; lower rank sorts first in the backlog.
+    backlog_rank: float | None = Field(
+        default=None, sa_column=Column(Float, nullable=True)
+    )
+    sprint_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("sprints.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    archived_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    # RFC 5545 RRULE for recurring tasks; completion spawns the next occurrence.
+    recurrence_rule: str | None = Field(
+        default=None, sa_column=Column(String(255), nullable=True)
+    )
+    recurrence_source_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("tasks.id", ondelete="SET NULL", name="fk_tasks_recurrence_source"),
+            nullable=True,
+        ),
+    )
+    release_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("releases.id", ondelete="SET NULL", name="fk_tasks_release_id"),
+            nullable=True,
+        ),
+    )
     due_date: datetime | None = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
@@ -189,6 +270,7 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     )
     organization: Optional["Organization"] = Relationship()
     project: Optional["Project"] = Relationship()
+    sprint: Optional["Sprint"] = Relationship(sa_relationship_kwargs={"lazy": "joined"})
     labels: list["Label"] = Relationship(
         link_model=TaskLabelLink, sa_relationship_kwargs={"lazy": "selectin"}
     )
@@ -198,6 +280,7 @@ class Task(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
 
     def __init__(self, **kwargs: object) -> None:
         kwargs.setdefault("status", TaskStatus.TODO)
+        kwargs.setdefault("status_category", kwargs.get("status", TaskStatus.TODO))
         kwargs.setdefault("priority", TaskPriority.MEDIUM)
         kwargs.setdefault("type", TaskType.TASK)
         super().__init__(**kwargs)

@@ -23,6 +23,8 @@ class UserCreate(SQLModel):
 class UserUpdate(SQLModel):
     email: EmailStr | None = None
     full_name: str | None = Field(default=None, max_length=255)
+    # UI locale (en/fa) — drives RTL + Jalali calendar in the client (M4 #35).
+    locale: str | None = Field(default=None, max_length=8)
 
 
 class UserRead(SQLModel):
@@ -30,6 +32,7 @@ class UserRead(SQLModel):
     email: str
     full_name: str
     is_active: bool
+    locale: str = "en"
     created_at: datetime
 
 
