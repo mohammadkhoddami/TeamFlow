@@ -12,7 +12,7 @@ inside an organization.
 import uuid
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Boolean, Column, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy import Uuid as SAUuid
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -41,6 +41,12 @@ class Organization(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         sa_column=Column(String(255), unique=True, index=True, nullable=False)
     )
     is_active: bool = Field(sa_column=Column(Boolean, nullable=False))
+    accent_color: str | None = Field(
+        default=None, sa_column=Column(String(16), nullable=True)
+    )
+    audit_retention_days: int | None = Field(
+        default=None, sa_column=Column(Integer, nullable=True)
+    )
     created_by_id: uuid.UUID | None = Field(
         default=None,
         sa_column=Column(
@@ -87,6 +93,14 @@ class Membership(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     )
     role: str = Field(sa_column=Column(String(32), nullable=False))
     is_active: bool = Field(sa_column=Column(Boolean, nullable=False))
+    custom_role_id: uuid.UUID | None = Field(
+        default=None,
+        sa_column=Column(
+            SAUuid(as_uuid=True),
+            ForeignKey("custom_roles.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
 
     user: "User" = Relationship(sa_relationship_kwargs={"lazy": "joined"})
     organization: Optional["Organization"] = Relationship()

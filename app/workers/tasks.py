@@ -147,16 +147,40 @@ def _retry_or_fail(task, delivery_id: str, attempt: int, error: str) -> dict:
 @shared_task(name="teamflow.cleanup_expired_data")
 def cleanup_expired_data() -> dict:
     """Beat job (every 6h): purge expired idempotency keys, stale pending
-    attachments (24h+ old, object never uploaded), and re-enqueue webhook
-    deliveries stranded `pending` by broker outages."""
-    from app.models import Attachment, WebhookDelivery
+    attachments (24h+ old, object never uploaded), audit rows past each org's
+    retention window, and re-enqueue webhook deliveries stranded `pending` by
+    broker outages."""
+    from app.models import Attachment, AuditLog, Organization, WebhookDelivery
     from app.workers.celery_app import celery_app
 
-    removed = {"idempotency_keys": 0, "pending_attachments": 0, "deliveries_requeued": 0}
+    removed = {
+        "idempotency_keys": 0,
+        "pending_attachments": 0,
+        "audit_logs": 0,
+        "deliveries_requeued": 0,
+    }
     with session_scope() as db:
         cutoff = datetime.now(UTC) - timedelta(hours=settings.idempotency_ttl_hours)
         result = db.execute(delete(IdempotencyKey).where(IdempotencyKey.created_at < cutoff))
         removed["idempotency_keys"] = int(result.rowcount or 0)
+
+        # Per-org audit retention: only orgs that opted in (non-null days).
+        orgs = list(
+            db.execute(
+                select(Organization).where(Organization.audit_retention_days.is_not(None))
+            ).scalars()
+        )
+        for org in orgs:
+            retention_cutoff = datetime.now(UTC) - timedelta(
+                days=int(org.audit_retention_days)
+            )
+            result = db.execute(
+                delete(AuditLog).where(
+                    AuditLog.organization_id == org.id,
+                    AuditLog.created_at < retention_cutoff,
+                )
+            )
+            removed["audit_logs"] += int(result.rowcount or 0)
 
         stale = list(
             db.execute(
@@ -480,6 +504,112 @@ def post_webhook_url(self, url: str, payload: dict) -> dict:
             countdown=min(10 * 2 ** self.request.retries, 300),
         )
     return {"status": "sent", "code": response.status_code}
+
+
+@shared_task(
+    bind=True, name="teamflow.deliver_plugin", max_retries=3, default_retry_delay=10
+)
+def deliver_plugin(self, plugin_id: str, event: str, data: dict) -> dict:
+    """Signed JSON POST to an installed plugin's webhook URL.
+
+    Plugins have no delivery ledger (unlike webhooks): transport errors and
+    5xx retry with backoff; 4xx are permanent and only logged.
+    """
+    from app.models import Plugin
+    from app.workers.celery_app import http_client
+
+    with session_scope() as db:
+        plugin = db.get(Plugin, uuid.UUID(plugin_id))
+        if plugin is None or not plugin.is_active:
+            return {"status": "skipped", "plugin_id": plugin_id}
+        url, secret = plugin.webhook_url, plugin.secret
+    if not url or not secret:
+        logger.warning(
+            "Plugin %s has no webhook_url/secret; dropping %s", plugin_id, event
+        )
+        return {"status": "skipped", "plugin_id": plugin_id}
+
+    body = json.dumps({"event": event, "data": data, "plugin_id": plugin_id}).encode()
+    timestamp = str(int(datetime.now(UTC).timestamp()))
+    signature = webhook_signing.sign_payload(secret, timestamp, body)
+    headers = {
+        "Content-Type": "application/json",
+        "X-TeamFlow-Event": event,
+        "X-TeamFlow-Timestamp": timestamp,
+        "X-TeamFlow-Signature": signature,
+    }
+    client = http_client or httpx.Client(
+        timeout=settings.webhook_timeout_seconds,
+        trust_env=settings.webhook_httpx_trust_env,
+    )
+    try:
+        response = client.post(url, content=body, headers=headers)
+    except httpx.RequestError as exc:
+        logger.warning("Plugin %s transport error: %s", plugin_id, exc)
+        raise self.retry(exc=exc, countdown=min(10 * 2 ** self.request.retries, 300))
+    if response.status_code >= 500:
+        logger.warning("Plugin %s HTTP %s", plugin_id, response.status_code)
+        raise self.retry(
+            exc=RuntimeError(f"HTTP {response.status_code}"),
+            countdown=min(10 * 2 ** self.request.retries, 300),
+        )
+    if response.status_code >= 400:
+        logger.warning(
+            "Plugin %s permanent failure HTTP %s", plugin_id, response.status_code
+        )
+        return {"status": "failed", "code": response.status_code, "plugin_id": plugin_id}
+    return {"status": "delivered", "code": response.status_code, "plugin_id": plugin_id}
+
+
+@shared_task(name="teamflow.send_push")
+def send_push(user_id: str, title: str, body: str = "") -> dict:
+    """Deliver a web-push notification to every subscription of a user.
+
+    Dependency-optional: `pywebpush` and VAPID keys are optional. When either
+    is missing the task logs and no-ops (`sent=0`). Deliberately *not* wired
+    into `events.notify` so ordinary notifications do not pay an extra query.
+    """
+    from app.models import PushSubscription
+
+    with session_scope() as db:
+        subscriptions = list(
+            db.execute(
+                select(PushSubscription).where(
+                    PushSubscription.user_id == uuid.UUID(user_id)
+                )
+            ).scalars()
+        )
+    if not subscriptions:
+        return {"sent": 0, "skipped": 0}
+    if not settings.push_vapid_private_key or not settings.push_vapid_public_key:
+        logger.info("push skipped (no pywebpush/vapid configured)")
+        return {"sent": 0, "skipped": len(subscriptions)}
+    try:
+        from pywebpush import webpush
+    except ImportError:
+        logger.info("push skipped (no pywebpush/vapid configured)")
+        return {"sent": 0, "skipped": len(subscriptions)}
+
+    payload = json.dumps({"title": title, "body": body})
+    sent = 0
+    for subscription in subscriptions:
+        try:
+            webpush(
+                subscription_info={
+                    "endpoint": subscription.endpoint,
+                    "keys": subscription.keys,
+                },
+                data=payload,
+                vapid_private_key=settings.push_vapid_private_key,
+                vapid_claims={"sub": settings.push_subject},
+            )
+            sent += 1
+        except Exception as exc:  # noqa: BLE001 - one bad endpoint must not sink the batch
+            logger.warning(
+                "push delivery failed for subscription %s: %s", subscription.id, exc
+            )
+    return {"sent": sent, "skipped": len(subscriptions) - sent}
+
 
 
 @shared_task(

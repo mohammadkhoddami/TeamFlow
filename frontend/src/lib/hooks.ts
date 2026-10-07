@@ -11,23 +11,36 @@ import type {
   CalendarResponse,
   ChecklistItemRead,
   CustomFieldRead,
+  CustomRoleRead,
+  DashboardData,
+  DashboardRead,
   DashboardStats,
+  FormRead,
+  FormSubmissionRead,
+  GoalRead,
   IntegrationEventRead,
   IntegrationRead,
   InvitationRead,
   LabelRead,
+  MfaStatus,
   NotificationMuteRead,
   NotificationPreferenceRead,
   NotificationRead,
   OAuthAppRead,
   Page,
+  PluginDirectoryEntry,
+  PluginRead,
+  ProjectMemberRead,
   ProjectRead,
+  PushSubscriptionRead,
   ReleaseRead,
   RoadmapResponse,
   SavedFilterRead,
+  ScimTokenRead,
   SearchResponse,
   ServiceAccountRead,
   SprintRead,
+  SsoConfigRead,
   TaskAssigneeRead,
   TaskLinkSummary,
   TaskRead,
@@ -45,19 +58,28 @@ import {
   checklistApi,
   customFieldsApi,
   dashboardApi,
+  dashboardsApi,
+  formsApi,
+  goalsApi,
   integrationsApi,
   invitationsApi,
   labelsApi,
   linksApi,
   membersApi,
+  mfaApi,
   notificationsApi,
   organizationsApi,
+  pluginsApi,
   preferencesApi,
+  projectMembersApi,
   projectsApi,
   releasesApi,
+  rolesApi,
   savedFiltersApi,
+  scimApi,
   searchApi,
   sprintsApi,
+  ssoApi,
   tasksApi,
   tokensApi,
   webhooksApi,
@@ -120,6 +142,23 @@ export const qk = {
   apiTokens: (slug: string) => ['orgs', slug, 'api-tokens'] as const,
   serviceAccounts: (slug: string) => ['orgs', slug, 'service-accounts'] as const,
   oauthApps: (slug: string) => ['orgs', slug, 'oauth-apps'] as const,
+  mfaStatus: ['auth', 'mfa'] as const,
+  ssoConfig: (slug: string) => ['orgs', slug, 'sso'] as const,
+  scimTokens: (slug: string) => ['orgs', slug, 'scim-tokens'] as const,
+  roles: (slug: string) => ['orgs', slug, 'roles'] as const,
+  projectMembers: (projectId: string) =>
+    ['projects', projectId, 'members'] as const,
+  goals: (slug: string) => ['orgs', slug, 'goals'] as const,
+  dashboards: (slug: string) => ['orgs', slug, 'dashboards'] as const,
+  dashboardData: (slug: string, dashboardId: string) =>
+    ['orgs', slug, 'dashboards', dashboardId, 'data'] as const,
+  forms: (projectId: string) => ['projects', projectId, 'forms'] as const,
+  formSubmissions: (formId: string) =>
+    ['forms', formId, 'submissions'] as const,
+  plugins: (slug: string) => ['orgs', slug, 'plugins'] as const,
+  pluginDirectory: (slug: string) =>
+    ['orgs', slug, 'plugins', 'directory'] as const,
+  pushSubscriptions: ['notifications', 'push-subscriptions'] as const,
 }
 
 const NOTIFICATION_POLL_MS = 30_000
@@ -487,5 +526,113 @@ export function useOAuthApps(slug: string, enabled = true) {
     queryKey: qk.oauthApps(slug),
     queryFn: () => tokensApi.listOAuthApps(slug),
     enabled: Boolean(slug) && enabled,
+  })
+}
+
+// -------------------------------------------------------------- M4 hooks
+
+export function useMfaStatus() {
+  return useQuery<MfaStatus>({
+    queryKey: qk.mfaStatus,
+    queryFn: () => mfaApi.status(),
+  })
+}
+
+export function useSsoConfig(slug: string, enabled = true) {
+  return useQuery<SsoConfigRead>({
+    queryKey: qk.ssoConfig(slug),
+    queryFn: () => ssoApi.getConfig(slug),
+    enabled: Boolean(slug) && enabled,
+    retry: false,
+  })
+}
+
+export function useScimTokens(slug: string, enabled = true) {
+  return useQuery<ScimTokenRead[]>({
+    queryKey: qk.scimTokens(slug),
+    queryFn: () => scimApi.listTokens(slug),
+    enabled: Boolean(slug) && enabled,
+  })
+}
+
+export function useRoles(slug: string, enabled = true) {
+  return useQuery<CustomRoleRead[]>({
+    queryKey: qk.roles(slug),
+    queryFn: () => rolesApi.list(slug),
+    enabled: Boolean(slug) && enabled,
+  })
+}
+
+export function useProjectMembers(projectId: string | undefined, enabled = true) {
+  return useQuery<ProjectMemberRead[]>({
+    queryKey: qk.projectMembers(projectId ?? ''),
+    queryFn: () => projectMembersApi.list(projectId as string),
+    enabled: Boolean(projectId) && enabled,
+  })
+}
+
+export function useGoals(slug: string) {
+  return useQuery<GoalRead[]>({
+    queryKey: qk.goals(slug),
+    queryFn: () => goalsApi.list(slug),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useDashboards(slug: string) {
+  return useQuery<DashboardRead[]>({
+    queryKey: qk.dashboards(slug),
+    queryFn: () => dashboardsApi.list(slug),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useDashboardData(slug: string, dashboardId: string | null) {
+  return useQuery<DashboardData>({
+    queryKey: qk.dashboardData(slug, dashboardId ?? ''),
+    queryFn: () => dashboardsApi.data(slug, dashboardId as string),
+    enabled: Boolean(slug && dashboardId),
+  })
+}
+
+export function useForms(projectId: string | undefined) {
+  return useQuery<FormRead[]>({
+    queryKey: qk.forms(projectId ?? ''),
+    queryFn: () => formsApi.list(projectId as string),
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useFormSubmissions(
+  projectId: string | undefined,
+  formId: string | null,
+) {
+  return useQuery<FormSubmissionRead[]>({
+    queryKey: qk.formSubmissions(formId ?? ''),
+    queryFn: () => formsApi.submissions(projectId as string, formId as string),
+    enabled: Boolean(projectId && formId),
+  })
+}
+
+export function usePlugins(slug: string) {
+  return useQuery<PluginRead[]>({
+    queryKey: qk.plugins(slug),
+    queryFn: () => pluginsApi.list(slug),
+    enabled: Boolean(slug),
+  })
+}
+
+export function useDirectory(slug: string) {
+  return useQuery<PluginDirectoryEntry[]>({
+    queryKey: qk.pluginDirectory(slug),
+    queryFn: () => pluginsApi.directory(slug),
+    enabled: Boolean(slug),
+  })
+}
+
+export function usePushSubscriptions() {
+  return useQuery<PushSubscriptionRead[]>({
+    queryKey: qk.pushSubscriptions,
+    queryFn: () => notificationsApi.pushSubscriptions(),
   })
 }

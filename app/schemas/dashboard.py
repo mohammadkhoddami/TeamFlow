@@ -1,9 +1,10 @@
-"""Audit log + dashboard schemas."""
+"""Audit log + dashboard schemas (M1 stats and M4 saved dashboards)."""
 
 import uuid
 from datetime import datetime
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlmodel import SQLModel
 
 
@@ -42,3 +43,56 @@ class DashboardStats(BaseModel):
     tasks_by_status: TasksByStatus
     tasks_per_member: list[TasksPerMember]
     active_members: int
+
+
+# --- M4: saved dashboards / widget builder ---
+
+WidgetTypeLiteral = Literal["stats", "status", "members", "overdue", "activity"]
+
+
+class DashboardWidget(BaseModel):
+    """One card on a saved dashboard; `config` is widget-specific extras."""
+
+    id: str | None = None
+    type: WidgetTypeLiteral
+    title: str = Field(min_length=1, max_length=128)
+    config: dict = Field(default_factory=dict)
+
+
+class DashboardCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    widgets: list[DashboardWidget] = Field(default_factory=list, max_length=50)
+    project_id: uuid.UUID | None = None
+    is_default: bool = False
+
+
+class DashboardUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    widgets: list[DashboardWidget] | None = Field(default=None, max_length=50)
+    project_id: uuid.UUID | None = None
+    is_default: bool | None = None
+
+
+class DashboardRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    project_id: uuid.UUID | None
+    name: str
+    widgets: list[DashboardWidget]
+    is_default: bool
+    created_by_id: uuid.UUID | None
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class WidgetData(BaseModel):
+    id: str
+    type: str
+    title: str
+    data: Any
+
+
+class DashboardData(BaseModel):
+    widgets: list[WidgetData]

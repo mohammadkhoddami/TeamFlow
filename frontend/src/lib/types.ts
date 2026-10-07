@@ -12,6 +12,7 @@ export interface UserRead {
   full_name: string
   is_active: boolean
   created_at: string
+  locale?: string | null
 }
 
 export interface UserBrief {
@@ -25,6 +26,8 @@ export interface OrganizationRead {
   name: string
   slug: string
   is_active: boolean
+  accent_color?: string | null
+  audit_retention_days?: number | null
   created_at: string
   my_role?: string | null
 }
@@ -39,6 +42,8 @@ export interface MembershipRead {
   role: MembershipRole
   user_id: string
   organization_id: string
+  custom_role_id?: string | null
+  custom_role_name?: string | null
   created_at: string
   user?: UserBrief | null
 }
@@ -65,6 +70,7 @@ export interface ProjectRead {
   key: string | null
   estimation_unit: EstimationUnit
   wip_enforced: boolean
+  visibility?: 'workspace' | 'private'
   owner_id: string | null
   created_at: string
   updated_at: string | null
@@ -1090,4 +1096,371 @@ export function isOwner(role: string | null | undefined): boolean {
 
 export function canManage(role: string | null | undefined): boolean {
   return roleRank(role) >= ROLE_RANK.manager
+}
+
+// ------------------------------------------------------------------ M4 types
+
+export interface MfaStatus {
+  enabled: boolean
+}
+
+export interface MfaSetup {
+  secret: string
+  otpauth_uri: string
+  recovery_codes: string[]
+}
+
+export interface MfaRequired {
+  mfa_required: true
+  mfa_token: string
+}
+
+export type LoginResponse = TokenPair | MfaRequired
+
+export interface SsoPublicConfig {
+  enabled: boolean
+  provider: string
+  login_url: string
+}
+
+export interface SsoConfigRead {
+  provider: string
+  issuer: string
+  client_id: string
+  scopes: string[]
+  is_enabled: boolean
+  auto_provision: boolean
+  default_role: MembershipRole
+  has_secret: boolean
+}
+
+export interface SsoConfigInput {
+  issuer: string
+  client_id: string
+  client_secret?: string
+  scopes?: string[]
+  is_enabled?: boolean
+  auto_provision?: boolean
+  default_role?: MembershipRole
+}
+
+export interface ScimTokenRead {
+  id: string
+  name: string
+  is_active: boolean
+  last_used_at: string | null
+  created_at: string
+}
+
+export interface ScimTokenCreated extends ScimTokenRead {
+  token: string
+}
+
+export const PERMISSION_KEYS = [
+  'tasks.delete',
+  'tasks.manage',
+  'projects.manage',
+  'members.manage',
+  'org.manage',
+  'audit.view',
+  'integrations.manage',
+] as const
+
+export type PermissionKey = (typeof PERMISSION_KEYS)[number]
+
+export const PERMISSION_LABELS: Record<PermissionKey, string> = {
+  'tasks.delete': 'Delete tasks',
+  'tasks.manage': 'Manage tasks',
+  'projects.manage': 'Manage projects',
+  'members.manage': 'Manage members',
+  'org.manage': 'Manage workspace',
+  'audit.view': 'View audit log',
+  'integrations.manage': 'Manage integrations',
+}
+
+export interface CustomRoleRead {
+  id: string
+  organization_id: string
+  name: string
+  description: string | null
+  permissions: string[]
+  created_by_id?: string | null
+  created_at: string
+}
+
+export interface CustomRoleInput {
+  name: string
+  description?: string | null
+  permissions: string[]
+}
+
+export type ProjectMemberRole = 'viewer' | 'member' | 'manager'
+
+export const PROJECT_MEMBER_ROLE_LABELS: Record<ProjectMemberRole, string> = {
+  viewer: 'Viewer',
+  member: 'Member',
+  manager: 'Manager',
+}
+
+export interface ProjectMemberUser {
+  id: string
+  email: string
+  full_name: string
+}
+
+export interface ProjectMemberRead {
+  id: string
+  organization_id: string
+  project_id: string
+  user_id: string
+  role: string
+  created_at: string
+  user?: ProjectMemberUser | null
+}
+
+export type GoalStatus = 'active' | 'achieved' | 'cancelled'
+
+export const GOAL_STATUS_LABELS: Record<GoalStatus, string> = {
+  active: 'Active',
+  achieved: 'Achieved',
+  cancelled: 'Cancelled',
+}
+
+export const GOAL_STATUS_BADGE: Record<GoalStatus, string> = {
+  active: 'bg-sky-100 text-sky-700',
+  achieved: 'bg-emerald-100 text-emerald-700',
+  cancelled: 'bg-slate-100 text-slate-600',
+}
+
+export interface GoalTaskRef {
+  id: string
+  key: string | null
+  title: string
+  type: string
+  status: string
+  status_category: string
+  progress_pct: number
+}
+
+export interface GoalRead {
+  id: string
+  organization_id: string
+  name: string
+  description: string | null
+  status: string
+  due_date: string | null
+  owner_id: string | null
+  owner?: UserRead | null
+  created_by_id: string | null
+  progress_pct: number
+  tasks: GoalTaskRef[]
+  created_at: string
+  updated_at: string | null
+}
+
+export interface GoalInput {
+  name: string
+  description?: string | null
+  status?: GoalStatus
+  due_date?: string | null
+  owner_id?: string | null
+}
+
+export type WidgetType = 'stats' | 'status' | 'members' | 'overdue' | 'activity'
+
+export const WIDGET_TYPES: readonly WidgetType[] = [
+  'stats',
+  'status',
+  'members',
+  'overdue',
+  'activity',
+]
+
+export const WIDGET_TYPE_LABELS: Record<WidgetType, string> = {
+  stats: 'Workspace stats',
+  status: 'Tasks by status',
+  members: 'Open tasks per member',
+  overdue: 'Overdue tasks',
+  activity: 'Recent activity',
+}
+
+export interface DashboardWidget {
+  id?: string | null
+  type: WidgetType
+  title: string
+  config?: Record<string, unknown>
+}
+
+export interface DashboardRead {
+  id: string
+  organization_id: string
+  project_id: string | null
+  name: string
+  widgets: DashboardWidget[]
+  is_default: boolean
+  created_by_id?: string | null
+  created_at: string
+  updated_at: string | null
+}
+
+export interface WidgetData {
+  id: string
+  type: string
+  title: string
+  data: unknown
+}
+
+export interface DashboardData {
+  widgets: WidgetData[]
+}
+
+export interface DashboardInput {
+  name: string
+  widgets?: DashboardWidget[]
+  project_id?: string | null
+  is_default?: boolean
+}
+
+export type FormFieldType = 'text' | 'textarea' | 'select' | 'user' | 'priority' | 'date'
+
+export const FORM_FIELD_TYPES: readonly FormFieldType[] = [
+  'text',
+  'textarea',
+  'select',
+  'user',
+  'priority',
+  'date',
+]
+
+export const FORM_FIELD_TYPE_LABELS: Record<FormFieldType, string> = {
+  text: 'Short text',
+  textarea: 'Long text',
+  select: 'Dropdown',
+  user: 'User email',
+  priority: 'Priority',
+  date: 'Date',
+}
+
+export interface FormField {
+  key: string
+  label: string
+  type: FormFieldType
+  required: boolean
+  options: string[]
+}
+
+export interface FormRead {
+  id: string
+  project_id: string
+  name: string
+  description: string | null
+  slug: string
+  fields: FormField[]
+  is_public: boolean
+  submit_count: number
+  created_at: string
+}
+
+export interface FormInput {
+  name: string
+  description?: string | null
+  fields?: FormField[]
+  is_public?: boolean
+}
+
+export interface FormSubmissionRead {
+  id: string
+  data: Record<string, unknown>
+  task_id: string | null
+  created_at: string
+}
+
+export interface PublicFormRead {
+  name: string
+  description: string | null
+  fields: FormField[]
+  project_name: string
+  slug: string
+}
+
+export interface FormSubmitted {
+  task_id: string
+  task_key: string | null
+  detail: string
+}
+
+export interface PluginDirectoryEntry {
+  id: string
+  name: string
+  description: string
+  author: string
+  homepage: string
+  events: string[]
+  scopes: string[]
+  installed: boolean
+}
+
+export interface PluginRead {
+  id: string
+  organization_id: string
+  name: string
+  description: string | null
+  manifest: Record<string, unknown>
+  webhook_url: string | null
+  events: string[]
+  scopes: string[]
+  is_active: boolean
+  installed_by_id?: string | null
+  created_at: string
+}
+
+export interface PluginCreated extends PluginRead {
+  secret: string | null
+}
+
+export interface PluginInstallInput {
+  catalog_id?: string
+  name?: string
+  description?: string
+  webhook_url: string
+  events?: string[]
+  manifest?: Record<string, unknown>
+}
+
+export interface AiBreakdownItem {
+  title: string
+  type: TaskType
+  priority: TaskPriority
+  children: AiBreakdownItem[]
+}
+
+export interface AiBreakdownProposal {
+  provided: boolean
+  items: AiBreakdownItem[]
+  suggested_priority: TaskPriority
+}
+
+export interface AiApplyFailure {
+  title: string
+  error: string
+}
+
+export interface AiApplyResult {
+  created: number
+  task_ids: string[]
+  failures: AiApplyFailure[]
+}
+
+export interface PushSubscriptionRead {
+  id: string
+  endpoint: string
+  keys: Record<string, string>
+  user_agent: string | null
+  created_at: string
+}
+
+export interface PushSubscribeInput {
+  endpoint: string
+  keys: { p256dh: string; auth: string }
+  user_agent?: string
 }

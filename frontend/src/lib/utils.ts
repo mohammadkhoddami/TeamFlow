@@ -1,3 +1,4 @@
+import { LOCALE_STORAGE_KEY } from './i18n'
 import type { TaskStatus } from './types'
 
 type ClassValue = string | false | null | undefined
@@ -41,6 +42,18 @@ function parse(value: string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
+// Persian locale renders dates on the Jalali calendar via the -u-ca-persian
+// Unicode extension; every other locale keeps the browser default.
+function dateLocale(): string | undefined {
+  try {
+    return window.localStorage.getItem(LOCALE_STORAGE_KEY) === 'fa'
+      ? 'fa-IR-u-ca-persian'
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function relativeTime(value: string | null | undefined): string {
   const date = parse(value)
   if (!date) return '—'
@@ -58,7 +71,7 @@ export function relativeTime(value: string | null | undefined): string {
 export function formatDate(value: string | null | undefined): string {
   const date = parse(value)
   if (!date) return '—'
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(dateLocale(), {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -68,7 +81,7 @@ export function formatDate(value: string | null | undefined): string {
 export function formatDateTime(value: string | null | undefined): string {
   const date = parse(value)
   if (!date) return '—'
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(dateLocale(), {
     month: 'short',
     day: 'numeric',
     year: 'numeric',

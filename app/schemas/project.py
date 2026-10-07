@@ -34,6 +34,7 @@ class ProjectUpdate(SQLModel):
     status: Literal["active", "archived"] | None = None
     key: str | None = Field(default=None, min_length=2, max_length=10, pattern=PROJECT_KEY_RE)
     estimation_unit: Literal["none", "points", "hours"] | None = None
+    visibility: Literal["workspace", "private"] | None = None
 
     @field_validator("key")
     @classmethod
@@ -50,6 +51,7 @@ class ProjectRead(SQLModel):
     key: str | None = None
     estimation_unit: str = "points"
     wip_enforced: bool = False
+    visibility: str = "workspace"
     owner_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime | None

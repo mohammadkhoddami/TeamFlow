@@ -364,6 +364,14 @@ ENTRYPOINT ["teamflow-mcp"]
 | `list_members` | Emails and roles, for resolving assignees. |
 | `list_labels` / `create_label` | Label management. |
 | `get_dashboard` | Org-wide statistics (cheap overview). |
+| `list_sprints` | A project's sprints with dates and done/total task counts. |
+| `list_releases` | A project's releases with version, status, release date and progress. |
+| `get_roadmap` | Compact roadmap: releases plus epics, top children and progress. |
+| `get_calendar` | Tasks with due dates in a window (default: this month), optionally per project. |
+| `list_automations` | Org automation rules with trigger type and run stats. |
+| `list_goals` | Org goals with status, progress and linked task keys. |
+| `list_forms` | A project's intake forms with slug, visibility and submit counts. |
+| `list_dashboards` | Saved org dashboards and their widget types. |
 
 Resources: `teamflow://me`,
 `teamflow://organizations/{slug}/dashboard`,

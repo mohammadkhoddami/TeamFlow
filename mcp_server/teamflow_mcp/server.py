@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from mcp.server.mcpserver import MCPServer
@@ -25,6 +26,7 @@ from .formatting import (
     STATUS_ORDER,
     comment_item,
     json_text,
+    parse_dt,
     sort_cards,
     task_card,
     task_record,
@@ -40,6 +42,10 @@ TRANSITIONS = {
     "in_review": "in_progress | done",
     "done": "in_progress",
 }
+
+ROADMAP_EPIC_LIMIT = 30
+ROADMAP_CHILD_LIMIT = 5
+GOAL_TASK_LIMIT = 25
 
 mcp = MCPServer(
     "teamflow",
@@ -68,6 +74,33 @@ def _client():
         return get_client()
     except Exception as exc:  # pragma: no cover - configuration guard
         raise TeamFlowError(f"TeamFlow MCP is not configured: {exc}") from exc
+
+
+def _release_item(release: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": release.get("id"),
+        "name": release.get("name"),
+        "version": release.get("version"),
+        "status": release.get("status"),
+        "release_date": release.get("release_date"),
+        "task_count": release.get("task_count", 0),
+        "done_task_count": release.get("done_task_count", 0),
+    }
+
+
+def _calendar_window(start: str | None, end: str | None) -> dict[str, str]:
+    """Default the window to the month containing `start` (or now), UTC."""
+    anchor = parse_dt(start) or datetime.now(timezone.utc)
+    if not start:
+        start = anchor.replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        ).isoformat()
+    if not end:
+        first = anchor.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        end = (first + timedelta(days=32)).replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        ).isoformat()
+    return {"start": start, "end": end}
 
 
 # --------------------------------------------------------------------- tools
@@ -706,6 +739,306 @@ async def get_dashboard(org_slug: str | None = None) -> str:
     slug = await client.resolve_org_slug(org_slug)
     stats = await client.get(f"/organizations/{slug}/dashboard")
     return json_text({"organization": slug, "stats": stats})
+
+
+@mcp.tool()
+async def list_sprints(project: str | None = None, org_slug: str | None = None) -> str:
+    """List a project's sprints with their schedule and progress.
+
+    Each entry has its state (planned, active, completed), dates, and how many
+    of its tasks are done. Read this before planning work so new tasks fit the
+    current sprint.
+
+    Args:
+        project: Project name or UUID. Defaults to TEAMFLOW_PROJECT.
+        org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
+    """
+    client = _client()
+    slug, project_data = await client.resolve_project(project, org_slug)
+    sprints = await client.get(f"/projects/{project_data['id']}/sprints") or []
+    return json_text(
+        {
+            "organization": slug,
+            "project": {"id": project_data["id"], "name": project_data["name"]},
+            "count": len(sprints),
+            "sprints": [
+                {
+                    "id": sprint["id"],
+                    "name": sprint["name"],
+                    "state": sprint.get("state"),
+                    "start_date": sprint.get("start_date"),
+                    "end_date": sprint.get("end_date"),
+                    "task_count": sprint.get("task_count", 0),
+                    "done_task_count": sprint.get("done_task_count", 0),
+                }
+                for sprint in sprints
+            ],
+        }
+    )
+
+
+@mcp.tool()
+async def list_releases(project: str | None = None, org_slug: str | None = None) -> str:
+    """List a project's releases with version, status and progress.
+
+    A release groups tasks shipped together; `task_count` minus
+    `done_task_count` is the work still open before `release_date`. Statuses
+    are planned, in_progress, released and cancelled.
+
+    Args:
+        project: Project name or UUID. Defaults to TEAMFLOW_PROJECT.
+        org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
+    """
+    client = _client()
+    slug, project_data = await client.resolve_project(project, org_slug)
+    releases = await client.get(f"/projects/{project_data['id']}/releases") or []
+    return json_text(
+        {
+            "organization": slug,
+            "project": {"id": project_data["id"], "name": project_data["name"]},
+            "count": len(releases),
+            "releases": [_release_item(release) for release in releases],
+        }
+    )
+
+
+@mcp.tool()
+async def get_roadmap(project: str | None = None, org_slug: str | None = None) -> str:
+    """Show a project's roadmap: releases plus epics with their top child tasks.
+
+    One compact read of the delivery plan: every release with its progress,
+    then each epic with dates, task counts and up to five child task titles.
+    Use get_task_tree when you need the complete hierarchy.
+
+    Args:
+        project: Project name or UUID. Defaults to TEAMFLOW_PROJECT.
+        org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
+    """
+    client = _client()
+    slug, project_data = await client.resolve_project(project, org_slug)
+    data = await client.get(f"/projects/{project_data['id']}/roadmap") or {}
+    epics = data.get("epics") or []
+
+    def epic_item(epic: dict[str, Any]) -> dict[str, Any]:
+        children = epic.get("children") or []
+        item: dict[str, Any] = {
+            "id": epic.get("id"),
+            "key": epic.get("key"),
+            "title": epic.get("title"),
+            "status": epic.get("status"),
+            "priority": epic.get("priority"),
+            "start_date": epic.get("start_date"),
+            "due_date": epic.get("due_date"),
+            "task_count": epic.get("task_count", 0),
+            "done_task_count": epic.get("done_task_count", 0),
+            "children": [c.get("title") for c in children[:ROADMAP_CHILD_LIMIT]],
+        }
+        if len(children) > ROADMAP_CHILD_LIMIT:
+            item["children_hidden"] = len(children) - ROADMAP_CHILD_LIMIT
+        return item
+
+    payload: dict[str, Any] = {
+        "organization": slug,
+        "project": {"id": project_data["id"], "name": project_data["name"]},
+        "releases": [_release_item(r) for r in data.get("releases") or []],
+        "epics": [epic_item(epic) for epic in epics[:ROADMAP_EPIC_LIMIT]],
+    }
+    if len(epics) > ROADMAP_EPIC_LIMIT:
+        payload["epics_hidden"] = len(epics) - ROADMAP_EPIC_LIMIT
+    unassigned = data.get("unassigned") or []
+    if unassigned:
+        payload["unassigned_count"] = len(unassigned)
+    return json_text(payload)
+
+
+@mcp.tool()
+async def get_calendar(
+    start: str | None = None,
+    end: str | None = None,
+    project: str | None = None,
+    org_slug: str | None = None,
+    assignee: str | None = None,
+) -> str:
+    """List tasks with due dates inside a date window (defaults to this month).
+
+    Org-wide unless `project` is passed. `start` is inclusive and `end`
+    exclusive; both accept ISO-8601 (e.g. '2026-10-01T00:00:00Z'). Pair with
+    list_tasks overdue=True to separate late work from upcoming work.
+
+    Args:
+        start: ISO-8601 window start (inclusive). Defaults to the 1st of this month.
+        end: ISO-8601 window end (exclusive). Defaults to the 1st of next month.
+        project: Optional project name or UUID to narrow the calendar.
+        org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
+        assignee: Optional 'me', member email, or user UUID filter.
+    """
+    client = _client()
+    slug = await client.resolve_org_slug(org_slug)
+    window = _calendar_window(start, end)
+    project_id = None
+    if project:
+        _slug, project_data = await client.resolve_project(project, org_slug)
+        project_id = project_data["id"]
+    data = (
+        await client.get(
+            f"/organizations/{slug}/calendar",
+            start=window["start"],
+            end=window["end"],
+            project_id=project_id,
+            assignee=await client.resolve_user_id(assignee, slug),
+        )
+    ) or {}
+    tasks = data.get("tasks") or []
+    return json_text(
+        {
+            "organization": slug,
+            "window": {"start": data.get("start"), "end": data.get("end")},
+            "count": len(tasks),
+            "tasks": [
+                {
+                    "id": t.get("id"),
+                    "key": t.get("key"),
+                    "title": t.get("title"),
+                    "due_date": t.get("due_date"),
+                    "status": t.get("status"),
+                    "priority": t.get("priority"),
+                    "project": t.get("project_name"),
+                    "assignee": (t.get("assignee") or {}).get("email"),
+                }
+                for t in tasks
+            ],
+        }
+    )
+
+
+@mcp.tool()
+async def list_automations(org_slug: str | None = None) -> str:
+    """List an organization's automation rules and how often they have run.
+
+    Shows what already fires automatically on the board (`trigger_type`),
+    whether each rule is enabled, and its run count/last run - useful before
+    proposing manual steps for recurring work.
+
+    Args:
+        org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
+    """
+    client = _client()
+    slug = await client.resolve_org_slug(org_slug)
+    rules = await client.get(f"/organizations/{slug}/automations") or []
+    return json_text(
+        {
+            "organization": slug,
+            "count": len(rules),
+            "automations": [
+                {
+                    "id": rule["id"],
+                    "name": rule["name"],
+                    "is_active": rule.get("is_active"),
+                    "trigger_type": rule.get("trigger_type"),
+                    "run_count": rule.get("run_count", 0),
+                    "last_run_at": rule.get("last_run_at"),
+                }
+                for rule in rules
+            ],
+        }
+    )
+
+
+@mcp.tool()
+async def list_goals(org_slug: str | None = None) -> str:
+    """List organization goals/OKRs with progress and the keys of linked tasks.
+
+    `progress_pct` rolls up the completion of the linked tasks; `task_keys`
+    can be passed to get_task. Goals are organization-wide, not per project.
+
+    Args:
+        org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
+    """
+    client = _client()
+    slug = await client.resolve_org_slug(org_slug)
+    goals = await client.get(f"/organizations/{slug}/goals") or []
+    payload: list[dict[str, Any]] = []
+    for goal in goals:
+        tasks = goal.get("tasks") or []
+        keys = [t.get("key") or t.get("title") for t in tasks]
+        entry: dict[str, Any] = {
+            "id": goal["id"],
+            "name": goal.get("name"),
+            "status": goal.get("status"),
+            "due_date": goal.get("due_date"),
+            "progress_pct": goal.get("progress_pct", 0),
+            "task_keys": keys[:GOAL_TASK_LIMIT],
+        }
+        if len(keys) > GOAL_TASK_LIMIT:
+            entry["task_keys_hidden"] = len(keys) - GOAL_TASK_LIMIT
+        payload.append(entry)
+    return json_text({"organization": slug, "count": len(goals), "goals": payload})
+
+
+@mcp.tool()
+async def list_forms(project: str | None = None, org_slug: str | None = None) -> str:
+    """List a project's intake forms with visibility and submission counts.
+
+    A form turns external submissions into tasks; `slug` is the public path it
+    is shared by, and `submit_count` shows how many tasks it has created.
+
+    Args:
+        project: Project name or UUID. Defaults to TEAMFLOW_PROJECT.
+        org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
+    """
+    client = _client()
+    slug, project_data = await client.resolve_project(project, org_slug)
+    forms = await client.get(f"/projects/{project_data['id']}/forms") or []
+    return json_text(
+        {
+            "organization": slug,
+            "project": {"id": project_data["id"], "name": project_data["name"]},
+            "count": len(forms),
+            "forms": [
+                {
+                    "id": form["id"],
+                    "name": form.get("name"),
+                    "slug": form.get("slug"),
+                    "is_public": form.get("is_public"),
+                    "submit_count": form.get("submit_count", 0),
+                }
+                for form in forms
+            ],
+        }
+    )
+
+
+@mcp.tool()
+async def list_dashboards(org_slug: str | None = None) -> str:
+    """List saved organization dashboards with their widget types.
+
+    `widget_types` shows what each dashboard summarizes (stats, status,
+    members, overdue, activity) and `is_default` marks the one to open first.
+    Use get_dashboard for live org-wide numbers instead.
+
+    Args:
+        org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
+    """
+    client = _client()
+    slug = await client.resolve_org_slug(org_slug)
+    dashboards = await client.get(f"/organizations/{slug}/dashboards") or []
+    return json_text(
+        {
+            "organization": slug,
+            "count": len(dashboards),
+            "dashboards": [
+                {
+                    "id": dashboard["id"],
+                    "name": dashboard.get("name"),
+                    "is_default": dashboard.get("is_default"),
+                    "widget_types": [
+                        widget.get("type") for widget in dashboard.get("widgets") or []
+                    ],
+                }
+                for dashboard in dashboards
+            ],
+        }
+    )
 
 
 # ------------------------------------------------------------------ resources

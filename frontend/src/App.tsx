@@ -7,6 +7,8 @@ import { StandaloneLayout } from './components/StandaloneLayout'
 import { ApiTokensPage } from './pages/ApiTokensPage'
 import { AuditPage } from './pages/AuditPage'
 import { AutomationsPage } from './pages/AutomationsPage'
+import { DashboardsPage } from './pages/DashboardsPage'
+import { GoalsPage } from './pages/GoalsPage'
 import { IntegrationsPage } from './pages/IntegrationsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
@@ -19,8 +21,10 @@ import { NotificationsPage } from './pages/NotificationsPage'
 import { OAuthCallbackPage } from './pages/OAuthCallbackPage'
 import { OrganizationsPage } from './pages/OrganizationsPage'
 import { OtpPage } from './pages/OtpPage'
+import { PluginsPage } from './pages/PluginsPage'
 import { ProjectPage } from './pages/ProjectPage'
 import { ProjectsPage } from './pages/ProjectsPage'
+import { PublicFormPage } from './pages/PublicFormPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
@@ -43,6 +47,8 @@ export default function App() {
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/auth/callback" element={<OAuthCallbackPage />} />
       <Route path="/unsubscribe" element={<UnsubscribePage />} />
+      {/* Public intake forms are open to anonymous submitters. */}
+      <Route path="/forms/:slug" element={<PublicFormPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<StandaloneLayout />}>
@@ -57,9 +63,12 @@ export default function App() {
             <Route path="projects" element={<ProjectsPage />} />
             <Route path="projects/:projectId" element={<ProjectPage />} />
             <Route path="tasks" element={<TasksPage />} />
+            <Route path="goals" element={<GoalsPage />} />
+            <Route path="dashboards" element={<DashboardsPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="automations" element={<AutomationsPage />} />
             <Route path="integrations" element={<IntegrationsPage />} />
+            <Route path="plugins" element={<PluginsPage />} />
             <Route path="timesheet" element={<TimesheetPage />} />
             <Route path="members" element={<MembersPage />} />
             <Route path="labels" element={<LabelsPage />} />

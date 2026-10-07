@@ -19,6 +19,10 @@ from app.models.base import TimeStampedMixin, UUIDMixin, utcnow
 from app.models.checklist import AssigneeRole, ChecklistItem, TaskAssignee
 from app.models.comment import Comment
 from app.models.custom_field import CustomField, CustomFieldType, CustomFieldValue
+from app.models.custom_role import CustomRole, ProjectMember
+from app.models.dashboard import Dashboard
+from app.models.form import Form, FormSubmission
+from app.models.goal import Goal, GoalLink
 from app.models.idempotency import IdempotencyKey, IdempotencyStatus
 from app.models.integration import (
     Integration,
@@ -27,6 +31,7 @@ from app.models.integration import (
     IntegrationProvider,
 )
 from app.models.label import Label
+from app.models.mfa import MfaCredential
 from app.models.notification import Notification, NotificationType
 from app.models.notification_mute import NotificationMute
 from app.models.notification_preference import (
@@ -41,12 +46,15 @@ from app.models.organization import (
     MembershipRole,
     Organization,
 )
+from app.models.plugin import Plugin
 from app.models.project import EstimationUnit, Project, ProjectStatus
+from app.models.push import PushSubscription
 from app.models.reaction import CommentReaction
 from app.models.release import Release, ReleaseStatus
 from app.models.saved_filter import SavedFilter
 from app.models.sprint import Sprint, SprintState
 from app.models.sprint_capacity import SprintCapacity
+from app.models.sso import ScimToken, SsoConfig
 from app.models.task import (
     Task,
     TaskLabelLink,
@@ -82,9 +90,15 @@ __all__ = [
     "CustomField",
     "CustomFieldType",
     "CustomFieldValue",
+    "CustomRole",
+    "Dashboard",
     "DeliveryStatus",
     "DigestCadence",
     "EstimationUnit",
+    "Form",
+    "FormSubmission",
+    "Goal",
+    "GoalLink",
     "IdempotencyKey",
     "IdempotencyStatus",
     "Integration",
@@ -96,6 +110,7 @@ __all__ = [
     "Label",
     "Membership",
     "MembershipRole",
+    "MfaCredential",
     "Notification",
     "NotificationMute",
     "NotificationPreference",
@@ -103,16 +118,21 @@ __all__ = [
     "OAuthApp",
     "OAuthToken",
     "Organization",
+    "Plugin",
     "Project",
+    "ProjectMember",
     "ProjectStatus",
     "ProjectTemplate",
+    "PushSubscription",
     "Release",
     "ReleaseStatus",
     "SavedFilter",
+    "ScimToken",
     "ServiceAccount",
     "Sprint",
     "SprintCapacity",
     "SprintState",
+    "SsoConfig",
     "SwimlaneBy",
     "Task",
     "TaskAssignee",

@@ -56,14 +56,16 @@ async def register(
 # OAuth2PasswordRequestForm == x-www-form-urlencoded with "username"/"password".
 # That is what the Swagger "Authorize" button submits, which is why login is
 # form-encoded instead of JSON.
-@router.post("/login", response_model=Token, summary="Login (OAuth2 password flow)")
+# No response_model: MFA-enabled users get {"mfa_required", "mfa_token"}
+# (HTTP 200) while everyone else gets the regular TokenPair body unchanged.
+@router.post("/login", summary="Login (OAuth2 password flow)")
 async def login(
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
     request: Request,
     db: DB,
     redis_client: RedisDep,
     _rl: None = Depends(ip_rate_limiter("auth_ip")),
-) -> Token:
+) -> dict:
     return await auth.login(db, redis_client, form.username, form.password, ip=_ip(request))
 
 

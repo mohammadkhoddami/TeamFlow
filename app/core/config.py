@@ -138,6 +138,11 @@ class Settings(BaseSettings):
     # with a system proxy that cannot reach internal/receiver URLs.
     webhook_httpx_trust_env: bool = True
 
+    # --- Web push (optional; empty keys disable delivery gracefully) ---
+    push_vapid_public_key: str = ""
+    push_vapid_private_key: str = ""
+    push_subject: str = "mailto:admin@example.com"
+
     # --- HTTP client ---
     http_timeout_seconds: float = 10.0
 

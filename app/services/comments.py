@@ -24,7 +24,7 @@ from app.models import (
 )
 from app.repositories import CommentRepository, ProjectRepository, UserRepository
 from app.schemas import CommentCreate, CommentRead, CommentUpdate
-from app.services import activities, audit, automations, events, preferences
+from app.services import activities, audit, automations, events, plugins, preferences
 from app.services import reactions as reaction_service
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
@@ -146,6 +146,9 @@ async def create_comment(
         db, organization_id=org.id, event="comment.created", data=payload
     )
     await events.dispatch_integrations(
+        db, organization_id=org.id, event="comment.created", data=payload
+    )
+    await plugins.dispatch_plugins(
         db, organization_id=org.id, event="comment.created", data=payload
     )
 

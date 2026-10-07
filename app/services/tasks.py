@@ -73,6 +73,8 @@ from app.services import (
     automations,
     cache,
     events,
+    permissions,
+    plugins,
     preferences,
     recurrence,
     workflows,
@@ -104,10 +106,12 @@ STATUS_TRANSITIONS: dict[str, set[str]] = {
 }
 
 
-def _can_delete(membership: Membership, task: Task, actor: User) -> bool:
-    if membership.role != MembershipRole.MEMBER:
+async def _can_delete(
+    db: AsyncSession, membership: Membership, task: Task, actor: User
+) -> bool:
+    if task.created_by_id == actor.id:
         return True
-    return task.created_by_id == actor.id
+    return await permissions.has_permission(db, membership, "tasks.delete")
 
 
 def _type_level(task_type: str) -> int:
@@ -486,6 +490,9 @@ async def create_task(
     await events.dispatch_integrations(
         db, organization_id=org.id, event="task.created", data=payload
     )
+    await plugins.dispatch_plugins(
+        db, organization_id=org.id, event="task.created", data=payload
+    )
     for user_id, _role in assignee_entries:
         if user_id == actor.id:
             continue
@@ -682,6 +689,9 @@ async def update_task(
         db, organization_id=org.id, event=event_type, data=payload
     )
     await events.dispatch_integrations(
+        db, organization_id=org.id, event=event_type, data=payload
+    )
+    await plugins.dispatch_plugins(
         db, organization_id=org.id, event=event_type, data=payload
     )
     if "assignee_id" in changed and task.assignee_id and task.assignee_id != actor.id:
@@ -1007,9 +1017,9 @@ async def delete_task(
     task: Task,
     ip: str | None = None,
 ) -> None:
-    if not _can_delete(membership, task, actor):
+    if not await _can_delete(db, membership, task, actor):
         raise PermissionDeniedError(
-            "Only managers and above (or the creator) can delete tasks"
+            "Only users with the tasks.delete permission (or the creator) can delete tasks"
         )
     await audit.log(
         db, AuditAction.TASK_DELETED, actor_id=actor.id,

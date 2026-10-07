@@ -76,6 +76,10 @@ class Project(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     wip_enforced: bool = Field(
         sa_column=Column(Boolean, nullable=False, server_default="false")
     )
+    visibility: str = Field(
+        default="workspace",
+        sa_column=Column(String(16), nullable=False, server_default="workspace"),
+    )
     owner_id: uuid.UUID | None = Field(
         default=None,
         sa_column=Column(

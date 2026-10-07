@@ -171,8 +171,12 @@ M3 adds threaded comments/reactions/activity, notification mutes, the
 automation engine (conditions, actions, schedule runs, failure logging),
 API tokens/service accounts/OAuth grants, releases/roadmap/calendar,
 VCS + chat + calendar integrations, and cursor-pagination + query-budget
-tests (`tests/integration/test_m3_*.py`). The frontend has Vitest coverage
-for the Markdown (tables/images) and utility layers (`npm test`).
+tests (`tests/integration/test_m3_*.py`). M4 adds MFA (TOTP + recovery),
+OIDC SSO + SCIM provisioning, custom roles/permissions with private project
+visibility, audit export + retention, goals/OKR roll-ups, dashboards, public
+intake forms, the heuristic AI breakdown, plugins and push subscriptions
+(`tests/integration/test_m4_*.py`). The frontend has Vitest coverage for the
+Markdown (tables/images), i18n and theming layers (`npm test`).
 
 ## Agile features (M1)
 
@@ -281,6 +285,57 @@ Phase 3 makes TeamFlow a collaboration hub and opens it to the ecosystem:
 - **Performance & scale proof** — cursor (keyset) pagination on
   `GET /organizations/{slug}/tasks/cursor`, query budgets enforced by tests,
   a k6 load-test script and documented targets in `docs/performance.md`.
+
+## Enterprise & moat (M4)
+
+Phase 4 makes TeamFlow enterprise-ready and opens the ecosystem:
+
+- **SSO & provisioning** — generic OIDC enterprise SSO per workspace
+  (discovery, PKCE, JWKS-verified ID tokens, auto-provisioning with a default
+  role) and SCIM 2.0 user provisioning (`/api/v1/scim/v2/Users` +
+  ServiceProviderConfig/Schemas) with per-org bearer tokens.
+  `GET /auth/sso/{slug}/config|start|callback`, `GET/PUT
+  /organizations/{slug}/sso`, `GET/POST/DELETE /organizations/{slug}/scim-tokens`.
+- **MFA** — TOTP (RFC 6238, stdlib) with one-time recovery codes and a
+  two-phase login challenge; enrollment/enable/disable endpoints and
+  session revocation via logout-all.
+  `GET /auth/mfa`, `POST /auth/mfa/setup|enable|disable|verify`.
+- **Granular permissions** — custom roles (permission catalog:
+  tasks.delete/tasks.manage/projects.manage/members.manage/org.manage/
+  audit.view/integrations.manage), membership-bound custom roles, private
+  projects with project-level membership (viewer/member/manager) and
+  concealment (404) for non-members. `GET/POST /organizations/{slug}/roles`,
+  `GET/POST/PATCH/DELETE /projects/{id}/members`.
+- **Audit & compliance** — configurable per-org audit retention with a
+  cleanup job, tamper-evident export (sha256 hash chain) as CSV or JSON, and
+  compliance notes. `GET /organizations/{slug}/audit-logs/export`.
+- **Dashboard builder** — configurable org/project dashboards with widget
+  types (stats, status mix, per-member load, overdue list, activity) and a
+  server-rendered data endpoint. `/organizations/{slug}/dashboards/*`.
+- **Goals / OKRs** — objectives with due dates and statuses linked to
+  epics/tasks with automatic progress roll-up. `/organizations/{slug}/goals`.
+- **Forms / request intake** — public or private forms per project with typed
+  fields and required-field validation; submissions create real tasks.
+  `/projects/{id}/forms`, public `GET/POST /forms/{slug}`.
+- **AI-native features (heuristic, no external provider)** — natural-language
+  work breakdown that proposes an epic/story/task tree from a description and
+  materializes it with hierarchy rules. `POST
+  /organizations/{slug}/ai/breakdown` and `.../apply`.
+- **Mobile & PWA** — installable manifest + service worker (offline app
+  shell, push/notificationclick handlers) and web-push subscription
+  management; `pywebpush` optional behind VAPID settings.
+  `/notifications/push/*`.
+- **i18n, RTL & Jalali** — locale framework (English/Persian chrome),
+  automatic RTL layout for `fa`, and locale-aware Jalali dates via `Intl`;
+  locale persists per user (`PATCH /auth/me`).
+- **Theming** — org accent color applied live to the design tokens plus
+  workspace-level audit retention settings (dark mode shipped in M1).
+- **Plugin API & directory** — first-party directory with one-click install,
+  per-plugin signing secrets, event subscriptions and HMAC webhook delivery
+  via Celery. `/organizations/{slug}/plugins`, `.../plugins/directory`.
+- **Expanded MCP coverage** — the MCP server now exposes 26 tools including
+  sprints, releases, roadmap, calendar, automations, goals, forms and
+  dashboards, and accepts `TEAMFLOW_TOKEN`.
 
 ## Key behaviors
 

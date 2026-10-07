@@ -76,6 +76,8 @@ celery_app.conf.task_routes = {
     "teamflow.deliver_webhook": {"queue": "webhooks"},
     "teamflow.post_webhook_url": {"queue": "webhooks"},
     "teamflow.deliver_integration": {"queue": "webhooks"},
+    "teamflow.deliver_plugin": {"queue": "webhooks"},
+    # teamflow.send_push intentionally stays on the default queue.
 }
 
 # Long-lived HTTP client for webhook delivery, one per worker process.

@@ -36,8 +36,10 @@ from app.models import (
     Comment,
     Label,
     Membership,
+    MembershipRole,
     Organization,
     Project,
+    ProjectMember,
     Sprint,
     Task,
     User,
@@ -127,6 +129,23 @@ async def get_org_membership(
 OrgMembership = Annotated[tuple[Organization, Membership], Depends(get_org_membership)]
 
 
+async def _assert_project_visible(
+    db: DB, project: Project, membership: Membership
+) -> None:
+    """Private projects are concealed (404) from non-admin members without an
+    explicit `project_members` row."""
+    if project.visibility != "private":
+        return
+    if membership.role in (MembershipRole.ADMIN, MembershipRole.OWNER):
+        return
+    statement = select(ProjectMember.id).where(
+        ProjectMember.project_id == project.id,
+        ProjectMember.user_id == membership.user_id,
+    )
+    if (await db.execute(statement)).scalars().first() is None:
+        raise NotFoundError("Project not found")
+
+
 async def get_project_access(
     project_id: uuid.UUID, current_user: CurrentUser, db: DB
 ) -> tuple[Project, Organization, Membership]:
@@ -141,6 +160,7 @@ async def get_project_access(
     )
     if not membership or not membership.is_active:
         raise NotFoundError("Project not found")
+    await _assert_project_visible(db, project, membership)
     org = await OrganizationRepository(db).get(project.organization_id)
     if not org:
         raise NotFoundError("Project not found")
@@ -167,6 +187,12 @@ async def get_task_access(
     )
     if not membership or not membership.is_active:
         raise NotFoundError("Task not found")
+    project = (
+        await db.execute(select(Project).where(Project.id == task.project_id))
+    ).scalar_one_or_none()
+    if not project:
+        raise NotFoundError("Task not found")
+    await _assert_project_visible(db, project, membership)
     org = await OrganizationRepository(db).get(task.organization_id)
     if not org:
         raise NotFoundError("Task not found")

@@ -6,6 +6,7 @@ import {
   Columns3,
   Download,
   FileDown,
+  FileText,
   LayoutGrid,
   Network,
   Plus,
@@ -13,12 +14,15 @@ import {
   Save,
   Settings2,
   SlidersHorizontal,
+  Users,
   Workflow,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { useOrg } from '../components/OrgLayout'
+import { FormsManager } from '../components/FormsManager'
+import { ProjectMembersModal } from '../components/ProjectMembersModal'
 import { BacklogView } from '../components/tasks/BacklogView'
 import { BoardManager } from '../components/tasks/BoardManager'
 import { CalendarView } from '../components/tasks/CalendarView'
@@ -102,9 +106,9 @@ export function ProjectPage() {
   const [createStatus, setCreateStatus] = useState<string>('todo')
   const [createParent, setCreateParent] = useState<TaskRead | null>(null)
   const [createType, setCreateType] = useState<TaskType>('task')
-  const [view, setView] = useState<'board' | 'tree' | 'backlog' | 'roadmap' | 'calendar'>(
-    'board',
-  )
+  const [view, setView] = useState<
+    'board' | 'tree' | 'backlog' | 'roadmap' | 'calendar' | 'forms'
+  >('board')
   const [showSubtasks, setShowSubtasks] = useState(true)
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -112,6 +116,7 @@ export function ProjectPage() {
   const [managingWorkflow, setManagingWorkflow] = useState(false)
   const [managingBoards, setManagingBoards] = useState(false)
   const [managingFields, setManagingFields] = useState(false)
+  const [managingMembers, setManagingMembers] = useState(false)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [templateName, setTemplateName] = useState('')
 
@@ -120,6 +125,7 @@ export function ProjectPage() {
   const [status, setStatus] = useState<'active' | 'archived'>('active')
   const [projectKey, setProjectKey] = useState('')
   const [estimationUnit, setEstimationUnit] = useState<'none' | 'points' | 'hours'>('points')
+  const [visibility, setVisibility] = useState<'workspace' | 'private'>('workspace')
 
   const boardTasks = tasks.data
     ? showSubtasks
@@ -135,6 +141,7 @@ export function ProjectPage() {
       setStatus(project.data.status)
       setProjectKey(project.data.key ?? '')
       setEstimationUnit(project.data.estimation_unit ?? 'points')
+      setVisibility(project.data.visibility ?? 'workspace')
     }
   }, [project.data, editing])
 
@@ -192,6 +199,7 @@ export function ProjectPage() {
         status,
         key: projectKey.trim() ? projectKey.trim().toUpperCase() : undefined,
         estimation_unit: estimationUnit,
+        visibility,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['projects', projectId] })
@@ -339,6 +347,18 @@ export function ProjectPage() {
               >
                 <CalendarDays className="h-3.5 w-3.5" /> Calendar
               </button>
+              <button
+                type="button"
+                onClick={() => setView('forms')}
+                className={cn(
+                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  view === 'forms'
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-500 hover:text-slate-700',
+                )}
+              >
+                <FileText className="h-3.5 w-3.5" /> Forms
+              </button>
             </div>
             {view === 'board' && (
               <>
@@ -402,6 +422,9 @@ export function ProjectPage() {
             )}
             {canManage(role) && (
               <>
+                <Button variant="secondary" size="sm" onClick={() => setManagingMembers(true)}>
+                  <Users className="h-3.5 w-3.5" /> Members
+                </Button>
                 <Button variant="secondary" size="sm" onClick={() => setManagingWorkflow(true)}>
                   <Workflow className="h-3.5 w-3.5" /> Workflow
                 </Button>
@@ -473,6 +496,8 @@ export function ProjectPage() {
         projectId ? <RoadmapView projectId={projectId} /> : null
       ) : view === 'calendar' ? (
         projectId ? <CalendarView projectId={projectId} /> : null
+      ) : view === 'forms' ? (
+        projectId ? <FormsManager projectId={projectId} /> : null
       ) : (
         <>
           {tree.isLoading && <PageSpinner label="Loading hierarchy…" />}
@@ -550,6 +575,20 @@ export function ProjectPage() {
               <option value="archived">Archived</option>
             </Select>
           </Field>
+          <Field
+            label="Visibility"
+            hint="Private projects are only visible to the owner and explicit members"
+          >
+            <Select
+              value={visibility}
+              onChange={(event) =>
+                setVisibility(event.target.value as 'workspace' | 'private')
+              }
+            >
+              <option value="workspace">Workspace — everyone can see it</option>
+              <option value="private">Private — members only</option>
+            </Select>
+          </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Issue key" hint="Prefix for new tasks, e.g. TEAM-42">
               <Input
@@ -614,6 +653,11 @@ export function ProjectPage() {
             projectId={projectId}
             open={managingFields}
             onClose={() => setManagingFields(false)}
+          />
+          <ProjectMembersModal
+            projectId={projectId}
+            open={managingMembers}
+            onClose={() => setManagingMembers(false)}
           />
           <Modal
             open={savingTemplate}

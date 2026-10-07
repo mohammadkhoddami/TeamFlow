@@ -7,10 +7,19 @@ import App from './App.tsx'
 import { AuthProvider } from './contexts/auth.tsx'
 import { ToastProvider } from './contexts/toast.tsx'
 import { ApiError } from './lib/api.ts'
+import { LocaleProvider } from './lib/i18n.tsx'
 import { initTheme } from './lib/theme.ts'
 import './index.css'
 
 initTheme()
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`)
+      .catch(() => undefined)
+  })
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,11 +40,13 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       {/* BASE_URL is '/flow/' in production and '/' in local dev. */}
       <BrowserRouter basename={import.meta.env.BASE_URL}>
-        <ToastProvider>
-          <AuthProvider>
-            <App />
-          </AuthProvider>
-        </ToastProvider>
+        <LocaleProvider>
+          <ToastProvider>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </ToastProvider>
+        </LocaleProvider>
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,

@@ -1,12 +1,16 @@
-"""Notification routes: inbox list, unread count, mark read, project mutes."""
+"""Notification routes: inbox list, unread count, mark read, project mutes,
+web-push subscriptions."""
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+from sqlmodel import select
 
 from app.api.deps import DB, CurrentUser
 from app.core.exceptions import NotFoundError
+from app.models import PushSubscription
 from app.repositories import MembershipRepository, OrganizationRepository, ProjectRepository
 from app.schemas import (
     NotificationMuteCreate,
@@ -23,6 +27,27 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 class MarkAllReadResult(BaseModel):
     marked: int
+
+
+class PushKeys(BaseModel):
+    p256dh: str = Field(min_length=1, max_length=512)
+    auth: str = Field(min_length=1, max_length=512)
+
+
+class PushSubscribeRequest(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=512)
+    keys: PushKeys
+    user_agent: str | None = Field(default=None, max_length=255)
+
+
+class PushSubscriptionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    endpoint: str
+    keys: dict
+    user_agent: str | None
+    created_at: datetime
 
 
 @router.get("", response_model=Page[NotificationRead])
@@ -95,4 +120,65 @@ async def mark_read(
 @router.post("/read-all", response_model=MarkAllReadResult)
 async def mark_all_read(current_user: CurrentUser, db: DB) -> MarkAllReadResult:
     return MarkAllReadResult(marked=await notification_service.mark_all_read(db, current_user))
+
+
+# --- Web push subscriptions (per user, one row per browser endpoint) --------
+
+
+@router.get("/push/subscriptions", response_model=list[PushSubscriptionRead])
+async def list_push_subscriptions(
+    current_user: CurrentUser, db: DB
+) -> list[PushSubscriptionRead]:
+    statement = (
+        select(PushSubscription)
+        .where(PushSubscription.user_id == current_user.id)
+        .order_by(PushSubscription.created_at.desc())
+    )
+    subscriptions = list((await db.execute(statement)).scalars().all())
+    return [
+        PushSubscriptionRead.model_validate(subscription)
+        for subscription in subscriptions
+    ]
+
+
+@router.post("/push/subscribe", response_model=PushSubscriptionRead)
+async def subscribe_push(
+    data: PushSubscribeRequest, current_user: CurrentUser, db: DB
+) -> PushSubscriptionRead:
+    """Upsert by endpoint: re-subscribing the same device updates keys and
+    (re)binds the endpoint to the current user."""
+    subscription = (
+        await db.execute(
+            select(PushSubscription).where(PushSubscription.endpoint == data.endpoint)
+        )
+    ).scalar_one_or_none()
+    if subscription is None:
+        subscription = PushSubscription(
+            user_id=current_user.id,
+            endpoint=data.endpoint,
+            keys=data.keys.model_dump(),
+            user_agent=data.user_agent,
+        )
+        db.add(subscription)
+    else:
+        subscription.user_id = current_user.id
+        subscription.keys = data.keys.model_dump()
+        if data.user_agent is not None:
+            subscription.user_agent = data.user_agent
+    await db.commit()
+    await db.refresh(subscription)
+    return PushSubscriptionRead.model_validate(subscription)
+
+
+@router.delete(
+    "/push/subscriptions/{subscription_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_push_subscription(
+    subscription_id: uuid.UUID, current_user: CurrentUser, db: DB
+) -> None:
+    subscription = await db.get(PushSubscription, subscription_id)
+    if subscription is None or subscription.user_id != current_user.id:
+        raise NotFoundError("Push subscription not found")
+    await db.delete(subscription)
+    await db.commit()
 

@@ -1,6 +1,9 @@
 import { SESSION_EXPIRED_EVENT, tokens } from './tokens'
 import type {
   ActivityRead,
+  AiApplyResult,
+  AiBreakdownItem,
+  AiBreakdownProposal,
   ApiTokenCreated,
   ApiTokenRead,
   ApiTokenUsage,
@@ -23,18 +26,32 @@ import type {
   CommentRead,
   CursorPage,
   CustomFieldRead,
+  CustomRoleInput,
+  CustomRoleRead,
   CycleTimeReport,
+  DashboardData,
+  DashboardInput,
+  DashboardRead,
   DashboardStats,
   DownloadGrant,
   EstimationUnit,
+  FormInput,
+  FormRead,
+  FormSubmissionRead,
+  FormSubmitted,
+  GoalInput,
+  GoalRead,
   ImportSummary,
   IntegrationCreated,
   IntegrationEventRead,
   IntegrationRead,
   InvitationRead,
   LabelRead,
+  LoginResponse,
   MembershipRead,
   MembershipRole,
+  MfaSetup,
+  MfaStatus,
   NotificationMuteRead,
   NotificationPreferenceRead,
   NotificationRead,
@@ -43,17 +60,31 @@ import type {
   OrganizationMemberRead,
   OrganizationRead,
   Page,
+  PluginCreated,
+  PluginDirectoryEntry,
+  PluginInstallInput,
+  PluginRead,
+  ProjectMemberRead,
+  ProjectMemberRole,
   ProjectRead,
   ProjectTemplateRead,
+  PublicFormRead,
+  PushSubscribeInput,
+  PushSubscriptionRead,
   ReactionSummary,
   ReleaseRead,
   ReleaseStatus,
   RoadmapResponse,
   SavedFilterRead,
+  ScimTokenCreated,
+  ScimTokenRead,
   SearchResponse,
   ServiceAccountRead,
   SprintRead,
   SprintReport,
+  SsoConfigInput,
+  SsoConfigRead,
+  SsoPublicConfig,
   TaskAssigneeRead,
   TaskLinkSummary,
   TaskPriority,
@@ -295,15 +326,23 @@ export const authApi = {
       retryOn401: false,
     }),
 
-  async login(email: string, password: string): Promise<TokenPair> {
+  async login(email: string, password: string): Promise<LoginResponse> {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ username: email, password }).toString(),
     })
     if (!response.ok) throw await toApiError(response)
-    return (await response.json()) as TokenPair
+    return (await response.json()) as LoginResponse
   },
+
+  verifyMfa: (mfaToken: string, code: string) =>
+    request<TokenPair>('/auth/mfa/verify', {
+      method: 'POST',
+      body: { mfa_token: mfaToken, code },
+      auth: false,
+      retryOn401: false,
+    }),
 
   requestOtp: (email: string) =>
     request<{ detail: string }>('/auth/otp/request', {
@@ -334,7 +373,7 @@ export const authApi = {
 
   me: () => request<UserRead>('/auth/me'),
 
-  updateMe: (data: { email?: string; full_name?: string }) =>
+  updateMe: (data: { email?: string; full_name?: string; locale?: string }) =>
     request<UserRead>('/auth/me', { method: 'PATCH', body: data }),
 
   logout: () =>
@@ -362,6 +401,20 @@ export const authApi = {
     }),
 }
 
+// ---------------------------------------------------------------- mfa api
+
+export const mfaApi = {
+  status: () => request<MfaStatus>('/auth/mfa'),
+
+  setup: () => request<MfaSetup>('/auth/mfa/setup', { method: 'POST' }),
+
+  enable: (code: string) =>
+    request<MfaStatus>('/auth/mfa/enable', { method: 'POST', body: { code } }),
+
+  disable: (code: string) =>
+    request<void>('/auth/mfa/disable', { method: 'POST', body: { code } }),
+}
+
 // ------------------------------------------------------- organizations api
 
 export const organizationsApi = {
@@ -375,7 +428,15 @@ export const organizationsApi = {
   create: (data: { name: string; slug: string }) =>
     request<OrganizationRead>('/organizations', { method: 'POST', body: data }),
 
-  update: (slug: string, data: { name?: string; is_active?: boolean }) =>
+  update: (
+    slug: string,
+    data: {
+      name?: string
+      is_active?: boolean
+      accent_color?: string | null
+      audit_retention_days?: number | null
+    },
+  ) =>
     request<OrganizationRead>(`/organizations/${slug}`, {
       method: 'PATCH',
       body: data,
@@ -396,10 +457,14 @@ export const membersApi = {
       body: data,
     }),
 
-  updateRole: (slug: string, userId: string, role: string) =>
+  updateRole: (
+    slug: string,
+    userId: string,
+    data: { role?: string; custom_role_id?: string | null },
+  ) =>
     request<MembershipRead>(`/organizations/${slug}/members/${userId}`, {
       method: 'PATCH',
-      body: { role },
+      body: data,
     }),
 
   remove: (slug: string, userId: string) =>
@@ -456,6 +521,7 @@ export const projectsApi = {
       status?: 'active' | 'archived'
       key?: string
       estimation_unit?: EstimationUnit
+      visibility?: 'workspace' | 'private'
     },
   ) =>
     request<ProjectRead>(`/projects/${projectId}`, { method: 'PATCH', body: data }),
@@ -722,6 +788,20 @@ export const notificationsApi = {
 
   removeMute: (projectId: string) =>
     request<void>(`/notifications/mutes/${projectId}`, { method: 'DELETE' }),
+
+  pushSubscriptions: () =>
+    request<PushSubscriptionRead[]>('/notifications/push/subscriptions'),
+
+  subscribePush: (data: PushSubscribeInput) =>
+    request<PushSubscriptionRead>('/notifications/push/subscribe', {
+      method: 'POST',
+      body: data,
+    }),
+
+  unsubscribePush: (subscriptionId: string) =>
+    request<void>(`/notifications/push/subscriptions/${subscriptionId}`, {
+      method: 'DELETE',
+    }),
 }
 
 // ------------------------------------------------------------- labels api
@@ -785,6 +865,24 @@ export const auditApi = {
     request<Page<AuditLogRead>>(
       `/organizations/${slug}/audit-logs${buildQuery(params as Record<string, QueryValue>)}`,
     ),
+
+  exportUrl: (slug: string, format: 'csv' | 'json') =>
+    `${API_BASE_URL}/organizations/${slug}/audit-logs/export${buildQuery({ format })}`,
+
+  async downloadExport(slug: string, format: 'csv' | 'json'): Promise<void> {
+    const access = tokens.getAccess()
+    const response = await fetch(
+      `${API_BASE_URL}/organizations/${slug}/audit-logs/export${buildQuery({ format })}`,
+      { headers: access ? { Authorization: `Bearer ${access}` } : {} },
+    )
+    if (!response.ok) throw await toApiError(response)
+    const text = await response.text()
+    downloadBlob(
+      text,
+      `teamflow-${slug}-audit.${format}`,
+      format === 'json' ? 'application/json' : 'text/csv',
+    )
+  },
 }
 
 // ---------------------------------------------------------- dashboard api
@@ -1404,6 +1502,241 @@ export const tokensApi = {
 
   removeOAuthApp: (slug: string, appId: string) =>
     request<void>(`/organizations/${slug}/oauth-apps/${appId}`, { method: 'DELETE' }),
+}
+
+// ------------------------------------------------------------ M4 sso/scim
+
+export const ssoApi = {
+  publicConfig: (slug: string) =>
+    request<SsoPublicConfig>(`/auth/sso/${slug}/config`, {
+      auth: false,
+      retryOn401: false,
+    }),
+
+  // Browser navigation target that kicks off the OIDC redirect.
+  startUrl: (slug: string): string => `${API_BASE_URL}/auth/sso/${slug}/start`,
+
+  getConfig: (slug: string) =>
+    request<SsoConfigRead>(`/organizations/${slug}/sso`),
+
+  updateConfig: (slug: string, data: SsoConfigInput) =>
+    request<SsoConfigRead>(`/organizations/${slug}/sso`, {
+      method: 'PUT',
+      body: data,
+    }),
+}
+
+export const scimApi = {
+  listTokens: (slug: string) =>
+    request<ScimTokenRead[]>(`/organizations/${slug}/scim-tokens`),
+
+  createToken: (slug: string, name: string) =>
+    request<ScimTokenCreated>(`/organizations/${slug}/scim-tokens`, {
+      method: 'POST',
+      body: { name },
+    }),
+
+  revokeToken: (slug: string, tokenId: string) =>
+    request<void>(`/organizations/${slug}/scim-tokens/${tokenId}`, {
+      method: 'DELETE',
+    }),
+}
+
+// --------------------------------------------------------------- roles api
+
+export const rolesApi = {
+  list: (slug: string) =>
+    request<CustomRoleRead[]>(`/organizations/${slug}/roles`),
+
+  create: (slug: string, data: CustomRoleInput) =>
+    request<CustomRoleRead>(`/organizations/${slug}/roles`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  update: (slug: string, roleId: string, data: Partial<CustomRoleInput>) =>
+    request<CustomRoleRead>(`/organizations/${slug}/roles/${roleId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  remove: (slug: string, roleId: string) =>
+    request<void>(`/organizations/${slug}/roles/${roleId}`, { method: 'DELETE' }),
+}
+
+// ------------------------------------------------------ project members api
+
+export const projectMembersApi = {
+  list: (projectId: string) =>
+    request<ProjectMemberRead[]>(`/projects/${projectId}/members`),
+
+  add: (
+    projectId: string,
+    data: { user_email: string; role: ProjectMemberRole },
+  ) =>
+    request<ProjectMemberRead>(`/projects/${projectId}/members`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  update: (projectId: string, userId: string, role: ProjectMemberRole) =>
+    request<ProjectMemberRead>(`/projects/${projectId}/members/${userId}`, {
+      method: 'PATCH',
+      body: { role },
+    }),
+
+  remove: (projectId: string, userId: string) =>
+    request<void>(`/projects/${projectId}/members/${userId}`, { method: 'DELETE' }),
+}
+
+// --------------------------------------------------------------- goals api
+
+export const goalsApi = {
+  list: (slug: string) => request<GoalRead[]>(`/organizations/${slug}/goals`),
+
+  get: (slug: string, goalId: string) =>
+    request<GoalRead>(`/organizations/${slug}/goals/${goalId}`),
+
+  create: (slug: string, data: GoalInput) =>
+    request<GoalRead>(`/organizations/${slug}/goals`, { method: 'POST', body: data }),
+
+  update: (slug: string, goalId: string, data: Partial<GoalInput>) =>
+    request<GoalRead>(`/organizations/${slug}/goals/${goalId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  remove: (slug: string, goalId: string) =>
+    request<void>(`/organizations/${slug}/goals/${goalId}`, { method: 'DELETE' }),
+
+  linkTasks: (slug: string, goalId: string, taskIds: string[]) =>
+    request<GoalRead>(`/organizations/${slug}/goals/${goalId}/tasks`, {
+      method: 'POST',
+      body: { task_ids: taskIds },
+    }),
+
+  unlinkTask: (slug: string, goalId: string, taskId: string) =>
+    request<GoalRead>(`/organizations/${slug}/goals/${goalId}/tasks/${taskId}`, {
+      method: 'DELETE',
+    }),
+}
+
+// ---------------------------------------------------------- dashboards api
+
+export const dashboardsApi = {
+  list: (slug: string) =>
+    request<DashboardRead[]>(`/organizations/${slug}/dashboards`),
+
+  get: (slug: string, dashboardId: string) =>
+    request<DashboardRead>(`/organizations/${slug}/dashboards/${dashboardId}`),
+
+  create: (slug: string, data: DashboardInput) =>
+    request<DashboardRead>(`/organizations/${slug}/dashboards`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  update: (slug: string, dashboardId: string, data: Partial<DashboardInput>) =>
+    request<DashboardRead>(`/organizations/${slug}/dashboards/${dashboardId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  remove: (slug: string, dashboardId: string) =>
+    request<void>(`/organizations/${slug}/dashboards/${dashboardId}`, {
+      method: 'DELETE',
+    }),
+
+  data: (slug: string, dashboardId: string) =>
+    request<DashboardData>(`/organizations/${slug}/dashboards/${dashboardId}/data`),
+}
+
+// --------------------------------------------------------------- forms api
+
+export const formsApi = {
+  list: (projectId: string) =>
+    request<FormRead[]>(`/projects/${projectId}/forms`),
+
+  create: (projectId: string, data: FormInput) =>
+    request<FormRead>(`/projects/${projectId}/forms`, { method: 'POST', body: data }),
+
+  update: (projectId: string, formId: string, data: Partial<FormInput>) =>
+    request<FormRead>(`/projects/${projectId}/forms/${formId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  remove: (projectId: string, formId: string) =>
+    request<void>(`/projects/${projectId}/forms/${formId}`, { method: 'DELETE' }),
+
+  submissions: (projectId: string, formId: string) =>
+    request<FormSubmissionRead[]>(
+      `/projects/${projectId}/forms/${formId}/submissions`,
+    ),
+
+  publicGet: (slug: string) =>
+    request<PublicFormRead>(`/forms/${slug}`, { auth: false, retryOn401: false }),
+
+  submit: (slug: string, data: Record<string, unknown>) =>
+    request<FormSubmitted>(`/forms/${slug}`, {
+      method: 'POST',
+      body: { data },
+      auth: false,
+      retryOn401: false,
+    }),
+}
+
+// ------------------------------------------------------------- plugins api
+
+export const pluginsApi = {
+  directory: (slug: string) =>
+    request<PluginDirectoryEntry[]>(`/organizations/${slug}/plugins/directory`),
+
+  list: (slug: string) => request<PluginRead[]>(`/organizations/${slug}/plugins`),
+
+  install: (slug: string, data: PluginInstallInput) =>
+    request<PluginCreated>(`/organizations/${slug}/plugins`, {
+      method: 'POST',
+      body: data,
+    }),
+
+  update: (
+    slug: string,
+    pluginId: string,
+    data: Partial<{
+      name: string
+      description: string
+      webhook_url: string
+      events: string[]
+      is_active: boolean
+    }>,
+  ) =>
+    request<PluginRead>(`/organizations/${slug}/plugins/${pluginId}`, {
+      method: 'PATCH',
+      body: data,
+    }),
+
+  remove: (slug: string, pluginId: string) =>
+    request<void>(`/organizations/${slug}/plugins/${pluginId}`, { method: 'DELETE' }),
+}
+
+// ------------------------------------------------------------------ ai api
+
+export const aiApi = {
+  breakdown: (slug: string, description: string) =>
+    request<AiBreakdownProposal>(`/organizations/${slug}/ai/breakdown`, {
+      method: 'POST',
+      body: { description },
+    }),
+
+  apply: (
+    slug: string,
+    data: { project_id: string; parent_id?: string | null; items: AiBreakdownItem[] },
+  ) =>
+    request<AiApplyResult>(`/organizations/${slug}/ai/breakdown/apply`, {
+      method: 'POST',
+      body: data,
+    }),
 }
 
 export const API_BASE = API_BASE_URL

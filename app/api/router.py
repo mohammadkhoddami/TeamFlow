@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.routes import (
     activities,
+    ai,
     api_tokens,
     attachments,
     audit,
@@ -15,21 +16,30 @@ from app.api.routes import (
     comments,
     custom_fields,
     dashboard,
+    dashboards,
     data,
+    forms,
+    goals,
     health,
     integrations,
     invitations,
     labels,
     links,
+    mfa,
     notifications,
     organizations,
+    plugins,
     preferences,
+    project_members,
     projects,
     releases,
     reports,
+    roles,
     saved_filters,
+    scim,
     search,
     sprints,
+    sso,
     tasks,
     templates,
     webhooks,
@@ -87,6 +97,21 @@ api_router.include_router(notifications.router)
 api_router.include_router(webhooks.router)
 api_router.include_router(audit.audit_router)
 api_router.include_router(dashboard.dashboard_router)
+# --- M4: enterprise & moat ---
+api_router.include_router(mfa.router)
+api_router.include_router(sso.router)
+api_router.include_router(sso.org_router)
+api_router.include_router(sso.scim_token_router)
+api_router.include_router(scim.router)
+api_router.include_router(roles.router)
+api_router.include_router(project_members.router)
+api_router.include_router(goals.router)
+api_router.include_router(dashboards.router)
+api_router.include_router(forms.form_router)
+api_router.include_router(forms.public_form_router)
+api_router.include_router(plugins.router)
+api_router.include_router(ai.router)
+
 # --- M3: collaboration & ecosystem ---
 api_router.include_router(activities.task_activity_router)
 api_router.include_router(activities.project_activity_router)

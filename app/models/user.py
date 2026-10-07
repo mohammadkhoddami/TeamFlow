@@ -28,12 +28,17 @@ class User(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
         default=False,
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
+    locale: str = Field(
+        default="en",
+        sa_column=Column(String(8), nullable=False, server_default="en"),
+    )
 
     def __init__(self, **kwargs: object) -> None:
         kwargs.setdefault("full_name", "")
         kwargs.setdefault("is_active", True)
         kwargs.setdefault("is_superuser", False)
         kwargs.setdefault("is_service_account", False)
+        kwargs.setdefault("locale", "en")
         super().__init__(**kwargs)
 
     def __repr__(self) -> str:
