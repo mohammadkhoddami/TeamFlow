@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 
+import { useI18n } from '../lib/i18n'
 import { avatarColor, cn, initials } from '../lib/utils'
 
 // ---------------------------------------------------------------- Button
@@ -140,10 +141,11 @@ export function Spinner({ className }: { className?: string }) {
   )
 }
 
-export function PageSpinner({ label = 'Loading…' }: { label?: string }) {
+export function PageSpinner({ label }: { label?: string }) {
+  const { t } = useI18n()
   return (
     <div className="flex items-center justify-center gap-2 py-24 text-sm text-slate-500">
-      <Spinner className="h-5 w-5" /> {label}
+      <Spinner className="h-5 w-5" /> {label ?? t('common.loading', 'Loading…')}
     </div>
   )
 }
@@ -170,12 +172,13 @@ export function EmptyState({
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const { t } = useI18n()
   return (
     <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
       <p>{message}</p>
       {onRetry && (
         <button className="mt-1 font-medium underline" onClick={onRetry}>
-          Try again
+          {t('common.tryAgain', 'Try again')}
         </button>
       )}
     </div>
@@ -317,6 +320,7 @@ export function Modal({
   footer?: ReactNode
   size?: 'sm' | 'md' | 'lg'
 }) {
+  const { t } = useI18n()
   if (!open) return null
   const sizes = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' }
   return (
@@ -337,7 +341,7 @@ export function Modal({
           <button
             onClick={onClose}
             className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            aria-label="Close"
+            aria-label={t('common.close', 'Close')}
           >
             <X className="h-4 w-4" />
           </button>
@@ -366,6 +370,7 @@ export function Drawer({
   children: ReactNode
   wide?: boolean
 }) {
+  const { t } = useI18n()
   if (!open) return null
   return (
     <Overlay onClose={onClose} align="right">
@@ -383,7 +388,7 @@ export function Drawer({
             <button
               onClick={onClose}
               className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-              aria-label="Close"
+              aria-label={t('common.close', 'Close')}
             >
               <X className="h-4 w-4" />
             </button>
@@ -399,7 +404,7 @@ export function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = 'Delete',
+  confirmLabel,
   busy = false,
   onConfirm,
   onClose,
@@ -412,6 +417,7 @@ export function ConfirmDialog({
   onConfirm: () => void
   onClose: () => void
 }) {
+  const { t } = useI18n()
   return (
     <Modal
       open={open}
@@ -421,10 +427,10 @@ export function ConfirmDialog({
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={busy}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button variant="danger" onClick={onConfirm} loading={busy}>
-            {confirmLabel}
+            {confirmLabel ?? t('common.delete', 'Delete')}
           </Button>
         </>
       }

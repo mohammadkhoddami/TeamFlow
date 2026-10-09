@@ -6,6 +6,7 @@ import { useToast } from '../../contexts/toast'
 import { ActivityFeed } from './ActivityFeed'
 import { ApiError, releasesApi } from '../../lib/api'
 import { useReleases, useRoadmap, qk } from '../../lib/hooks'
+import { useI18n } from '../../lib/i18n'
 import type { ReleaseRead, ReleaseStatus, RoadmapEpic } from '../../lib/types'
 import { RELEASE_STATUS_BADGE, RELEASE_STATUS_LABELS } from '../../lib/types'
 import { cn, formatDate } from '../../lib/utils'
@@ -26,8 +27,9 @@ function Bar({
   rangeEnd: number
   color: string
 }) {
+  const { t } = useI18n()
   if (!start && !end) {
-    return <span className="text-xs text-slate-400">No dates</span>
+    return <span className="text-xs text-slate-400">{t('roadmap.noDates', 'No dates')}</span>
   }
   const span = Math.max(rangeEnd - rangeStart, 1)
   const startMs = start ? new Date(start).getTime() : new Date(end as string).getTime()
@@ -45,6 +47,7 @@ function Bar({
 }
 
 export function RoadmapView({ projectId }: { projectId: string }) {
+  const { t } = useI18n()
   const toast = useToast()
   const queryClient = useQueryClient()
   const releases = useReleases(projectId)
@@ -77,22 +80,22 @@ export function RoadmapView({ projectId }: { projectId: string }) {
       setReleaseOpen(false)
       setForm({ name: '', version: '', description: '', status: 'planned', release_date: '' })
       invalidate()
-      toast.success('Release created')
+      toast.success(t('roadmap.created', 'Release created'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not create release'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('roadmap.createError', 'Could not create release')),
   })
 
   const updateRelease = useMutation({
     mutationFn: ({ id, status }: { id: string; status: ReleaseStatus }) =>
       releasesApi.update(projectId, id, { status }),
     onSuccess: invalidate,
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update release'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('roadmap.updateError', 'Could not update release')),
   })
 
   const removeRelease = useMutation({
     mutationFn: (id: string) => releasesApi.remove(projectId, id),
     onSuccess: invalidate,
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete release'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('roadmap.deleteError', 'Could not delete release')),
   })
 
   const range = useMemo(() => {
@@ -127,13 +130,18 @@ export function RoadmapView({ projectId }: { projectId: string }) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-slate-800">Releases & roadmap</h2>
+          <h2 className="text-sm font-semibold text-slate-800">
+            {t('roadmap.title', 'Releases & roadmap')}
+          </h2>
           <p className="text-xs text-slate-500">
-            Scope with dates per release; epics show their delivery window.
+            {t(
+              'roadmap.subtitle',
+              'Scope with dates per release; epics show their delivery window.',
+            )}
           </p>
         </div>
         <Button size="sm" variant="secondary" onClick={() => setReleaseOpen(true)}>
-          <Plus className="h-3.5 w-3.5" /> New release
+          <Plus className="h-3.5 w-3.5" /> {t('roadmap.newRelease', 'New release')}
         </Button>
       </div>
 
@@ -161,11 +169,13 @@ export function RoadmapView({ projectId }: { projectId: string }) {
                     )}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    {release.release_date ? formatDate(release.release_date) : 'No release date'}
+                    {release.release_date
+                      ? formatDate(release.release_date)
+                      : t('roadmap.noReleaseDate', 'No release date')}
                   </p>
                 </div>
                 <Badge className={RELEASE_STATUS_BADGE[release.status]}>
-                  {RELEASE_STATUS_LABELS[release.status]}
+                  {t(`releaseStatus.${release.status}`, RELEASE_STATUS_LABELS[release.status])}
                 </Badge>
               </div>
               <div className="mt-3">
@@ -176,7 +186,11 @@ export function RoadmapView({ projectId }: { projectId: string }) {
                   />
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  {release.done_task_count}/{release.task_count} tasks done ({pct}%)
+                  {t('roadmap.tasksDone', '{done}/{total} tasks done ({pct}%)', {
+                    done: release.done_task_count,
+                    total: release.task_count,
+                    pct,
+                  })}
                 </p>
               </div>
               <div className="mt-3 flex items-center justify-between gap-2">
@@ -192,13 +206,13 @@ export function RoadmapView({ projectId }: { projectId: string }) {
                 >
                   {STATUS_OPTIONS.map((status) => (
                     <option key={status} value={status}>
-                      {RELEASE_STATUS_LABELS[status]}
+                      {t(`releaseStatus.${status}`, RELEASE_STATUS_LABELS[status])}
                     </option>
                   ))}
                 </Select>
                 <button
                   className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                  title="Delete release"
+                  title={t('roadmap.deleteRelease', 'Delete release')}
                   onClick={() => removeRelease.mutate(release.id)}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -209,7 +223,7 @@ export function RoadmapView({ projectId }: { projectId: string }) {
         })}
         {(releases.data?.length ?? 0) === 0 && !loading && (
           <p className="text-sm text-slate-400">
-            No releases yet — create one to scope a version.
+            {t('roadmap.noReleases', 'No releases yet — create one to scope a version.')}
           </p>
         )}
       </div>
@@ -218,7 +232,7 @@ export function RoadmapView({ projectId }: { projectId: string }) {
       <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
-            <CalendarRange className="h-4 w-4 text-slate-400" /> Timeline by epic
+            <CalendarRange className="h-4 w-4 text-slate-400" /> {t('roadmap.timeline', 'Timeline by epic')}
           </h3>
           <div className="flex items-center gap-2 text-[10px] text-slate-400">
             <span>{formatDate(new Date(range.start).toISOString())}</span>
@@ -276,7 +290,7 @@ export function RoadmapView({ projectId }: { projectId: string }) {
                     </div>
                   ))}
                   {epic.children.length === 0 && (
-                    <p className="text-xs text-slate-400">No child work items.</p>
+                    <p className="text-xs text-slate-400">{t('roadmap.noChildren', 'No child work items.')}</p>
                   )}
                 </div>
               )}
@@ -285,14 +299,16 @@ export function RoadmapView({ projectId }: { projectId: string }) {
         })}
         {(roadmap.data?.epics.length ?? 0) === 0 && !loading && (
           <p className="text-sm text-slate-400">
-            No epics yet — create an epic to group delivery work.
+            {t('roadmap.noEpics', 'No epics yet — create an epic to group delivery work.')}
           </p>
         )}
       </div>
 
       {(roadmap.data?.unassigned.length ?? 0) > 0 && (
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-slate-800">Unscheduled work items</h3>
+          <h3 className="text-sm font-semibold text-slate-800">
+            {t('roadmap.unscheduled', 'Unscheduled work items')}
+          </h3>
           <div className="mt-2 space-y-1">
             {roadmap.data?.unassigned.map((task) => (
               <div key={task.id} className="flex items-center justify-between text-xs">
@@ -309,52 +325,54 @@ export function RoadmapView({ projectId }: { projectId: string }) {
       )}
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-slate-800">Project activity</h3>
+        <h3 className="text-sm font-semibold text-slate-800">
+          {t('roadmap.projectActivity', 'Project activity')}
+        </h3>
         <ActivityFeed scope={{ type: 'project', id: projectId }} />
       </div>
 
       <Modal
         open={releaseOpen}
         onClose={() => setReleaseOpen(false)}
-        title="New release"
+        title={t('roadmap.newRelease', 'New release')}
         size="sm"
         footer={
           <>
             <Button variant="secondary" onClick={() => setReleaseOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={() => createRelease.mutate()}
               disabled={!form.name.trim()}
               loading={createRelease.isPending}
             >
-              Create release
+              {t('roadmap.createRelease', 'Create release')}
             </Button>
           </>
         }
       >
         <div className="space-y-3">
-          <Field label="Name">
+          <Field label={t('common.name', 'Name')}>
             <Input
               value={form.name}
               onChange={(event) => setForm({ ...form, name: event.target.value })}
-              placeholder="July release"
+              placeholder={t('roadmap.namePlaceholder', 'July release')}
             />
           </Field>
-          <Field label="Version" hint="Optional, e.g. 1.4.0">
+          <Field label={t('roadmap.version', 'Version')} hint={t('roadmap.versionHint', 'Optional, e.g. 1.4.0')}>
             <Input
               value={form.version}
               onChange={(event) => setForm({ ...form, version: event.target.value })}
             />
           </Field>
-          <Field label="Release date">
+          <Field label={t('roadmap.releaseDate', 'Release date')}>
             <Input
               type="date"
               value={form.release_date}
               onChange={(event) => setForm({ ...form, release_date: event.target.value })}
             />
           </Field>
-          <Field label="Status">
+          <Field label={t('common.status', 'Status')}>
             <Select
               value={form.status}
               onChange={(event) =>

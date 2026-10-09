@@ -12,12 +12,14 @@ import {
 import { useToast } from '../contexts/toast'
 import { ApiError, invitationsApi } from '../lib/api'
 import { qk, useMyInvitations } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import { ROLE_LABELS, type MembershipRole } from '../lib/types'
 import { formatDate } from '../lib/utils'
 
 export function InvitationsPage() {
   const invitations = useMyInvitations()
   const queryClient = useQueryClient()
+  const { t } = useI18n()
   const toast = useToast()
 
   const invalidate = () => {
@@ -29,18 +31,26 @@ export function InvitationsPage() {
     mutationFn: invitationsApi.accept,
     onSuccess: () => {
       invalidate()
-      toast.success('Invitation accepted')
+      toast.success(t('invitations.accepted', 'Invitation accepted'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not accept invite'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : t('invitations.acceptError', 'Could not accept invite'),
+      ),
   })
 
   const decline = useMutation({
     mutationFn: invitationsApi.decline,
     onSuccess: () => {
       invalidate()
-      toast.success('Invitation declined')
+      toast.success(t('invitations.declined', 'Invitation declined'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not decline invite'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : t('invitations.declineError', 'Could not decline invite'),
+      ),
   })
 
   const pending = invitations.data?.filter((invitation) => invitation.status === 'pending') ?? []
@@ -48,14 +58,18 @@ export function InvitationsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-lg font-semibold text-slate-900">My invitations</h1>
-        <p className="text-sm text-slate-500">Workspaces you've been invited to join.</p>
+        <h1 className="text-lg font-semibold text-slate-900">
+          {t('invitations.title', 'My invitations')}
+        </h1>
+        <p className="text-sm text-slate-500">
+          {t('invitations.subtitle', "Workspaces you've been invited to join.")}
+        </p>
       </div>
 
       {invitations.isLoading && <PageSpinner />}
       {invitations.isError && (
         <ErrorState
-          message="Could not load invitations."
+          message={t('invitations.loadError', 'Could not load invitations.')}
           onRetry={() => void invitations.refetch()}
         />
       )}
@@ -63,8 +77,8 @@ export function InvitationsPage() {
       {invitations.data && pending.length === 0 && (
         <EmptyState
           icon={<MailOpen className="h-8 w-8" />}
-          title="No pending invitations"
-          description="When someone invites you, it will appear here."
+          title={t('invitations.emptyTitle', 'No pending invitations')}
+          description={t('invitations.emptyBody', 'When someone invites you, it will appear here.')}
         />
       )}
 
@@ -74,14 +88,21 @@ export function InvitationsPage() {
             <div>
               <div className="flex items-center gap-2">
                 <p className="font-medium text-slate-800">
-                  {invitation.organization_name ?? 'Workspace'}
+                  {invitation.organization_name ??
+                    t('invitations.workspaceFallback', 'Workspace')}
                 </p>
                 <Badge className="bg-brand-50 text-brand-700">
-                  {ROLE_LABELS[invitation.role as MembershipRole] ?? invitation.role}
+                  {t(
+                    `role.${invitation.role}`,
+                    ROLE_LABELS[invitation.role as MembershipRole] ?? invitation.role,
+                  )}
                 </Badge>
               </div>
               <p className="mt-0.5 text-xs text-slate-500">
-                Invited {formatDate(invitation.created_at)} · {invitation.email}
+                {t('invitations.invited', 'Invited {date} · {email}', {
+                  date: formatDate(invitation.created_at),
+                  email: invitation.email,
+                })}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -91,14 +112,14 @@ export function InvitationsPage() {
                 onClick={() => decline.mutate(invitation.id)}
                 loading={decline.isPending}
               >
-                Decline
+                {t('invitations.decline', 'Decline')}
               </Button>
               <Button
                 size="sm"
                 onClick={() => accept.mutate(invitation.id)}
                 loading={accept.isPending}
               >
-                Accept
+                {t('invitations.accept', 'Accept')}
               </Button>
             </div>
           </Card>

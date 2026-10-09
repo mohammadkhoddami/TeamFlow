@@ -20,6 +20,7 @@ import {
 import { useToast } from '../contexts/toast'
 import { API_BASE, ApiError, integrationsApi } from '../lib/api'
 import { useIntegrationEvents, useIntegrations } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import type { IntegrationCreated, IntegrationProvider, IntegrationRead } from '../lib/types'
 import {
   INTEGRATION_PROVIDER_LABELS,
@@ -35,31 +36,45 @@ function absolute(path: string | null): string | null {
   return `${API_ORIGIN}${path}`
 }
 
-async function copy(text: string, toast: ReturnType<typeof useToast>) {
+async function copy(
+  text: string,
+  toast: ReturnType<typeof useToast>,
+  messages: { copied: string; error: string },
+) {
   try {
     await navigator.clipboard.writeText(text)
-    toast.success('Copied to clipboard')
+    toast.success(messages.copied)
   } catch {
-    toast.error('Could not copy')
+    toast.error(messages.error)
   }
 }
 
-function providerHint(provider: IntegrationProvider): string {
+function providerHint(provider: IntegrationProvider): { key: string; fallback: string } {
   switch (provider) {
     case 'github':
     case 'gitlab':
     case 'bitbucket':
-      return 'Branch/commit/PR links and optional auto-transitions via webhooks.'
+      return {
+        key: 'integrations.hintVcs',
+        fallback: 'Branch/commit/PR links and optional auto-transitions via webhooks.',
+      }
     case 'slack':
     case 'teams':
-      return 'Posts TeamFlow events into a channel via an incoming webhook URL.'
+      return {
+        key: 'integrations.hintChat',
+        fallback: 'Posts TeamFlow events into a channel via an incoming webhook URL.',
+      }
     case 'google_calendar':
-      return 'Subscribe Google Calendar to a live ICS feed of due dates.'
+      return {
+        key: 'integrations.hintCalendar',
+        fallback: 'Subscribe Google Calendar to a live ICS feed of due dates.',
+      }
   }
 }
 
 export function IntegrationsPage() {
   const { org } = useOrg()
+  const { t } = useI18n()
   const toast = useToast()
   const queryClient = useQueryClient()
   const integrations = useIntegrations(org.slug)
@@ -77,6 +92,11 @@ export function IntegrationsPage() {
     push: '',
     events: ['task.created', 'task.completed'] as string[],
   })
+
+  const copyMessages = {
+    copied: t('integrations.copied', 'Copied to clipboard'),
+    error: t('integrations.copyError', 'Could not copy'),
+  }
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['orgs', org.slug, 'integrations'] })
@@ -111,10 +131,15 @@ export function IntegrationsPage() {
       if (created.secret) {
         setRevealed({ integration: created })
       } else {
-        toast.success('Integration created')
+        toast.success(t('integrations.created', 'Integration created'))
       }
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not create integration'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : t('integrations.createError', 'Could not create integration'),
+      ),
   })
 
   const update = useMutation({
@@ -131,7 +156,12 @@ export function IntegrationsPage() {
         setRevealed({ integration: updated })
       }
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update integration'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : t('integrations.updateError', 'Could not update integration'),
+      ),
   })
 
   const remove = useMutation({
@@ -140,42 +170,56 @@ export function IntegrationsPage() {
     onSuccess: () => {
       invalidate()
       setDeleting(null)
-      toast.success('Integration deleted')
+      toast.success(t('integrations.deleted', 'Integration deleted'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete integration'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : t('integrations.deleteError', 'Could not delete integration'),
+      ),
   })
 
   const isChat = ['slack', 'teams'].includes(form.provider)
   const isVcs = ['github', 'gitlab', 'bitbucket'].includes(form.provider)
   const createValid =
     form.name.trim().length > 0 && (!isChat || form.webhook_url.trim().startsWith('http'))
+  const hint = providerHint(form.provider)
 
   return (
     <div className="space-y-5 p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Integrations</h1>
+          <h1 className="text-lg font-semibold text-slate-900">
+            {t('integrations.title', 'Integrations')}
+          </h1>
           <p className="text-sm text-slate-500">
-            Sync work with GitHub/GitLab/Bitbucket, Slack/Teams and Google Calendar.
+            {t(
+              'integrations.subtitle',
+              'Sync work with GitHub/GitLab/Bitbucket, Slack/Teams and Google Calendar.',
+            )}
           </p>
         </div>
         <Button size="sm" onClick={() => setCreating(true)}>
-          <Plus className="h-4 w-4" /> New integration
+          <Plus className="h-4 w-4" /> {t('integrations.new', 'New integration')}
         </Button>
       </div>
 
       {integrations.isLoading && <PageSpinner />}
       {integrations.isError && (
         <ErrorState
-          message="Could not load integrations."
+          message={t('integrations.loadError', 'Could not load integrations.')}
           onRetry={() => void integrations.refetch()}
         />
       )}
       {integrations.data?.length === 0 && (
         <EmptyState
           icon={<Plug className="h-8 w-8" />}
-          title="No integrations yet"
-          description="Connect a provider so work syncs where your team already is."
+          title={t('integrations.emptyTitle', 'No integrations yet')}
+          description={t(
+            'integrations.emptyDescription',
+            'Connect a provider so work syncs where your team already is.',
+          )}
         />
       )}
 
@@ -200,14 +244,16 @@ export function IntegrationsPage() {
               </div>
               <p className="text-xs text-slate-400">
                 {integration.last_event_at
-                  ? `Last event ${formatDate(integration.last_event_at)}`
-                  : 'No events yet'}
+                  ? t('integrations.lastEvent', 'Last event {date}', {
+                      date: formatDate(integration.last_event_at),
+                    })
+                  : t('integrations.noEvents', 'No events yet')}
               </p>
               {webhookUrl && (
                 <button
                   className="flex w-full items-center gap-1 truncate rounded bg-slate-50 px-2 py-1 text-left text-[11px] text-slate-500 hover:bg-slate-100"
-                  onClick={() => void copy(webhookUrl, toast)}
-                  title="Copy webhook URL"
+                  onClick={() => void copy(webhookUrl, toast, copyMessages)}
+                  title={t('integrations.copyWebhookUrl', 'Copy webhook URL')}
                 >
                   <Copy className="h-3 w-3 shrink-0" />
                   <span className="truncate">{webhookUrl}</span>
@@ -219,14 +265,16 @@ export function IntegrationsPage() {
                   variant="ghost"
                   onClick={() => update.mutate({ id: integration.id, data: { is_active: !integration.is_active } })}
                 >
-                  {integration.is_active ? 'Disable' : 'Enable'}
+                  {integration.is_active
+                    ? t('integrations.disable', 'Disable')
+                    : t('integrations.enable', 'Enable')}
                 </Button>
                 <div className="flex items-center gap-1">
                   {integration.has_secret && (
                     <Button
                       size="sm"
                       variant="ghost"
-                      title="Rotate the secret / feed token"
+                      title={t('integrations.rotateSecret', 'Rotate the secret / feed token')}
                       onClick={() =>
                         update.mutate({ id: integration.id, data: { rotate_secret: true } })
                       }
@@ -248,10 +296,14 @@ export function IntegrationsPage() {
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-slate-800">Recent integration events</h2>
+        <h2 className="text-sm font-semibold text-slate-800">
+          {t('integrations.recentEvents', 'Recent integration events')}
+        </h2>
         <div className="mt-2 space-y-1">
           {events.data?.length === 0 && (
-            <p className="text-xs text-slate-400">No events recorded yet.</p>
+            <p className="text-xs text-slate-400">
+              {t('integrations.noEventsRecorded', 'No events recorded yet.')}
+            </p>
           )}
           {events.data?.slice(0, 25).map((event) => (
             <div
@@ -265,7 +317,7 @@ export function IntegrationsPage() {
                     : 'bg-violet-50 text-violet-700'
                 }
               >
-                {event.direction}
+                {t(`integrations.direction.${event.direction}`, event.direction)}
               </Badge>
               <span className="font-medium text-slate-700">{event.event_type}</span>
               <span className="text-slate-500">{event.status}</span>
@@ -283,20 +335,20 @@ export function IntegrationsPage() {
       <Modal
         open={creating}
         onClose={() => setCreating(false)}
-        title="New integration"
+        title={t('integrations.new', 'New integration')}
         footer={
           <>
             <Button variant="secondary" onClick={() => setCreating(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button onClick={() => create.mutate()} disabled={!createValid} loading={create.isPending}>
-              Create
+              {t('common.create', 'Create')}
             </Button>
           </>
         }
       >
         <div className="space-y-3">
-          <Field label="Provider">
+          <Field label={t('integrations.provider', 'Provider')}>
             <Select
               value={form.provider}
               onChange={(event) =>
@@ -310,42 +362,61 @@ export function IntegrationsPage() {
               ))}
             </Select>
           </Field>
-          <p className="text-xs text-slate-500">{providerHint(form.provider)}</p>
-          <Field label="Name" hint="A label for this connection">
+          <p className="text-xs text-slate-500">{t(hint.key, hint.fallback)}</p>
+          <Field
+            label={t('common.name', 'Name')}
+            hint={t('integrations.nameHint', 'A label for this connection')}
+          >
             <Input
               value={form.name}
               maxLength={128}
               onChange={(event) => setForm({ ...form, name: event.target.value })}
               placeholder={
-                isVcs ? 'teamflow/backend' : isChat ? 'engineering channel' : 'My calendar'
+                isVcs
+                  ? t('integrations.namePlaceholderVcs', 'teamflow/backend')
+                  : isChat
+                    ? t('integrations.namePlaceholderChat', 'engineering channel')
+                    : t('integrations.namePlaceholderCalendar', 'My calendar')
               }
             />
           </Field>
 
           {isVcs && (
             <>
-              <Field label="Repository" hint="Optional, e.g. acme/backend">
+              <Field
+                label={t('integrations.repository', 'Repository')}
+                hint={t('integrations.repositoryHint', 'Optional, e.g. acme/backend')}
+              >
                 <Input
                   value={form.repository}
                   onChange={(event) => setForm({ ...form, repository: event.target.value })}
                 />
               </Field>
               <div className="grid gap-3 sm:grid-cols-3">
-                <Field label="PR opened →" hint="status key">
+                <Field
+                  label={t('integrations.prOpened', 'PR opened →')}
+                  hint={t('integrations.statusKeyHint', 'status key')}
+                >
                   <Input
                     value={form.opened}
                     placeholder="in_review"
                     onChange={(event) => setForm({ ...form, opened: event.target.value })}
                   />
                 </Field>
-                <Field label="PR merged →" hint="status key">
+                <Field
+                  label={t('integrations.prMerged', 'PR merged →')}
+                  hint={t('integrations.statusKeyHint', 'status key')}
+                >
                   <Input
                     value={form.merged}
                     placeholder="done"
                     onChange={(event) => setForm({ ...form, merged: event.target.value })}
                   />
                 </Field>
-                <Field label="Push →" hint="status key">
+                <Field
+                  label={t('integrations.push', 'Push →')}
+                  hint={t('integrations.statusKeyHint', 'status key')}
+                >
                   <Input
                     value={form.push}
                     placeholder="in_progress"
@@ -358,7 +429,7 @@ export function IntegrationsPage() {
 
           {isChat && (
             <>
-              <Field label="Incoming webhook URL">
+              <Field label={t('integrations.incomingWebhookUrl', 'Incoming webhook URL')}>
                 <Input
                   value={form.webhook_url}
                   onChange={(event) => setForm({ ...form, webhook_url: event.target.value })}
@@ -366,7 +437,9 @@ export function IntegrationsPage() {
                 />
               </Field>
               <div className="space-y-1.5">
-                <p className="text-sm font-medium text-slate-700">Events</p>
+                <p className="text-sm font-medium text-slate-700">
+                  {t('integrations.events', 'Events')}
+                </p>
                 {WEBHOOK_EVENTS.map((event) => (
                   <Checkbox
                     key={event}
@@ -391,29 +464,38 @@ export function IntegrationsPage() {
       <Modal
         open={Boolean(revealed)}
         onClose={() => setRevealed(null)}
-        title="Integration secret"
+        title={t('integrations.secretTitle', 'Integration secret')}
         size="sm"
         footer={
-          <Button onClick={() => setRevealed(null)}>Done</Button>
+          <Button onClick={() => setRevealed(null)}>{t('integrations.done', 'Done')}</Button>
         }
       >
         {revealed && (
           <div className="space-y-3 text-sm text-slate-600">
             <p className="text-xs text-slate-500">
-              Shown once. Use it to verify webhooks{revealed.integration.provider === 'google_calendar' ? ' or subscribe the ICS feed' : ''}.
+              {revealed.integration.provider === 'google_calendar'
+                ? t(
+                    'integrations.secretHintFeed',
+                    'Shown once. Use it to verify webhooks or subscribe the ICS feed.',
+                  )
+                : t('integrations.secretHint', 'Shown once. Use it to verify webhooks.')}
             </p>
             <div className="flex items-center gap-2 rounded bg-slate-50 px-3 py-2 font-mono text-xs">
               <span className="min-w-0 flex-1 break-all">{revealed.integration.secret}</span>
               <button
                 className="shrink-0 text-slate-400 hover:text-slate-700"
-                onClick={() => void copy(revealed.integration.secret ?? '', toast)}
+                onClick={() =>
+                  void copy(revealed.integration.secret ?? '', toast, copyMessages)
+                }
               >
                 <Copy className="h-4 w-4" />
               </button>
             </div>
             {revealed.integration.feed_path && (
               <div className="space-y-1">
-                <p className="text-xs font-medium text-slate-500">Calendar feed URL (webcal)</p>
+                <p className="text-xs font-medium text-slate-500">
+                  {t('integrations.calendarFeed', 'Calendar feed URL (webcal)')}
+                </p>
                 <div className="flex items-center gap-2 rounded bg-slate-50 px-3 py-2 text-xs">
                   <span className="min-w-0 flex-1 break-all">
                     {absolute(revealed.integration.feed_path)}?token={revealed.integration.secret}
@@ -424,6 +506,7 @@ export function IntegrationsPage() {
                       void copy(
                         `${absolute(revealed.integration.feed_path)}?token=${revealed.integration.secret}`,
                         toast,
+                        copyMessages,
                       )
                     }
                   >
@@ -438,8 +521,12 @@ export function IntegrationsPage() {
 
       <ConfirmDialog
         open={Boolean(deleting)}
-        title="Delete integration"
-        message={`Delete "${deleting?.name ?? ''}"? Events will stop syncing.`}
+        title={t('integrations.deleteTitle', 'Delete integration')}
+        message={t(
+          'integrations.deleteMessage',
+          'Delete "{name}"? Events will stop syncing.',
+          { name: deleting?.name ?? '' },
+        )}
         busy={remove.isPending}
         onClose={() => setDeleting(null)}
         onConfirm={() => deleting && remove.mutate(deleting)}

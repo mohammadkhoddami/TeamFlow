@@ -5,9 +5,11 @@ import { AuthShell } from '../components/AuthShell'
 import { ErrorState, PageSpinner } from '../components/ui'
 import { useAuth } from '../contexts/auth'
 import { ApiError } from '../lib/api'
+import { useI18n } from '../lib/i18n'
 
 export function OAuthCallbackPage() {
   const { completeOAuth } = useAuth()
+  const { t } = useI18n()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const [error, setError] = useState<string | null>(null)
@@ -21,7 +23,9 @@ export function OAuthCallbackPage() {
 
     const code = params.get('code')
     if (!code || params.get('error')) {
-      setError('Google sign-in was cancelled or could not be completed.')
+      setError(
+        t('auth.oauthCancelled', 'Google sign-in was cancelled or could not be completed.'),
+      )
       return
     }
 
@@ -34,18 +38,23 @@ export function OAuthCallbackPage() {
         navigate('/organizations', { replace: true })
       })
       .catch((err) => {
-        setError(err instanceof ApiError ? err.message : 'Google sign-in failed')
+        setError(
+          err instanceof ApiError ? err.message : t('auth.oauthFailed', 'Google sign-in failed'),
+        )
       })
-  }, [completeOAuth, navigate, params])
+  }, [completeOAuth, navigate, params, t])
 
-  if (!error) return <PageSpinner label="Completing sign-in…" />
+  if (!error) return <PageSpinner label={t('auth.completingSignIn', 'Completing sign-in…')} />
 
   return (
-    <AuthShell title="Sign-in failed" subtitle="We could not complete Google sign-in">
+    <AuthShell
+      title={t('auth.signInFailed', 'Sign-in failed')}
+      subtitle={t('auth.oauthSubtitle', 'We could not complete Google sign-in')}
+    >
       <ErrorState message={error} />
       <p className="mt-4 text-center text-sm">
         <Link to="/login" className="font-medium text-brand-600 hover:text-brand-700">
-          Back to sign in
+          {t('auth.back', 'Back to sign in')}
         </Link>
       </p>
     </AuthShell>

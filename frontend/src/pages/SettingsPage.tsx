@@ -32,10 +32,11 @@ import {
 } from '../lib/api'
 import { applyAccent, isValidAccent } from '../lib/accent'
 import { qk, useNotificationPreferences, useProjects } from '../lib/hooks'
-import { useI18n, type Locale } from '../lib/i18n'
+import { translate, useI18n, type Locale } from '../lib/i18n'
 import {
   isAdmin,
   isOwner,
+  ROLE_LABELS,
   type ImportSummary,
   type NotificationPreferenceRead,
 } from '../lib/types'
@@ -47,6 +48,7 @@ export function SettingsPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const toast = useToast()
+  const roleLabel = t(`role.${role}`, ROLE_LABELS[role])
 
   const [fullName, setFullName] = useState(user?.full_name ?? '')
   const [email, setEmail] = useState(user?.email ?? '')
@@ -68,10 +70,12 @@ export function SettingsPage() {
     mutationFn: () => updateProfile({ full_name: fullName.trim(), email: email.trim() }),
     onSuccess: () => {
       setProfileError(null)
-      toast.success('Profile updated')
+      toast.success(t('settings.profileUpdated', 'Profile updated'))
     },
     onError: (err) =>
-      setProfileError(err instanceof ApiError ? err.message : 'Could not update profile'),
+      setProfileError(
+        err instanceof ApiError ? err.message : t('settings.couldNotUpdateProfile', 'Could not update profile'),
+      ),
   })
 
   const saveOrg = useMutation({
@@ -84,11 +88,13 @@ export function SettingsPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: qk.orgs })
       setOrgError(null)
-      toast.success('Workspace updated')
+      toast.success(t('settings.workspaceUpdated', 'Workspace updated'))
     },
     onError: (err) => {
       applyAccent(org.accent_color)
-      setOrgError(err instanceof ApiError ? err.message : 'Could not update workspace')
+      setOrgError(
+        err instanceof ApiError ? err.message : t('settings.couldNotUpdateWorkspace', 'Could not update workspace'),
+      )
     },
   })
 
@@ -96,19 +102,25 @@ export function SettingsPage() {
     mutationFn: () => organizationsApi.remove(org.slug),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: qk.orgs })
-      toast.success('Workspace deleted')
+      toast.success(t('settings.workspaceDeleted', 'Workspace deleted'))
       navigate('/organizations', { replace: true })
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete workspace'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : t('settings.couldNotDeleteWorkspace', 'Could not delete workspace'),
+      ),
   })
 
   const logoutAll = useMutation({
     mutationFn: authApi.logoutAll,
     onSuccess: () => {
-      toast.success('All sessions revoked')
+      toast.success(t('settings.sessionsRevoked', 'All sessions revoked'))
       void logout()
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not revoke sessions'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : t('settings.couldNotRevokeSessions', 'Could not revoke sessions'),
+      ),
   })
 
   const projects = useProjects(org.slug)
@@ -131,11 +143,16 @@ export function SettingsPage() {
       void queryClient.invalidateQueries({ queryKey: ['orgs', org.slug] })
       toast.success(
         summary.dry_run
-          ? `Dry run: would import ${summary.created_tasks} tasks`
-          : `Imported ${summary.created_tasks} tasks`,
+          ? t('settings.dryRunImport', 'Dry run: would import {count} tasks', {
+              count: summary.created_tasks,
+            })
+          : t('settings.importedTasks', 'Imported {count} tasks', {
+              count: summary.created_tasks,
+            }),
       )
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Import failed'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('settings.importFailed', 'Import failed')),
   })
 
   const preferences = useNotificationPreferences()
@@ -143,10 +160,12 @@ export function SettingsPage() {
     mutationFn: (data: Partial<NotificationPreferenceRead>) => preferencesApi.update(data),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: qk.preferences })
-      toast.success('Notification preferences saved')
+      toast.success(t('settings.preferencesSaved', 'Notification preferences saved'))
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.message : 'Could not save preferences'),
+      toast.error(
+        err instanceof ApiError ? err.message : t('settings.couldNotSavePreferences', 'Could not save preferences'),
+      ),
   })
   const prefs = preferences.data
 
@@ -170,19 +189,22 @@ export function SettingsPage() {
       <Card>
         <CardHeader
           title={t('settings.profile', 'Your profile')}
-          description={`Signed in as ${role} of ${org.name}`}
+          description={t('settings.signedInAs', 'Signed in as {role} of {workspace}', {
+            role: roleLabel,
+            workspace: org.name,
+          })}
         />
         <div className="space-y-4 p-5">
           {profileError && <ErrorState message={profileError} />}
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Full name">
+            <Field label={t('auth.fullName', 'Full name')}>
               <Input
                 value={fullName}
                 maxLength={255}
                 onChange={(event) => setFullName(event.target.value)}
               />
             </Field>
-            <Field label="Email">
+            <Field label={t('auth.email', 'Email')}>
               <Input
                 type="email"
                 value={email}
@@ -196,7 +218,7 @@ export function SettingsPage() {
               loading={saveProfile.isPending}
               disabled={!email.trim()}
             >
-              Save profile
+              {t('settings.saveProfile', 'Save profile')}
             </Button>
           </div>
         </div>
@@ -207,17 +229,28 @@ export function SettingsPage() {
       <Card>
         <CardHeader
           title={t('settings.language', 'Language & calendar')}
-          description="Interface language and the calendar used for dates."
+          description={t(
+            'settings.languageDescription',
+            'Interface language and the calendar used for dates.',
+          )}
         />
         <div className="space-y-4 p-5">
-          <Field label="Language" hint="Persian switches the app to RTL and the Jalali calendar.">
+          <Field
+            label={t('settings.languageLabel', 'Language')}
+            hint={t('settings.languageHint', 'Persian switches the app to RTL and the Jalali calendar.')}
+          >
             <Select
               className="max-w-xs"
               value={locale}
               onChange={(event) => {
                 const next = event.target.value as Locale
                 setLocale(next)
-                toast.success(next === 'fa' ? 'زبان به فارسی تغییر کرد' : 'Language set to English')
+                toast.success(
+                  translate(
+                    next,
+                    next === 'fa' ? 'settings.languageChangedFa' : 'settings.languageChangedEn',
+                  ),
+                )
               }}
             >
               <option value="en">English</option>
@@ -232,18 +265,24 @@ export function SettingsPage() {
       <Card>
         <CardHeader
           title={t('settings.sessions', 'Sessions')}
-          description="Access tokens are short-lived; refresh tokens live on the server."
+          description={t(
+            'settings.sessionsDescription',
+            'Access tokens are short-lived; refresh tokens live on the server.',
+          )}
         />
         <div className="flex items-center justify-between gap-3 p-5">
           <p className="text-sm text-slate-600">
-            Revoke every refresh token for your account, on all devices.
+            {t(
+              'settings.sessionsRevokeHint',
+              'Revoke every refresh token for your account, on all devices.',
+            )}
           </p>
           <Button
             variant="danger"
             onClick={() => logoutAll.mutate()}
             loading={logoutAll.isPending}
           >
-            Log out everywhere
+            {t('settings.logOutEverywhere', 'Log out everywhere')}
           </Button>
         </div>
       </Card>
@@ -251,13 +290,16 @@ export function SettingsPage() {
       <Card>
         <CardHeader
           title={t('settings.importExport', 'Import & export')}
-          description="Migrate from Jira/Trello/Asana/CSV, or take your whole workspace with you."
+          description={t(
+            'settings.importExportDescription',
+            'Migrate from Jira/Trello/Asana/CSV, or take your whole workspace with you.',
+          )}
         />
         <div className="space-y-4 p-5">
           <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Target project">
+            <Field label={t('settings.targetProject', 'Target project')}>
               <Select value={importProject} onChange={(event) => setImportProject(event.target.value)}>
-                <option value="">Select project…</option>
+                <option value="">{t('settings.selectProject', 'Select project…')}</option>
                 {(projects.data ?? []).map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
@@ -265,15 +307,15 @@ export function SettingsPage() {
                 ))}
               </Select>
             </Field>
-            <Field label="Format">
+            <Field label={t('settings.format', 'Format')}>
               <Select value={importFormat} onChange={(event) => setImportFormat(event.target.value)}>
-                <option value="csv">Generic CSV</option>
-                <option value="jira_csv">Jira CSV</option>
-                <option value="asana_csv">Asana CSV</option>
-                <option value="trello_json">Trello JSON</option>
+                <option value="csv">{t('settings.formatGenericCsv', 'Generic CSV')}</option>
+                <option value="jira_csv">{t('settings.formatJiraCsv', 'Jira CSV')}</option>
+                <option value="asana_csv">{t('settings.formatAsanaCsv', 'Asana CSV')}</option>
+                <option value="trello_json">{t('settings.formatTrelloJson', 'Trello JSON')}</option>
               </Select>
             </Field>
-            <Field label="File" hint="UTF-8, max 10 MB">
+            <Field label={t('settings.file', 'File')} hint={t('settings.fileHint', 'UTF-8, max 10 MB')}>
               <Input
                 type="file"
                 accept=".csv,.json,text/csv,application/json"
@@ -282,7 +324,7 @@ export function SettingsPage() {
             </Field>
           </div>
           <Checkbox
-            label="Dry run (parse and validate without writing)"
+            label={t('settings.dryRunOption', 'Dry run (parse and validate without writing)')}
             checked={importDryRun}
             onChange={(event) => setImportDryRun(event.target.checked)}
           />
@@ -292,29 +334,52 @@ export function SettingsPage() {
               loading={runImport.isPending}
               disabled={!importProject || !importFile}
             >
-              Import tasks
+              {t('settings.importTasks', 'Import tasks')}
             </Button>
             <Button
               variant="secondary"
               onClick={() =>
                 void dataApi
                   .downloadWorkspace(org.slug)
-                  .catch(() => toast.error('Could not export workspace'))
+                  .catch(() =>
+                    toast.error(t('settings.couldNotExportWorkspace', 'Could not export workspace')),
+                  )
               }
             >
-              Export workspace (JSON)
+              {t('settings.exportWorkspaceJson', 'Export workspace (JSON)')}
             </Button>
           </div>
           {importSummary && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
               <p className="font-medium text-slate-700">
-                {importSummary.dry_run ? 'Dry run' : 'Import'} — {importSummary.rows} rows,{' '}
-                {importSummary.created_tasks} tasks, {importSummary.created_labels} labels,{' '}
-                {importSummary.skipped} skipped
+                {importSummary.dry_run
+                  ? t(
+                      'settings.importSummaryDryRun',
+                      'Dry run — {rows} rows, {tasks} tasks, {labels} labels, {skipped} skipped',
+                      {
+                        rows: importSummary.rows,
+                        tasks: importSummary.created_tasks,
+                        labels: importSummary.created_labels,
+                        skipped: importSummary.skipped,
+                      },
+                    )
+                  : t(
+                      'settings.importSummary',
+                      'Import — {rows} rows, {tasks} tasks, {labels} labels, {skipped} skipped',
+                      {
+                        rows: importSummary.rows,
+                        tasks: importSummary.created_tasks,
+                        labels: importSummary.created_labels,
+                        skipped: importSummary.skipped,
+                      },
+                    )}
               </p>
               {importSummary.issues.slice(0, 5).map((issue) => (
                 <p key={issue.row} className="mt-0.5 text-amber-700">
-                  Row {issue.row}: {issue.message}
+                  {t('settings.rowIssue', 'Row {row}: {message}', {
+                    row: issue.row,
+                    message: issue.message,
+                  })}
                 </p>
               ))}
             </div>
@@ -325,13 +390,16 @@ export function SettingsPage() {
       <Card>
         <CardHeader
           title={t('settings.emailNotifications', 'Email notifications')}
-          description="Choose which events email you. In-app notifications are always recorded."
+          description={t(
+            'settings.emailNotificationsDescription',
+            'Choose which events email you. In-app notifications are always recorded.',
+          )}
         />
         <div className="space-y-4 p-5">
           {prefs && (
             <>
               <Checkbox
-                label="Send me email notifications"
+                label={t('settings.emailEnabled', 'Send me email notifications')}
                 checked={prefs.email_enabled}
                 onChange={(event) =>
                   savePreferences.mutate({ email_enabled: event.target.checked })
@@ -339,33 +407,36 @@ export function SettingsPage() {
               />
               <div className="grid gap-3 sm:grid-cols-2">
                 <Checkbox
-                  label="Task assigned to me"
+                  label={t('settings.emailAssigned', 'Task assigned to me')}
                   checked={prefs.assigned}
                   onChange={(event) =>
                     savePreferences.mutate({ assigned: event.target.checked })
                   }
                 />
                 <Checkbox
-                  label="I am @mentioned"
+                  label={t('settings.emailMentioned', 'I am @mentioned')}
                   checked={prefs.mentioned}
                   onChange={(event) =>
                     savePreferences.mutate({ mentioned: event.target.checked })
                   }
                 />
                 <Checkbox
-                  label="Comments on tasks I watch"
+                  label={t('settings.emailComments', 'Comments on tasks I watch')}
                   checked={prefs.comments}
                   onChange={(event) =>
                     savePreferences.mutate({ comments: event.target.checked })
                   }
                 />
                 <Checkbox
-                  label="Tasks due soon"
+                  label={t('settings.emailDue', 'Tasks due soon')}
                   checked={prefs.due}
                   onChange={(event) => savePreferences.mutate({ due: event.target.checked })}
                 />
               </div>
-              <Field label="Delivery" hint="Digests are emailed on the schedule instead of per event">
+              <Field
+                label={t('settings.delivery', 'Delivery')}
+                hint={t('settings.deliveryHint', 'Digests are emailed on the schedule instead of per event')}
+              >
                 <Select
                   className="max-w-xs"
                   value={prefs.digest}
@@ -375,16 +446,20 @@ export function SettingsPage() {
                     })
                   }
                 >
-                  <option value="immediate">Immediately (per event)</option>
-                  <option value="daily">Daily digest</option>
-                  <option value="weekly">Weekly digest</option>
-                  <option value="off">Off</option>
+                  <option value="immediate">
+                    {t('settings.digestImmediate', 'Immediately (per event)')}
+                  </option>
+                  <option value="daily">{t('settings.digestDaily', 'Daily digest')}</option>
+                  <option value="weekly">{t('settings.digestWeekly', 'Weekly digest')}</option>
+                  <option value="off">{t('settings.digestOff', 'Off')}</option>
                 </Select>
               </Field>
             </>
           )}
           {preferences.isLoading && (
-            <p className="text-xs text-slate-400">Loading preferences…</p>
+            <p className="text-xs text-slate-400">
+              {t('settings.loadingPreferences', 'Loading preferences…')}
+            </p>
           )}
         </div>
       </Card>
@@ -393,15 +468,21 @@ export function SettingsPage() {
         <Card>
           <CardHeader
             title={t('settings.workspace', 'Workspace')}
-            description="Admins can rename and theme the workspace; only the owner can delete it."
+            description={t(
+              'settings.workspaceDescription',
+              'Admins can rename and theme the workspace; only the owner can delete it.',
+            )}
           />
           <div className="space-y-4 p-5">
             {orgError && <ErrorState message={orgError} />}
-            <Field label="Workspace name">
+            <Field label={t('settings.workspaceName', 'Workspace name')}>
               <Input value={orgName} maxLength={255} onChange={(event) => setOrgName(event.target.value)} />
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Accent color" hint="Used across buttons, links and highlights">
+              <Field
+                label={t('settings.accentColor', 'Accent color')}
+                hint={t('settings.accentColorHint', 'Used across buttons, links and highlights')}
+              >
                 <div className="flex items-center gap-2">
                   <input
                     type="color"
@@ -424,9 +505,16 @@ export function SettingsPage() {
                 </div>
               </Field>
               <Field
-                label="Audit retention (days)"
-                hint="Audit rows older than this are purged; empty keeps them forever"
-                error={retentionValid ? null : 'Enter a number between 1 and 3650'}
+                label={t('settings.auditRetention', 'Audit retention (days)')}
+                hint={t(
+                  'settings.auditRetentionHint',
+                  'Audit rows older than this are purged; empty keeps them forever',
+                )}
+                error={
+                  retentionValid
+                    ? null
+                    : t('settings.auditRetentionError', 'Enter a number between 1 and 3650')
+                }
               >
                 <Input
                   type="number"
@@ -447,22 +535,27 @@ export function SettingsPage() {
                     applyAccent(org.accent_color)
                   }}
                 >
-                  Reset preview
+                  {t('settings.resetPreview', 'Reset preview')}
                 </Button>
                 <Button
                   onClick={() => saveOrg.mutate()}
                   loading={saveOrg.isPending}
                   disabled={!orgName.trim() || !retentionValid}
                 >
-                  Save workspace
+                  {t('settings.saveWorkspace', 'Save workspace')}
                 </Button>
               </div>
             </div>
 
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-              <p className="text-sm font-medium text-slate-700">Audit export</p>
+              <p className="text-sm font-medium text-slate-700">
+                {t('settings.auditExport', 'Audit export')}
+              </p>
               <p className="text-xs text-slate-500">
-                Hash-chained export for compliance reviews (up to 5000 rows).
+                {t(
+                  'settings.auditExportHint',
+                  'Hash-chained export for compliance reviews (up to 5000 rows).',
+                )}
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <Button
@@ -471,10 +564,12 @@ export function SettingsPage() {
                   onClick={() =>
                     void auditApi
                       .downloadExport(org.slug, 'csv')
-                      .catch(() => toast.error('Could not export audit log'))
+                      .catch(() =>
+                        toast.error(t('settings.couldNotExportAudit', 'Could not export audit log')),
+                      )
                   }
                 >
-                  <Download className="h-3.5 w-3.5" /> Export CSV
+                  <Download className="h-3.5 w-3.5" /> {t('settings.exportCsv', 'Export CSV')}
                 </Button>
                 <Button
                   size="sm"
@@ -482,10 +577,12 @@ export function SettingsPage() {
                   onClick={() =>
                     void auditApi
                       .downloadExport(org.slug, 'json')
-                      .catch(() => toast.error('Could not export audit log'))
+                      .catch(() =>
+                        toast.error(t('settings.couldNotExportAudit', 'Could not export audit log')),
+                      )
                   }
                 >
-                  <Download className="h-3.5 w-3.5" /> Export JSON
+                  <Download className="h-3.5 w-3.5" /> {t('settings.exportJson', 'Export JSON')}
                 </Button>
               </div>
             </div>
@@ -493,13 +590,18 @@ export function SettingsPage() {
             {isOwner(role) && (
               <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-3">
                 <div>
-                  <p className="text-sm font-medium text-red-800">Delete workspace</p>
+                  <p className="text-sm font-medium text-red-800">
+                    {t('settings.deleteWorkspace', 'Delete workspace')}
+                  </p>
                   <p className="text-xs text-red-600">
-                    Projects, tasks and members will be permanently removed.
+                    {t(
+                      'settings.deleteWorkspaceWarning',
+                      'Projects, tasks and members will be permanently removed.',
+                    )}
                   </p>
                 </div>
                 <Button variant="danger" size="sm" onClick={() => setConfirmDeleteOrg(true)}>
-                  Delete
+                  {t('common.delete', 'Delete')}
                 </Button>
               </div>
             )}
@@ -513,9 +615,13 @@ export function SettingsPage() {
 
       <ConfirmDialog
         open={confirmDeleteOrg}
-        title="Delete workspace"
-        message={`Delete "${org.name}" and everything inside it? This cannot be undone.`}
-        confirmLabel="Delete workspace"
+        title={t('settings.deleteWorkspace', 'Delete workspace')}
+        message={t(
+          'settings.deleteWorkspaceConfirm',
+          'Delete "{name}" and everything inside it? This cannot be undone.',
+          { name: org.name },
+        )}
+        confirmLabel={t('settings.deleteWorkspace', 'Delete workspace')}
         busy={deleteOrg.isPending}
         onClose={() => setConfirmDeleteOrg(false)}
         onConfirm={() => deleteOrg.mutate()}

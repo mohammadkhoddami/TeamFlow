@@ -21,6 +21,7 @@ import {
 import { useToast } from '../contexts/toast'
 import { ApiError, dashboardsApi } from '../lib/api'
 import { qk, useDashboardData, useDashboards, useProjects } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import {
   STATUS_LABELS,
   WIDGET_TYPES,
@@ -78,6 +79,8 @@ const STAT_LABELS: Record<string, string> = {
 }
 
 function WidgetBody({ widget }: { widget: WidgetData }) {
+  const { t } = useI18n()
+
   if (widget.type === 'stats') {
     const data = asRecord(widget.data)
     return (
@@ -85,7 +88,7 @@ function WidgetBody({ widget }: { widget: WidgetData }) {
         {Object.entries(STAT_LABELS).map(([key, label]) => (
           <div key={key} className="rounded-lg bg-slate-50 px-3 py-2">
             <p className="text-lg font-semibold text-slate-800">{asNumber(data[key])}</p>
-            <p className="text-xs text-slate-500">{label}</p>
+            <p className="text-xs text-slate-500">{t(`dashboards.stat.${key}`, label)}</p>
           </div>
         ))}
       </div>
@@ -98,7 +101,9 @@ function WidgetBody({ widget }: { widget: WidgetData }) {
       <ul className="space-y-1.5">
         {Object.keys(STATUS_LABELS).map((key) => (
           <li key={key} className="flex items-center justify-between text-sm">
-            <span className="text-slate-600">{STATUS_LABELS[key as TaskStatus]}</span>
+            <span className="text-slate-600">
+              {t(`status.${key}`, STATUS_LABELS[key as TaskStatus])}
+            </span>
             <span className="font-medium text-slate-800">{asNumber(data[key])}</span>
           </li>
         ))}
@@ -108,15 +113,19 @@ function WidgetBody({ widget }: { widget: WidgetData }) {
 
   if (widget.type === 'members') {
     const rows = asRows(widget.data)
-    if (rows.length === 0) return <p className="text-sm text-slate-400">No assigned tasks.</p>
+    if (rows.length === 0) {
+      return <p className="text-sm text-slate-400">{t('dashboards.noAssignedTasks', 'No assigned tasks.')}</p>
+    }
     return (
       <ul className="space-y-1.5">
         {rows.map((row, index) => (
           <li key={index} className="flex items-center justify-between text-sm">
             <span className="min-w-0 flex-1 truncate text-slate-600">
-              {asText(row.full_name) || 'Unnamed'}
+              {asText(row.full_name) || t('common.unnamed', 'Unnamed')}
             </span>
-            <Badge>{asNumber(row.open_tasks)} open</Badge>
+            <Badge>
+              {t('dashboards.openCount', '{count} open', { count: asNumber(row.open_tasks) })}
+            </Badge>
           </li>
         ))}
       </ul>
@@ -125,7 +134,9 @@ function WidgetBody({ widget }: { widget: WidgetData }) {
 
   if (widget.type === 'overdue') {
     const rows = asRows(widget.data)
-    if (rows.length === 0) return <p className="text-sm text-slate-400">Nothing overdue.</p>
+    if (rows.length === 0) {
+      return <p className="text-sm text-slate-400">{t('dashboards.nothingOverdue', 'Nothing overdue.')}</p>
+    }
     return (
       <ul className="space-y-1.5">
         {rows.map((row, index) => (
@@ -135,7 +146,9 @@ function WidgetBody({ widget }: { widget: WidgetData }) {
               {asText(row.title)}
             </p>
             <p className="text-xs text-slate-400">
-              due {formatDate(asText(row.due_date) || null)}
+              {t('dashboards.due', 'due {date}', {
+                date: formatDate(asText(row.due_date) || null),
+              })}
               {asText(row.assignee) ? ` · ${asText(row.assignee)}` : ''}
             </p>
           </li>
@@ -145,7 +158,9 @@ function WidgetBody({ widget }: { widget: WidgetData }) {
   }
 
   const rows = asRows(widget.data)
-  if (rows.length === 0) return <p className="text-sm text-slate-400">No recent activity.</p>
+  if (rows.length === 0) {
+    return <p className="text-sm text-slate-400">{t('dashboards.noRecentActivity', 'No recent activity.')}</p>
+  }
   return (
     <ul className="space-y-1.5">
       {rows.map((row, index) => (
@@ -160,6 +175,7 @@ function WidgetBody({ widget }: { widget: WidgetData }) {
 
 export function DashboardsPage() {
   const { org } = useOrg()
+  const { t } = useI18n()
   const toast = useToast()
   const queryClient = useQueryClient()
   const dashboards = useDashboards(org.slug)
@@ -213,9 +229,16 @@ export function DashboardsPage() {
       setBuilderOpen(false)
       setEditing(null)
       setError(null)
-      toast.success(editing ? 'Dashboard updated' : 'Dashboard created')
+      toast.success(
+        editing
+          ? t('dashboards.updated', 'Dashboard updated')
+          : t('dashboards.created', 'Dashboard created'),
+      )
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : 'Could not save dashboard'),
+    onError: (err) =>
+      setError(
+        err instanceof ApiError ? err.message : t('dashboards.saveError', 'Could not save dashboard'),
+      ),
   })
 
   const remove = useMutation({
@@ -224,9 +247,14 @@ export function DashboardsPage() {
       if (deleting?.id === selectedId) setSelectedId(null)
       invalidate()
       setDeleting(null)
-      toast.success('Dashboard deleted')
+      toast.success(t('dashboards.deleted', 'Dashboard deleted'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete dashboard'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : t('dashboards.deleteError', 'Could not delete dashboard'),
+      ),
   })
 
   function openCreate() {
@@ -254,20 +282,22 @@ export function DashboardsPage() {
     <div className="space-y-6 p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Dashboards</h1>
+          <h1 className="text-lg font-semibold text-slate-900">
+            {t('dashboards.title', 'Dashboards')}
+          </h1>
           <p className="text-sm text-slate-500">
-            Saved widget boards for the workspace or a single project.
+            {t('dashboards.subtitle', 'Saved widget boards for the workspace or a single project.')}
           </p>
         </div>
         <Button onClick={openCreate}>
-          <Plus className="h-4 w-4" /> New dashboard
+          <Plus className="h-4 w-4" /> {t('dashboards.new', 'New dashboard')}
         </Button>
       </div>
 
-      {dashboards.isLoading && <PageSpinner label="Loading dashboards…" />}
+      {dashboards.isLoading && <PageSpinner label={t('dashboards.loading', 'Loading dashboards…')} />}
       {dashboards.isError && (
         <ErrorState
-          message="Could not load dashboards."
+          message={t('dashboards.loadError', 'Could not load dashboards.')}
           onRetry={() => void dashboards.refetch()}
         />
       )}
@@ -275,9 +305,12 @@ export function DashboardsPage() {
       {dashboards.data?.length === 0 && (
         <EmptyState
           icon={<Gauge className="h-8 w-8" />}
-          title="No dashboards yet"
-          description="Build a board from stats, status, members, overdue and activity widgets."
-          action={<Button onClick={openCreate}>Create a dashboard</Button>}
+          title={t('dashboards.emptyTitle', 'No dashboards yet')}
+          description={t(
+            'dashboards.emptyDescription',
+            'Build a board from stats, status, members, overdue and activity widgets.',
+          )}
+          action={<Button onClick={openCreate}>{t('dashboards.create', 'Create a dashboard')}</Button>}
         />
       )}
 
@@ -296,7 +329,9 @@ export function DashboardsPage() {
             >
               {dashboard.name}
               {dashboard.is_default && (
-                <span className="ml-1.5 text-xs opacity-75">default</span>
+                <span className="ml-1.5 text-xs opacity-75">
+                  {t('dashboards.defaultBadge', 'default')}
+                </span>
               )}
             </button>
           ))}
@@ -310,18 +345,23 @@ export function DashboardsPage() {
               <h2 className="text-sm font-semibold text-slate-800">{selected.name}</h2>
               <p className="text-xs text-slate-500">
                 {selected.project_id
-                  ? `Project ${projects.data?.find((p) => p.id === selected.project_id)?.name ?? ''}`
-                  : 'Whole workspace'}
-                {selected.is_default ? ' · default dashboard' : ''}
+                  ? t('dashboards.projectLabel', 'Project {name}', {
+                      name:
+                        projects.data?.find((p) => p.id === selected.project_id)?.name ?? '',
+                    })
+                  : t('dashboards.wholeWorkspace', 'Whole workspace')}
+                {selected.is_default
+                  ? t('dashboards.defaultSuffix', ' · default dashboard')
+                  : ''}
               </p>
             </div>
             <div className="flex items-center gap-1">
               <Button size="sm" variant="secondary" onClick={() => openEdit(selected)}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
+                <Pencil className="h-3.5 w-3.5" /> {t('common.edit', 'Edit')}
               </Button>
               <button
                 className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                title="Delete dashboard"
+                title={t('dashboards.deleteTitle', 'Delete dashboard')}
                 onClick={() => setDeleting(selected)}
               >
                 <Trash2 className="h-4 w-4" />
@@ -329,10 +369,12 @@ export function DashboardsPage() {
             </div>
           </div>
 
-          {data.isLoading && <PageSpinner label="Loading widget data…" />}
+          {data.isLoading && (
+            <PageSpinner label={t('dashboards.loadingData', 'Loading widget data…')} />
+          )}
           {data.isError && (
             <ErrorState
-              message="Could not load widget data."
+              message={t('dashboards.dataError', 'Could not load widget data.')}
               onRetry={() => void data.refetch()}
             />
           )}
@@ -342,7 +384,10 @@ export function DashboardsPage() {
                 <Card key={widget.id || widget.title}>
                   <CardHeader
                     title={widget.title}
-                    description={WIDGET_TYPE_LABELS[widget.type as WidgetType] ?? widget.type}
+                    description={t(
+                      `widgetType.${widget.type}`,
+                      WIDGET_TYPE_LABELS[widget.type as WidgetType] ?? widget.type,
+                    )}
                   />
                   <div className="p-5">
                     <WidgetBody widget={widget} />
@@ -357,19 +402,23 @@ export function DashboardsPage() {
       <Modal
         open={builderOpen}
         onClose={() => setBuilderOpen(false)}
-        title={editing ? 'Edit dashboard' : 'New dashboard'}
+        title={
+          editing
+            ? t('dashboards.edit', 'Edit dashboard')
+            : t('dashboards.new', 'New dashboard')
+        }
         size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setBuilderOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={() => save.mutate()}
               loading={save.isPending}
               disabled={!builder.name.trim()}
             >
-              Save dashboard
+              {t('dashboards.save', 'Save dashboard')}
             </Button>
           </>
         }
@@ -377,7 +426,7 @@ export function DashboardsPage() {
         <div className="space-y-4">
           {error && <ErrorState message={error} />}
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Name">
+            <Field label={t('common.name', 'Name')}>
               <Input
                 autoFocus
                 value={builder.name}
@@ -385,12 +434,15 @@ export function DashboardsPage() {
                 onChange={(event) => setBuilder({ ...builder, name: event.target.value })}
               />
             </Field>
-            <Field label="Project" hint="Empty = the whole workspace">
+            <Field
+              label={t('common.project', 'Project')}
+              hint={t('dashboards.projectHint', 'Empty = the whole workspace')}
+            >
               <Select
                 value={builder.projectId}
                 onChange={(event) => setBuilder({ ...builder, projectId: event.target.value })}
               >
-                <option value="">Whole workspace</option>
+                <option value="">{t('dashboards.wholeWorkspace', 'Whole workspace')}</option>
                 {(projects.data ?? []).map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
@@ -400,13 +452,13 @@ export function DashboardsPage() {
             </Field>
           </div>
           <Checkbox
-            label="Set as default dashboard"
+            label={t('dashboards.setDefault', 'Set as default dashboard')}
             checked={builder.isDefault}
             onChange={(event) => setBuilder({ ...builder, isDefault: event.target.checked })}
           />
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-slate-700">Widgets</p>
+              <p className="text-sm font-medium text-slate-700">{t('dashboards.widgets', 'Widgets')}</p>
               <Button
                 size="sm"
                 variant="secondary"
@@ -415,16 +467,20 @@ export function DashboardsPage() {
                     ...builder,
                     widgets: [
                       ...builder.widgets,
-                      { id: `widget-${Date.now()}`, type: 'stats', title: 'Stats' },
+                      {
+                        id: `widget-${Date.now()}`,
+                        type: 'stats',
+                        title: t('dashboards.statsWidgetTitle', 'Stats'),
+                      },
                     ],
                   })
                 }
               >
-                <Plus className="h-3.5 w-3.5" /> Add widget
+                <Plus className="h-3.5 w-3.5" /> {t('dashboards.addWidget', 'Add widget')}
               </Button>
             </div>
             {builder.widgets.length === 0 && (
-              <p className="text-xs text-slate-400">No widgets yet.</p>
+              <p className="text-xs text-slate-400">{t('dashboards.noWidgets', 'No widgets yet.')}</p>
             )}
             {builder.widgets.map((widget, index) => (
               <div key={widget.id ?? index} className="flex items-center gap-2">
@@ -444,7 +500,7 @@ export function DashboardsPage() {
                 >
                   {WIDGET_TYPES.map((type) => (
                     <option key={type} value={type}>
-                      {WIDGET_TYPE_LABELS[type]}
+                      {t(`widgetType.${type}`, WIDGET_TYPE_LABELS[type])}
                     </option>
                   ))}
                 </Select>
@@ -462,7 +518,7 @@ export function DashboardsPage() {
                 />
                 <button
                   className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                  title="Remove widget"
+                  title={t('dashboards.removeWidget', 'Remove widget')}
                   onClick={() =>
                     setBuilder({
                       ...builder,
@@ -480,8 +536,10 @@ export function DashboardsPage() {
 
       <ConfirmDialog
         open={Boolean(deleting)}
-        title="Delete dashboard"
-        message={`Delete "${deleting?.name ?? ''}"? Widgets are not recoverable.`}
+        title={t('dashboards.deleteTitle', 'Delete dashboard')}
+        message={t('dashboards.deleteMessage', 'Delete "{name}"? Widgets are not recoverable.', {
+          name: deleting?.name ?? '',
+        })}
         busy={remove.isPending}
         onClose={() => setDeleting(null)}
         onConfirm={() => deleting && remove.mutate(deleting)}

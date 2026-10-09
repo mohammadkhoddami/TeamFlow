@@ -1,5 +1,8 @@
 import type { ReactNode } from 'react'
 
+import { useI18n } from '../lib/i18n'
+import { LanguageToggle } from './LanguageToggle'
+
 export function AuthShell({
   title,
   subtitle,
@@ -11,11 +14,17 @@ export function AuthShell({
   children: ReactNode
   footer?: ReactNode
 }) {
+  const { t } = useI18n()
   return (
-    <div className="flex min-h-full items-center justify-center bg-slate-50 px-4 py-10">
+    <div className="relative flex min-h-full items-center justify-center bg-slate-50 px-4 py-10">
+      <div className="absolute end-4 top-4">
+        <LanguageToggle />
+      </div>
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
-          <p className="text-lg font-bold tracking-tight text-brand-700">TeamFlow</p>
+          <p className="text-lg font-bold tracking-tight text-brand-700">
+            {t('common.brand', 'TeamFlow')}
+          </p>
           <h1 className="mt-3 text-xl font-semibold text-slate-900">{title}</h1>
           {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
         </div>

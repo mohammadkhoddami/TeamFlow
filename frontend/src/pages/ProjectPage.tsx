@@ -58,6 +58,7 @@ import {
   useTaskTree,
   useWorkflow,
 } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import { downloadOpenTasksMarkdown } from '../lib/taskExport'
 import { canManage, type TaskRead, type TaskType } from '../lib/types'
 import { cn, formatDate } from '../lib/utils'
@@ -66,6 +67,7 @@ import { createProjectSocket, type SocketStatus } from '../lib/ws'
 export function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const { org, role } = useOrg()
+  const { t } = useI18n()
   const navigate = useNavigate()
   const toast = useToast()
   const queryClient = useQueryClient()
@@ -188,7 +190,11 @@ export function ProjectPage() {
       tasksApi.move(taskId, next),
     onSuccess: () => invalidate(org.slug),
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.message : 'That status change is not allowed'),
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : t('projects.moveError', 'That status change is not allowed'),
+      ),
   })
 
   const saveProject = useMutation({
@@ -205,38 +211,42 @@ export function ProjectPage() {
       void queryClient.invalidateQueries({ queryKey: ['projects', projectId] })
       void queryClient.invalidateQueries({ queryKey: ['orgs', org.slug, 'projects'] })
       setEditing(false)
-      toast.success('Project updated')
+      toast.success(t('projects.updated', 'Project updated'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not save project'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('projects.saveError', 'Could not save project')),
   })
 
   const saveTemplate = useMutation({
     mutationFn: () =>
       templatesApi.saveProjectAsTemplate(projectId!, { name: templateName.trim() }),
     onSuccess: () => {
-      toast.success('Project template saved')
+      toast.success(t('projects.templateSaved', 'Project template saved'))
       setSavingTemplate(false)
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.message : 'Could not save template'),
+      toast.error(
+        err instanceof ApiError ? err.message : t('projects.templateSaveError', 'Could not save template'),
+      ),
   })
 
   const deleteProject = useMutation({
     mutationFn: () => projectsApi.remove(projectId!),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['orgs', org.slug, 'projects'] })
-      toast.success('Project deleted')
+      toast.success(t('projects.deleted', 'Project deleted'))
       navigate(`/org/${org.slug}/projects`)
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete project'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('projects.deleteError', 'Could not delete project')),
   })
 
-  if (project.isLoading) return <PageSpinner label="Loading project…" />
+  if (project.isLoading) return <PageSpinner label={t('projects.loading', 'Loading project…')} />
   if (project.isError || !project.data) {
     return (
       <div className="p-6">
         <ErrorState
-          message="Project not found or you no longer have access."
+          message={t('projects.notFound', 'Project not found or you no longer have access.')}
           onRetry={() => void project.refetch()}
         />
       </div>
@@ -250,7 +260,7 @@ export function ProjectPage() {
           to={`/org/${org.slug}/projects`}
           className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
         >
-          <ArrowLeft className="h-3.5 w-3.5" /> All projects
+          <ArrowLeft className="h-3.5 w-3.5" /> {t('projects.allProjects', 'All projects')}
         </Link>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -263,11 +273,16 @@ export function ProjectPage() {
                     : 'bg-slate-100 text-slate-600'
                 }
               >
-                {project.data.status}
+                {t(
+                  `projects.status.${project.data.status}`,
+                  project.data.status === 'active' ? 'Active' : 'Archived',
+                )}
               </Badge>
               <span
                 className="inline-flex items-center gap-1 text-[11px] text-slate-400"
-                title={`Realtime: ${socketStatus}`}
+                title={t('projects.realtime', 'Realtime: {status}', {
+                  status: t(`projects.socket.${socketStatus}`, socketStatus),
+                })}
               >
                 <span
                   className={cn(
@@ -275,14 +290,19 @@ export function ProjectPage() {
                     socketStatus === 'open' ? 'bg-emerald-500' : 'bg-slate-300',
                   )}
                 />
-                {socketStatus === 'open' ? 'live' : socketStatus}
+                {socketStatus === 'open'
+                  ? t('projects.live', 'live')
+                  : t(`projects.socket.${socketStatus}`, socketStatus)}
               </span>
             </div>
             {project.data.description && (
               <p className="mt-1 max-w-2xl text-sm text-slate-500">{project.data.description}</p>
             )}
             <p className="mt-1 text-xs text-slate-400">
-              Created {formatDate(project.data.created_at)} · {tasks.data?.total ?? 0} tasks
+              {t('projects.meta', 'Created {date} · {count} tasks', {
+                date: formatDate(project.data.created_at),
+                count: tasks.data?.total ?? 0,
+              })}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -297,7 +317,7 @@ export function ProjectPage() {
                     : 'text-slate-500 hover:text-slate-700',
                 )}
               >
-                <LayoutGrid className="h-3.5 w-3.5" /> Board
+                <LayoutGrid className="h-3.5 w-3.5" /> {t('projects.view.board', 'Board')}
               </button>
               <button
                 type="button"
@@ -309,7 +329,7 @@ export function ProjectPage() {
                     : 'text-slate-500 hover:text-slate-700',
                 )}
               >
-                <Network className="h-3.5 w-3.5" /> Hierarchy
+                <Network className="h-3.5 w-3.5" /> {t('projects.view.tree', 'Hierarchy')}
               </button>
               <button
                 type="button"
@@ -321,7 +341,7 @@ export function ProjectPage() {
                     : 'text-slate-500 hover:text-slate-700',
                 )}
               >
-                <CalendarRange className="h-3.5 w-3.5" /> Backlog
+                <CalendarRange className="h-3.5 w-3.5" /> {t('projects.view.backlog', 'Backlog')}
               </button>
               <button
                 type="button"
@@ -333,7 +353,7 @@ export function ProjectPage() {
                     : 'text-slate-500 hover:text-slate-700',
                 )}
               >
-                <Rocket className="h-3.5 w-3.5" /> Roadmap
+                <Rocket className="h-3.5 w-3.5" /> {t('projects.view.roadmap', 'Roadmap')}
               </button>
               <button
                 type="button"
@@ -345,7 +365,7 @@ export function ProjectPage() {
                     : 'text-slate-500 hover:text-slate-700',
                 )}
               >
-                <CalendarDays className="h-3.5 w-3.5" /> Calendar
+                <CalendarDays className="h-3.5 w-3.5" /> {t('projects.view.calendar', 'Calendar')}
               </button>
               <button
                 type="button"
@@ -357,7 +377,7 @@ export function ProjectPage() {
                     : 'text-slate-500 hover:text-slate-700',
                 )}
               >
-                <FileText className="h-3.5 w-3.5" /> Forms
+                <FileText className="h-3.5 w-3.5" /> {t('projects.view.forms', 'Forms')}
               </button>
             </div>
             {view === 'board' && (
@@ -367,12 +387,13 @@ export function ProjectPage() {
                     className="w-auto"
                     value={selectedBoard?.id ?? ''}
                     onChange={(event) => setBoardId(event.target.value)}
-                    title="Saved board"
+                    title={t('projects.savedBoard', 'Saved board')}
                   >
                     {boards.data!.map((board) => (
                       <option key={board.id} value={board.id}>
-                        {board.name}
-                        {board.is_default ? ' (default)' : ''}
+                        {board.is_default
+                          ? t('projects.boardDefault', '{name} (default)', { name: board.name })
+                          : board.name}
                       </option>
                     ))}
                   </Select>
@@ -381,14 +402,15 @@ export function ProjectPage() {
                   className="w-auto"
                   value={sprintFilter}
                   onChange={(event) => setSprintFilter(event.target.value)}
-                  title="Filter the board by sprint"
+                  title={t('projects.filterBySprint', 'Filter the board by sprint')}
                 >
-                  <option value="">All tasks</option>
-                  <option value="__backlog__">Backlog only</option>
+                  <option value="">{t('projects.allTasks', 'All tasks')}</option>
+                  <option value="__backlog__">{t('projects.backlogOnly', 'Backlog only')}</option>
                   {(sprints.data ?? []).map((sprint) => (
                     <option key={sprint.id} value={sprint.id}>
-                      {sprint.name}
-                      {sprint.state === 'active' ? ' (active)' : ''}
+                      {sprint.state === 'active'
+                        ? t('projects.sprintActive', '{name} (active)', { name: sprint.name })
+                        : sprint.name}
                     </option>
                   ))}
                 </Select>
@@ -397,10 +419,10 @@ export function ProjectPage() {
                   size="sm"
                   onClick={() => setManagingSprints(true)}
                 >
-                  <CalendarRange className="h-3.5 w-3.5" /> Sprints
+                  <CalendarRange className="h-3.5 w-3.5" /> {t('projects.sprints', 'Sprints')}
                 </Button>
                 <Checkbox
-                  label="Subtasks"
+                  label={t('projects.subtasks', 'Subtasks')}
                   checked={showSubtasks}
                   onChange={(event) => setShowSubtasks(event.target.checked)}
                 />
@@ -408,63 +430,73 @@ export function ProjectPage() {
                   variant="secondary"
                   size="sm"
                   disabled={openBoardTasks === 0}
-                  title="Download open board tasks as markdown"
+                  title={t('projects.exportHint', 'Download open board tasks as markdown')}
                   onClick={() => {
                     const count = downloadOpenTasksMarkdown(project.data.name, boardTasks)
                     toast.success(
-                      `Exported ${count} open task${count === 1 ? '' : 's'} to opening-tasks.md`,
+                      count === 1
+                        ? t('projects.exportedOne', 'Exported 1 open task to opening-tasks.md')
+                        : t(
+                            'projects.exportedMany',
+                            'Exported {count} open tasks to opening-tasks.md',
+                            { count },
+                          ),
                     )
                   }}
                 >
-                  <Download className="h-3.5 w-3.5" /> Export
+                  <Download className="h-3.5 w-3.5" /> {t('common.export', 'Export')}
                 </Button>
               </>
             )}
             {canManage(role) && (
               <>
                 <Button variant="secondary" size="sm" onClick={() => setManagingMembers(true)}>
-                  <Users className="h-3.5 w-3.5" /> Members
+                  <Users className="h-3.5 w-3.5" /> {t('projects.members', 'Members')}
                 </Button>
                 <Button variant="secondary" size="sm" onClick={() => setManagingWorkflow(true)}>
-                  <Workflow className="h-3.5 w-3.5" /> Workflow
+                  <Workflow className="h-3.5 w-3.5" /> {t('projects.workflow', 'Workflow')}
                 </Button>
                 <Button variant="secondary" size="sm" onClick={() => setManagingBoards(true)}>
-                  <Columns3 className="h-3.5 w-3.5" /> Boards
+                  <Columns3 className="h-3.5 w-3.5" /> {t('projects.boards', 'Boards')}
                 </Button>
                 <Button variant="secondary" size="sm" onClick={() => setManagingFields(true)}>
-                  <SlidersHorizontal className="h-3.5 w-3.5" /> Fields
+                  <SlidersHorizontal className="h-3.5 w-3.5" /> {t('projects.fields', 'Fields')}
                 </Button>
                 <Button
                   variant="secondary"
                   size="sm"
                   onClick={() => {
-                    setTemplateName(`${project.data.name} template`)
+                    setTemplateName(
+                      t('projects.templateNameDefault', '{name} template', {
+                        name: project.data.name,
+                      }),
+                    )
                     setSavingTemplate(true)
                   }}
                 >
-                  <Save className="h-3.5 w-3.5" /> Template
+                  <Save className="h-3.5 w-3.5" /> {t('projects.template', 'Template')}
                 </Button>
               </>
             )}
             <Button
               variant="secondary"
               size="sm"
-              title="Download all project tasks as CSV"
+              title={t('projects.csvHint', 'Download all project tasks as CSV')}
               onClick={() =>
                 void dataApi
                   .downloadProjectCsv(project.data.id, `${project.data.name}.csv`)
-                  .catch(() => toast.error('Could not export CSV'))
+                  .catch(() => toast.error(t('projects.csvError', 'Could not export CSV')))
               }
             >
               <FileDown className="h-3.5 w-3.5" /> CSV
             </Button>
             {canManage(role) && (
               <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
-                <Settings2 className="h-3.5 w-3.5" /> Project settings
+                <Settings2 className="h-3.5 w-3.5" /> {t('projects.settings', 'Project settings')}
               </Button>
             )}
             <Button size="sm" onClick={() => startCreate()}>
-              <Plus className="h-3.5 w-3.5" /> Add task
+              <Plus className="h-3.5 w-3.5" /> {t('projects.addTask', 'Add task')}
             </Button>
           </div>
         </div>
@@ -472,9 +504,12 @@ export function ProjectPage() {
 
       {view === 'board' ? (
         <>
-          {tasks.isLoading && <PageSpinner label="Loading board…" />}
+          {tasks.isLoading && <PageSpinner label={t('projects.loadingBoard', 'Loading board…')} />}
           {tasks.isError && (
-            <ErrorState message="Could not load tasks." onRetry={() => void tasks.refetch()} />
+            <ErrorState
+              message={t('projects.loadTasksError', 'Could not load tasks.')}
+              onRetry={() => void tasks.refetch()}
+            />
           )}
           {tasks.data && (
             <TaskBoard
@@ -500,10 +535,12 @@ export function ProjectPage() {
         projectId ? <FormsManager projectId={projectId} /> : null
       ) : (
         <>
-          {tree.isLoading && <PageSpinner label="Loading hierarchy…" />}
+          {tree.isLoading && (
+            <PageSpinner label={t('projects.loadingHierarchy', 'Loading hierarchy…')} />
+          )}
           {tree.isError && (
             <ErrorState
-              message="Could not load the hierarchy."
+              message={t('projects.loadTreeError', 'Could not load the hierarchy.')}
               onRetry={() => void tree.refetch()}
             />
           )}
@@ -539,45 +576,48 @@ export function ProjectPage() {
       <Modal
         open={editing}
         onClose={() => setEditing(false)}
-        title="Project settings"
+        title={t('projects.settings', 'Project settings')}
         footer={
           <>
             <Button variant="secondary" onClick={() => setEditing(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={() => saveProject.mutate()}
               loading={saveProject.isPending}
               disabled={name.trim().length === 0}
             >
-              Save changes
+              {t('projects.saveChanges', 'Save changes')}
             </Button>
           </>
         }
       >
         <div className="space-y-4">
-          <Field label="Name">
+          <Field label={t('common.name', 'Name')}>
             <Input value={name} maxLength={255} onChange={(event) => setName(event.target.value)} />
           </Field>
-          <Field label="Description">
+          <Field label={t('common.description', 'Description')}>
             <Textarea
               value={description}
               maxLength={10_000}
               onChange={(event) => setDescription(event.target.value)}
             />
           </Field>
-          <Field label="Status">
+          <Field label={t('common.status', 'Status')}>
             <Select
               value={status}
               onChange={(event) => setStatus(event.target.value as 'active' | 'archived')}
             >
-              <option value="active">Active</option>
-              <option value="archived">Archived</option>
+              <option value="active">{t('projects.status.active', 'Active')}</option>
+              <option value="archived">{t('projects.status.archived', 'Archived')}</option>
             </Select>
           </Field>
           <Field
-            label="Visibility"
-            hint="Private projects are only visible to the owner and explicit members"
+            label={t('projects.visibility', 'Visibility')}
+            hint={t(
+              'projects.visibilityHint',
+              'Private projects are only visible to the owner and explicit members',
+            )}
           >
             <Select
               value={visibility}
@@ -585,38 +625,52 @@ export function ProjectPage() {
                 setVisibility(event.target.value as 'workspace' | 'private')
               }
             >
-              <option value="workspace">Workspace — everyone can see it</option>
-              <option value="private">Private — members only</option>
+              <option value="workspace">
+                {t('projects.visibility.workspace', 'Workspace — everyone can see it')}
+              </option>
+              <option value="private">
+                {t('projects.visibility.private', 'Private — members only')}
+              </option>
             </Select>
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Issue key" hint="Prefix for new tasks, e.g. TEAM-42">
+            <Field
+              label={t('projects.issueKey', 'Issue key')}
+              hint={t('projects.issueKeyHint', 'Prefix for new tasks, e.g. TEAM-42')}
+            >
               <Input
                 value={projectKey}
                 maxLength={10}
                 onChange={(event) => setProjectKey(event.target.value.toUpperCase())}
               />
             </Field>
-            <Field label="Estimation" hint="Points or hours on tasks and sprint totals">
+            <Field
+              label={t('projects.estimation', 'Estimation')}
+              hint={t('projects.estimationHint', 'Points or hours on tasks and sprint totals')}
+            >
               <Select
                 value={estimationUnit}
                 onChange={(event) =>
                   setEstimationUnit(event.target.value as 'none' | 'points' | 'hours')
                 }
               >
-                <option value="points">Story points</option>
-                <option value="hours">Hours</option>
-                <option value="none">None</option>
+                <option value="points">{t('projects.estimation.points', 'Story points')}</option>
+                <option value="hours">{t('projects.estimation.hours', 'Hours')}</option>
+                <option value="none">{t('common.none', 'None')}</option>
               </Select>
             </Field>
           </div>
           <div className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-3 py-3">
             <div>
-              <p className="text-sm font-medium text-red-800">Delete project</p>
-              <p className="text-xs text-red-600">Tasks and comments will be removed.</p>
+              <p className="text-sm font-medium text-red-800">
+                {t('projects.deleteTitle', 'Delete project')}
+              </p>
+              <p className="text-xs text-red-600">
+                {t('projects.deleteHint', 'Tasks and comments will be removed.')}
+              </p>
             </div>
             <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
-              Delete
+              {t('common.delete', 'Delete')}
             </Button>
           </div>
         </div>
@@ -624,8 +678,12 @@ export function ProjectPage() {
 
       <ConfirmDialog
         open={confirmDelete}
-        title="Delete project"
-        message={`Delete "${project.data.name}" and everything inside it? This cannot be undone.`}
+        title={t('projects.deleteTitle', 'Delete project')}
+        message={t(
+          'projects.deleteConfirm',
+          'Delete "{name}" and everything inside it? This cannot be undone.',
+          { name: project.data.name },
+        )}
         busy={deleteProject.isPending}
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => deleteProject.mutate()}
@@ -662,24 +720,27 @@ export function ProjectPage() {
           <Modal
             open={savingTemplate}
             onClose={() => setSavingTemplate(false)}
-            title="Save as project template"
-            description="Snapshots the workflow, labels, custom fields, boards and hierarchy."
+            title={t('projects.saveTemplateTitle', 'Save as project template')}
+            description={t(
+              'projects.saveTemplateDescription',
+              'Snapshots the workflow, labels, custom fields, boards and hierarchy.',
+            )}
             footer={
               <>
                 <Button variant="secondary" onClick={() => setSavingTemplate(false)}>
-                  Cancel
+                  {t('common.cancel', 'Cancel')}
                 </Button>
                 <Button
                   onClick={() => saveTemplate.mutate()}
                   loading={saveTemplate.isPending}
                   disabled={!templateName.trim()}
                 >
-                  Save template
+                  {t('projects.saveTemplate', 'Save template')}
                 </Button>
               </>
             }
           >
-            <Field label="Template name">
+            <Field label={t('projects.templateName', 'Template name')}>
               <Input
                 value={templateName}
                 maxLength={128}

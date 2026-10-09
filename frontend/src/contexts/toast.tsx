@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import { CheckCircle2, Info, XCircle } from 'lucide-react'
 
+import { getStoredLocale, translate } from '../lib/i18n'
 import { cn } from '../lib/utils'
 
 type ToastType = 'success' | 'error' | 'info'
@@ -50,7 +51,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-80 flex-col gap-2">
+      <div className="pointer-events-none fixed bottom-4 end-4 z-[100] flex w-80 flex-col gap-2">
         {toasts.map((toast) => (
           <div
             key={toast.id}
@@ -76,5 +77,5 @@ export function useToast(): ToastContextValue {
 
 export function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message
-  return 'Something went wrong'
+  return translate(getStoredLocale(), 'common.somethingWentWrong', 'Something went wrong')
 }

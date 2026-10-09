@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useToast } from '../../contexts/toast'
 import { ApiError, sprintsApi } from '../../lib/api'
 import { qk, useSprints } from '../../lib/hooks'
+import { useI18n } from '../../lib/i18n'
 import type { SprintRead } from '../../lib/types'
 import { formatDate } from '../../lib/utils'
 import { Badge, Button, Field, Input, Modal, Select } from '../ui'
@@ -13,6 +14,12 @@ const STATE_BADGE: Record<SprintRead['state'], string> = {
   planned: 'bg-slate-100 text-slate-600',
   active: 'bg-emerald-100 text-emerald-700',
   completed: 'bg-slate-100 text-slate-400',
+}
+
+const STATE_LABELS: Record<SprintRead['state'], string> = {
+  planned: 'Planned',
+  active: 'Active',
+  completed: 'Completed',
 }
 
 export function SprintManager({
@@ -24,6 +31,7 @@ export function SprintManager({
   open: boolean
   onClose: () => void
 }) {
+  const { t } = useI18n()
   const sprints = useSprints(projectId)
   const queryClient = useQueryClient()
   const toast = useToast()
@@ -53,18 +61,18 @@ export function SprintManager({
       setGoal('')
       setStartDate('')
       setEndDate('')
-      toast.success('Sprint created')
+      toast.success(t('sprints.created', 'Sprint created'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not create sprint'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('sprints.createError', 'Could not create sprint')),
   })
 
   const start = useMutation({
     mutationFn: (sprintId: string) => sprintsApi.start(sprintId),
     onSuccess: () => {
       invalidate()
-      toast.success('Sprint started')
+      toast.success(t('sprints.started', 'Sprint started'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not start sprint'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('sprints.startError', 'Could not start sprint')),
   })
 
   const complete = useMutation({
@@ -73,26 +81,32 @@ export function SprintManager({
     onSuccess: (sprint) => {
       invalidate()
       toast.success(
-        `Sprint completed${sprint.carried_over_count ? ` — ${sprint.carried_over_count} task(s) carried over` : ''}`,
+        sprint.carried_over_count
+          ? t(
+              'sprints.completedCarriedOver',
+              'Sprint completed — {count} task(s) carried over',
+              { count: sprint.carried_over_count },
+            )
+          : t('sprints.completed', 'Sprint completed'),
       )
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.message : 'Could not complete sprint'),
+      toast.error(err instanceof ApiError ? err.message : t('sprints.completeError', 'Could not complete sprint')),
   })
 
   const remove = useMutation({
     mutationFn: (sprintId: string) => sprintsApi.remove(sprintId),
     onSuccess: () => {
       invalidate()
-      toast.success('Sprint deleted — its tasks are back in the backlog')
+      toast.success(t('sprints.deleted', 'Sprint deleted — its tasks are back in the backlog'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete sprint'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('sprints.deleteError', 'Could not delete sprint')),
   })
 
   const list = sprints.data ?? []
 
   return (
-    <Modal open={open} onClose={onClose} title="Sprints" size="lg">
+    <Modal open={open} onClose={onClose} title={t('sprints.title', 'Sprints')} size="lg">
       <div className="space-y-5">
         <section className="space-y-2">
           {list.map((sprint) => (
@@ -103,15 +117,25 @@ export function SprintManager({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <Badge className={STATE_BADGE[sprint.state]}>{sprint.state}</Badge>
+                    <Badge className={STATE_BADGE[sprint.state]}>
+                      {t(`sprintState.${sprint.state}`, STATE_LABELS[sprint.state])}
+                    </Badge>
                     <p className="truncate text-sm font-medium text-slate-800">{sprint.name}</p>
                   </div>
                   <p className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-400">
                     <span>
-                      {sprint.done_task_count}/{sprint.task_count} done
+                      {t('sprints.doneProgress', '{done}/{total} done', {
+                        done: sprint.done_task_count,
+                        total: sprint.task_count,
+                      })}
                     </span>
                     {sprint.total_estimate ? (
-                      <span>{sprint.done_estimate ?? 0}/{sprint.total_estimate} pts</span>
+                      <span>
+                        {t('sprints.pointsProgress', '{done}/{total} pts', {
+                          done: sprint.done_estimate ?? 0,
+                          total: sprint.total_estimate,
+                        })}
+                      </span>
                     ) : null}
                     {(sprint.start_date || sprint.end_date) && (
                       <span className="inline-flex items-center gap-1">
@@ -133,7 +157,7 @@ export function SprintManager({
                       onClick={() => start.mutate(sprint.id)}
                       loading={start.isPending}
                     >
-                      <Play className="h-3.5 w-3.5" /> Start
+                      <Play className="h-3.5 w-3.5" /> {t('sprints.start', 'Start')}
                     </Button>
                   )}
                   {sprint.state === 'active' && (
@@ -148,12 +172,14 @@ export function SprintManager({
                           }))
                         }
                       >
-                        <option value="">Unfinished → backlog</option>
+                        <option value="">{t('sprints.unfinishedBacklog', 'Unfinished → backlog')}</option>
                         {list
                           .filter((entry) => entry.state === 'planned')
                           .map((entry) => (
                             <option key={entry.id} value={entry.id}>
-                              Unfinished → {entry.name}
+                              {t('sprints.unfinishedTo', 'Unfinished → {name}', {
+                                name: entry.name,
+                              })}
                             </option>
                           ))}
                       </Select>
@@ -162,14 +188,14 @@ export function SprintManager({
                         onClick={() => complete.mutate(sprint.id)}
                         loading={complete.isPending}
                       >
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Complete
+                        <CheckCircle2 className="h-3.5 w-3.5" /> {t('sprints.complete', 'Complete')}
                       </Button>
                     </>
                   )}
                   {sprint.state !== 'active' && (
                     <button
                       type="button"
-                      title="Delete sprint (tasks return to the backlog)"
+                      title={t('sprints.deleteSprint', 'Delete sprint (tasks return to the backlog)')}
                       onClick={() => remove.mutate(sprint.id)}
                       className="rounded p-1.5 text-slate-300 hover:bg-red-50 hover:text-red-600"
                     >
@@ -182,39 +208,43 @@ export function SprintManager({
           ))}
           {list.length === 0 && (
             <p className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-400">
-              No sprints yet. Create one below, then drag tasks into it from the board or
-              assign them from the backlog.
+              {t(
+                'sprints.empty',
+                'No sprints yet. Create one below, then drag tasks into it from the board or assign them from the backlog.',
+              )}
             </p>
           )}
         </section>
 
         <section className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <p className="text-sm font-semibold text-slate-800">New sprint</p>
+          <p className="text-sm font-semibold text-slate-800">
+            {t('sprints.newSprint', 'New sprint')}
+          </p>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Name">
+            <Field label={t('common.name', 'Name')}>
               <Input
                 value={name}
                 maxLength={255}
-                placeholder="Sprint 5"
+                placeholder={t('sprints.namePlaceholder', 'Sprint 5')}
                 onChange={(event) => setName(event.target.value)}
               />
             </Field>
-            <Field label="Goal">
+            <Field label={t('sprints.goal', 'Goal')}>
               <Input
                 value={goal}
                 maxLength={10_000}
-                placeholder="Ship the checkout flow"
+                placeholder={t('sprints.goalPlaceholder', 'Ship the checkout flow')}
                 onChange={(event) => setGoal(event.target.value)}
               />
             </Field>
-            <Field label="Start">
+            <Field label={t('sprints.startDate', 'Start')}>
               <Input
                 type="date"
                 value={startDate}
                 onChange={(event) => setStartDate(event.target.value)}
               />
             </Field>
-            <Field label="End">
+            <Field label={t('sprints.endDate', 'End')}>
               <Input
                 type="date"
                 value={endDate}
@@ -227,7 +257,7 @@ export function SprintManager({
             loading={create.isPending}
             disabled={!name.trim()}
           >
-            <Plus className="h-4 w-4" /> Create sprint
+            <Plus className="h-4 w-4" /> {t('sprints.create', 'Create sprint')}
           </Button>
         </section>
       </div>

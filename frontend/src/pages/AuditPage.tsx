@@ -12,6 +12,7 @@ import {
   PageSpinner,
 } from '../components/ui'
 import { useAuditLogs } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import { isAdmin } from '../lib/types'
 import { formatDateTime } from '../lib/utils'
 
@@ -19,6 +20,7 @@ const PAGE_SIZE = 50
 
 export function AuditPage() {
   const { org, role, members } = useOrg()
+  const { t } = useI18n()
   const [actionInput, setActionInput] = useState('')
   const [action, setAction] = useState('')
   const [offset, setOffset] = useState(0)
@@ -37,7 +39,7 @@ export function AuditPage() {
     return (
       <div className="p-6">
         <Card className="p-6 text-sm text-slate-600">
-          Only admins and owners can view the audit trail.
+          {t('audit.adminOnly', 'Only admins and owners can view the audit trail.')}
         </Card>
       </div>
     )
@@ -54,9 +56,11 @@ export function AuditPage() {
   return (
     <div className="space-y-5 p-4 md:p-6">
       <div>
-        <h1 className="text-lg font-semibold text-slate-900">Audit trail</h1>
+        <h1 className="text-lg font-semibold text-slate-900">{t('audit.title', 'Audit trail')}</h1>
         <p className="text-sm text-slate-500">
-          Every security-relevant action inside {org.name}.
+          {t('audit.subtitle', 'Every security-relevant action inside {org}.', {
+            org: org.name,
+          })}
         </p>
       </div>
 
@@ -64,7 +68,7 @@ export function AuditPage() {
         <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
         <Input
           className="pl-9"
-          placeholder="Filter by action (e.g. task.updated)…"
+          placeholder={t('audit.filterPlaceholder', 'Filter by action (e.g. task.updated)…')}
           value={actionInput}
           onChange={(event) => setActionInput(event.target.value)}
         />
@@ -72,14 +76,17 @@ export function AuditPage() {
 
       {logs.isLoading && <PageSpinner />}
       {logs.isError && (
-        <ErrorState message="Could not load audit logs." onRetry={() => void logs.refetch()} />
+        <ErrorState
+          message={t('audit.loadError', 'Could not load audit logs.')}
+          onRetry={() => void logs.refetch()}
+        />
       )}
 
       {logs.data?.items.length === 0 && (
         <EmptyState
           icon={<ScrollText className="h-8 w-8" />}
-          title="No audit entries"
-          description="Actions will show up here as your team works."
+          title={t('audit.emptyTitle', 'No audit entries')}
+          description={t('audit.emptyBody', 'Actions will show up here as your team works.')}
         />
       )}
 
@@ -89,11 +96,11 @@ export function AuditPage() {
             <table className="w-full min-w-[760px] text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-4 py-2.5 font-medium">When</th>
-                  <th className="px-4 py-2.5 font-medium">Actor</th>
-                  <th className="px-4 py-2.5 font-medium">Action</th>
-                  <th className="px-4 py-2.5 font-medium">Target</th>
-                  <th className="px-4 py-2.5 font-medium">IP</th>
+                  <th className="px-4 py-2.5 font-medium">{t('audit.when', 'When')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('audit.actor', 'Actor')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('audit.action', 'Action')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('audit.target', 'Target')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('audit.ip', 'IP')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -103,7 +110,9 @@ export function AuditPage() {
                       {formatDateTime(log.created_at)}
                     </td>
                     <td className="px-4 py-2.5 text-slate-700">
-                      {log.actor_id ? (actorName.get(log.actor_id) ?? log.actor_id) : 'system'}
+                      {log.actor_id
+                        ? (actorName.get(log.actor_id) ?? log.actor_id)
+                        : t('audit.system', 'system')}
                     </td>
                     <td className="px-4 py-2.5">
                       <Badge className="bg-slate-100 font-mono text-slate-700">{log.action}</Badge>
@@ -119,7 +128,11 @@ export function AuditPage() {
           </div>
           <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
             <span>
-              Showing {Math.min(offset + 1, total)}–{Math.min(offset + PAGE_SIZE, total)} of {total}
+              {t('audit.showing', 'Showing {from}–{to} of {total}', {
+                from: Math.min(offset + 1, total),
+                to: Math.min(offset + PAGE_SIZE, total),
+                total,
+              })}
             </span>
             <div className="flex gap-2">
               <Button
@@ -128,7 +141,7 @@ export function AuditPage() {
                 disabled={offset === 0}
                 onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}
               >
-                Previous
+                {t('common.previous', 'Previous')}
               </Button>
               <Button
                 size="sm"
@@ -136,7 +149,7 @@ export function AuditPage() {
                 disabled={offset + PAGE_SIZE >= total}
                 onClick={() => setOffset((value) => value + PAGE_SIZE)}
               >
-                Next
+                {t('common.next', 'Next')}
               </Button>
             </div>
           </div>

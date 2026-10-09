@@ -8,6 +8,7 @@ import {
   TYPE_BADGE,
   TYPE_LABELS,
 } from '../../lib/types'
+import { useI18n } from '../../lib/i18n'
 import { cn, formatDate, isOverdue } from '../../lib/utils'
 
 export function TaskCard({
@@ -21,6 +22,7 @@ export function TaskCard({
   onDragStart: (event: React.DragEvent) => void
   onDragEnd: () => void
 }) {
+  const { t } = useI18n()
   const overdue = isOverdue(task.due_date, task.status)
   const isContainer = task.child_count > 0
   const progress = isContainer
@@ -37,8 +39,10 @@ export function TaskCard({
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <Badge className={TYPE_BADGE[task.type]}>{TYPE_LABELS[task.type]}</Badge>
-          <Badge className={PRIORITY_BADGE[task.priority]}>{PRIORITY_LABELS[task.priority]}</Badge>
+          <Badge className={TYPE_BADGE[task.type]}>{t(`type.${task.type}`, TYPE_LABELS[task.type])}</Badge>
+          <Badge className={PRIORITY_BADGE[task.priority]}>
+            {t(`priority.${task.priority}`, PRIORITY_LABELS[task.priority])}
+          </Badge>
           {task.key && (
             <span className="font-mono text-[10px] text-slate-400">{task.key}</span>
           )}
@@ -73,7 +77,10 @@ export function TaskCard({
         <p className="mt-2 flex items-center gap-1 truncate text-[10px] text-slate-400">
           <CornerDownRight className="h-3 w-3 shrink-0" />
           <span className="truncate">
-            {TYPE_LABELS[task.parent.type]} · {task.parent.title}
+            {t('tasks.parentRef', '{type} · {title}', {
+              type: t(`type.${task.parent.type}`, TYPE_LABELS[task.parent.type]),
+              title: task.parent.title,
+            })}
           </span>
         </p>
       )}
@@ -85,7 +92,10 @@ export function TaskCard({
           <div className="flex items-center justify-between text-[10px] text-slate-500">
             <span className="inline-flex items-center gap-1">
               <GitBranch className="h-3 w-3" />
-              {task.done_child_count}/{task.child_count} done
+              {t('tasks.doneCount', '{done}/{total} done', {
+                done: task.done_child_count,
+                total: task.child_count,
+              })}
             </span>
             <span>{progress}%</span>
           </div>
@@ -104,7 +114,7 @@ export function TaskCard({
       <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
         {task.is_blocked && (
           <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-1.5 py-0.5 font-medium text-red-700">
-            <ShieldAlert className="h-3 w-3" /> blocked
+            <ShieldAlert className="h-3 w-3" /> {t('tasks.blocked', 'blocked')}
           </span>
         )}
         {task.checklist_total > 0 && (
@@ -113,10 +123,27 @@ export function TaskCard({
             {task.checklist_done}/{task.checklist_total}
           </span>
         )}
-        {task.assignees.length > 1 && <span>+{task.assignees.length - 1} assignee(s)</span>}
+        {task.assignees.length > 1 && (
+          <span>
+            {task.assignees.length - 1 === 1
+              ? t('tasks.assigneesMoreOne', '+{count} assignee', {
+                  count: task.assignees.length - 1,
+                })
+              : t('tasks.assigneesMore', '+{count} assignees', {
+                  count: task.assignees.length - 1,
+                })}
+          </span>
+        )}
         {task.logged_minutes > 0 && (
           <span>
-            {Math.floor(task.logged_minutes / 60)}h{task.logged_minutes % 60 ? ` ${task.logged_minutes % 60}m` : ''} logged
+            {task.logged_minutes % 60
+              ? t('tasks.loggedTime', '{hours}h {minutes}m logged', {
+                  hours: Math.floor(task.logged_minutes / 60),
+                  minutes: task.logged_minutes % 60,
+                })
+              : t('tasks.loggedTimeHours', '{hours}h logged', {
+                  hours: Math.floor(task.logged_minutes / 60),
+                })}
           </span>
         )}
       </div>
@@ -129,7 +156,7 @@ export function TaskCard({
             size="sm"
           />
         ) : (
-          <span className="text-[11px] text-slate-400">Unassigned</span>
+          <span className="text-[11px] text-slate-400">{t('common.unassigned', 'Unassigned')}</span>
         )}
         {task.due_date && (
           <span

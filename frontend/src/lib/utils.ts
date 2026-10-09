@@ -42,29 +42,34 @@ function parse(value: string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
+function activeLocale(): 'en' | 'fa' {
+  try {
+    return window.localStorage.getItem(LOCALE_STORAGE_KEY) === 'fa' ? 'fa' : 'en'
+  } catch {
+    return 'en'
+  }
+}
+
 // Persian locale renders dates on the Jalali calendar via the -u-ca-persian
 // Unicode extension; every other locale keeps the browser default.
 function dateLocale(): string | undefined {
-  try {
-    return window.localStorage.getItem(LOCALE_STORAGE_KEY) === 'fa'
-      ? 'fa-IR-u-ca-persian'
-      : undefined
-  } catch {
-    return undefined
-  }
+  return activeLocale() === 'fa' ? 'fa-IR-u-ca-persian' : undefined
 }
 
 export function relativeTime(value: string | null | undefined): string {
   const date = parse(value)
   if (!date) return '—'
+  const formatter = new Intl.RelativeTimeFormat(activeLocale() === 'fa' ? 'fa-IR' : 'en', {
+    numeric: 'auto',
+  })
   const seconds = Math.round((Date.now() - date.getTime()) / 1000)
-  if (seconds < 45) return 'just now'
+  if (Math.abs(seconds) < 45) return formatter.format(0, 'second')
   const minutes = Math.round(seconds / 60)
-  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
+  if (Math.abs(minutes) < 60) return formatter.format(-minutes, 'minute')
   const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  if (Math.abs(hours) < 24) return formatter.format(-hours, 'hour')
   const days = Math.round(hours / 24)
-  if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`
+  if (Math.abs(days) < 30) return formatter.format(-days, 'day')
   return formatDate(value)
 }
 

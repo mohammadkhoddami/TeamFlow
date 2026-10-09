@@ -20,6 +20,7 @@ import {
 import { useToast } from '../contexts/toast'
 import { ApiError, webhooksApi } from '../lib/api'
 import { qk, useWebhookDeliveries, useWebhooks } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import { WEBHOOK_EVENTS, type WebhookCreated, type WebhookRead } from '../lib/types'
 import { formatDateTime, relativeTime } from '../lib/utils'
 
@@ -27,6 +28,7 @@ export function WebhooksPage() {
   const { org } = useOrg()
   const webhooks = useWebhooks(org.slug)
   const queryClient = useQueryClient()
+  const { t } = useI18n()
   const toast = useToast()
 
   const [open, setOpen] = useState(false)
@@ -57,14 +59,16 @@ export function WebhooksPage() {
       setError(null)
       setCreated(webhook)
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : 'Could not create webhook'),
+    onError: (err) =>
+      setError(err instanceof ApiError ? err.message : t('webhooks.createError', 'Could not create webhook')),
   })
 
   const toggleActive = useMutation({
     mutationFn: (webhook: WebhookRead) =>
       webhooksApi.update(org.slug, webhook.id, { is_active: !webhook.is_active }),
     onSuccess: invalidate,
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update webhook'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('webhooks.updateError', 'Could not update webhook')),
   })
 
   const remove = useMutation({
@@ -72,35 +76,47 @@ export function WebhooksPage() {
     onSuccess: () => {
       invalidate()
       setDeleting(null)
-      toast.success('Webhook deleted')
+      toast.success(t('webhooks.deleted', 'Webhook deleted'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete webhook'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('webhooks.deleteError', 'Could not delete webhook')),
   })
 
   return (
     <div className="space-y-6 p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Webhooks</h1>
+          <h1 className="text-lg font-semibold text-slate-900">
+            {t('webhooks.title', 'Webhooks')}
+          </h1>
           <p className="text-sm text-slate-500">
-            Push TeamFlow events to external services, signed with HMAC-SHA256.
+            {t(
+              'webhooks.subtitle',
+              'Push TeamFlow events to external services, signed with HMAC-SHA256.',
+            )}
           </p>
         </div>
         <Button onClick={() => setOpen(true)}>
-          <Plus className="h-4 w-4" /> New webhook
+          <Plus className="h-4 w-4" /> {t('webhooks.new', 'New webhook')}
         </Button>
       </div>
 
       {webhooks.isLoading && <PageSpinner />}
       {webhooks.isError && (
-        <ErrorState message="Could not load webhooks." onRetry={() => void webhooks.refetch()} />
+        <ErrorState
+          message={t('webhooks.loadError', 'Could not load webhooks.')}
+          onRetry={() => void webhooks.refetch()}
+        />
       )}
 
       {webhooks.data?.length === 0 && (
         <EmptyState
           icon={<Webhook className="h-8 w-8" />}
-          title="No webhooks configured"
-          description="Register an endpoint to receive task and comment events."
+          title={t('webhooks.emptyTitle', 'No webhooks configured')}
+          description={t(
+            'webhooks.emptyBody',
+            'Register an endpoint to receive task and comment events.',
+          )}
         />
       )}
 
@@ -129,7 +145,9 @@ export function WebhooksPage() {
                       : 'bg-slate-100 text-slate-500'
                   }
                 >
-                  {webhook.is_active ? 'active' : 'paused'}
+                  {webhook.is_active
+                    ? t('webhooks.active', 'active')
+                    : t('webhooks.paused', 'paused')}
                 </Badge>
                 <Button
                   size="sm"
@@ -137,15 +155,17 @@ export function WebhooksPage() {
                   onClick={() => toggleActive.mutate(webhook)}
                   loading={toggleActive.isPending}
                 >
-                  {webhook.is_active ? 'Pause' : 'Resume'}
+                  {webhook.is_active
+                    ? t('webhooks.pause', 'Pause')
+                    : t('webhooks.resume', 'Resume')}
                 </Button>
                 <Button size="sm" variant="secondary" onClick={() => setDeliveriesFor(webhook)}>
-                  Deliveries
+                  {t('webhooks.deliveries', 'Deliveries')}
                 </Button>
                 <button
                   className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
                   onClick={() => setDeleting(webhook)}
-                  title="Delete webhook"
+                  title={t('webhooks.deleteTitle', 'Delete webhook')}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -158,43 +178,49 @@ export function WebhooksPage() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="New webhook"
-        description="The signing secret is shown once, right after creation."
+        title={t('webhooks.new', 'New webhook')}
+        description={t(
+          'webhooks.createHint',
+          'The signing secret is shown once, right after creation.',
+        )}
         footer={
           <>
             <Button variant="secondary" onClick={() => setOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={() => create.mutate()}
               loading={create.isPending}
               disabled={!url.trim() || events.length === 0}
             >
-              Create webhook
+              {t('webhooks.create', 'Create webhook')}
             </Button>
           </>
         }
       >
         <div className="space-y-4">
           {error && <ErrorState message={error} />}
-          <Field label="Endpoint URL">
+          <Field label={t('webhooks.endpointUrl', 'Endpoint URL')}>
             <Input
               autoFocus
               value={url}
               onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://example.com/hooks/teamflow"
+              placeholder={t(
+                'webhooks.urlPlaceholder',
+                'https://example.com/hooks/teamflow',
+              )}
             />
           </Field>
-          <Field label="Description">
+          <Field label={t('common.description', 'Description')}>
             <Textarea
               className="min-h-16"
               value={description}
               maxLength={255}
               onChange={(event) => setDescription(event.target.value)}
-              placeholder="What consumes this webhook?"
+              placeholder={t('webhooks.descriptionPlaceholder', 'What consumes this webhook?')}
             />
           </Field>
-          <Field label="Events">
+          <Field label={t('webhooks.events', 'Events')}>
             <div className="space-y-1.5">
               {WEBHOOK_EVENTS.map((event) => (
                 <Checkbox
@@ -218,31 +244,39 @@ export function WebhooksPage() {
       <Modal
         open={Boolean(created)}
         onClose={() => setCreated(null)}
-        title="Webhook created"
-        description="Copy the signing secret now — it cannot be retrieved again."
+        title={t('webhooks.createdTitle', 'Webhook created')}
+        description={t(
+          'webhooks.createdHint',
+          'Copy the signing secret now — it cannot be retrieved again.',
+        )}
         footer={
-          <Button onClick={() => setCreated(null)}>Done</Button>
+          <Button onClick={() => setCreated(null)}>{t('webhooks.done', 'Done')}</Button>
         }
       >
         {created && (
           <div className="space-y-2">
-            <p className="text-xs font-medium text-slate-500">Signing secret</p>
+            <p className="text-xs font-medium text-slate-500">
+              {t('webhooks.signingSecret', 'Signing secret')}
+            </p>
             <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
               <code className="min-w-0 flex-1 break-all text-xs text-amber-900">{created.secret}</code>
               <button
                 className="rounded p-1.5 text-amber-700 hover:bg-amber-100"
                 onClick={() => {
                   void navigator.clipboard.writeText(created.secret)
-                  toast.success('Secret copied')
+                  toast.success(t('webhooks.secretCopied', 'Secret copied'))
                 }}
-                title="Copy secret"
+                title={t('webhooks.copySecret', 'Copy secret')}
               >
                 <Copy className="h-4 w-4" />
               </button>
             </div>
             <p className="text-xs text-slate-500">
-              Verify deliveries with <code className="font-mono">X-TeamFlow-Signature</code> over{' '}
-              <code className="font-mono">{'{timestamp}.{body}'}</code>.
+              {t(
+                'webhooks.verifyHint',
+                'Verify deliveries with {header} over {payload}.',
+                { header: 'X-TeamFlow-Signature', payload: '{timestamp}.{body}' },
+              )}
             </p>
           </div>
         )}
@@ -252,8 +286,12 @@ export function WebhooksPage() {
 
       <ConfirmDialog
         open={Boolean(deleting)}
-        title="Delete webhook"
-        message={`Delete the webhook for "${deleting?.url}"? Delivery history is removed too.`}
+        title={t('webhooks.deleteTitle', 'Delete webhook')}
+        message={t(
+          'webhooks.deleteMessage',
+          'Delete the webhook for "{url}"? Delivery history is removed too.',
+          { url: deleting?.url ?? '' },
+        )}
         busy={remove.isPending}
         onClose={() => setDeleting(null)}
         onConfirm={() => deleting && remove.mutate(deleting.id)}
@@ -270,30 +308,33 @@ function DeliveriesModal({
   onClose: () => void
 }) {
   const { org } = useOrg()
+  const { t } = useI18n()
   const deliveries = useWebhookDeliveries(org.slug, webhook?.id)
 
   return (
     <Modal
       open={Boolean(webhook)}
       onClose={onClose}
-      title="Recent deliveries"
+      title={t('webhooks.recentDeliveries', 'Recent deliveries')}
       description={webhook?.url}
       size="lg"
     >
       {deliveries.isLoading && <PageSpinner />}
       {deliveries.data?.length === 0 && (
-        <p className="py-6 text-center text-sm text-slate-500">No deliveries yet.</p>
+        <p className="py-6 text-center text-sm text-slate-500">
+          {t('webhooks.noDeliveries', 'No deliveries yet.')}
+        </p>
       )}
       {deliveries.data && deliveries.data.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="py-2 pr-4 font-medium">Event</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 pr-4 font-medium">Attempts</th>
-                <th className="py-2 pr-4 font-medium">Response</th>
-                <th className="py-2 font-medium">When</th>
+                <th className="py-2 pr-4 font-medium">{t('webhooks.event', 'Event')}</th>
+                <th className="py-2 pr-4 font-medium">{t('common.status', 'Status')}</th>
+                <th className="py-2 pr-4 font-medium">{t('webhooks.attempts', 'Attempts')}</th>
+                <th className="py-2 pr-4 font-medium">{t('webhooks.response', 'Response')}</th>
+                <th className="py-2 font-medium">{t('webhooks.when', 'When')}</th>
               </tr>
             </thead>
             <tbody>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useOrg } from '../components/OrgLayout'
 import { Card, CardHeader, EmptyState, Field, Input, PageSpinner, Select } from '../components/ui'
 import { worklogsApi } from '../lib/api'
+import { useI18n } from '../lib/i18n'
 
 function isoDate(offsetDays: number): string {
   const date = new Date()
@@ -13,6 +14,7 @@ function isoDate(offsetDays: number): string {
 
 export function TimesheetPage() {
   const { org, members } = useOrg()
+  const { t } = useI18n()
   const [from, setFrom] = useState(isoDate(-6))
   const [to, setTo] = useState(isoDate(0))
   const [userId, setUserId] = useState('')
@@ -30,26 +32,34 @@ export function TimesheetPage() {
   const formatMinutes = (minutes: number) => {
     const hours = Math.floor(minutes / 60)
     const rest = minutes % 60
-    return `${hours}h${rest ? ` ${rest}m` : ''}`
+    if (hours > 0 && rest > 0) {
+      return t('timesheet.durationHM', '{hours}h {minutes}m', { hours, minutes: rest })
+    }
+    if (hours > 0) return t('timesheet.durationH', '{hours}h', { hours })
+    return t('timesheet.durationM', '{minutes}m', { minutes: rest })
   }
 
   return (
     <div className="space-y-5 p-4 md:p-6">
       <div>
-        <h1 className="text-lg font-semibold text-slate-900">Timesheet</h1>
-        <p className="text-sm text-slate-500">Logged time by day, member and task.</p>
+        <h1 className="text-lg font-semibold text-slate-900">
+          {t('timesheet.title', 'Timesheet')}
+        </h1>
+        <p className="text-sm text-slate-500">
+          {t('timesheet.subtitle', 'Logged time by day, member and task.')}
+        </p>
       </div>
 
       <Card className="flex flex-wrap items-end gap-3 p-4">
-        <Field label="From">
+        <Field label={t('timesheet.from', 'From')}>
           <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
         </Field>
-        <Field label="To">
+        <Field label={t('timesheet.to', 'To')}>
           <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
         </Field>
-        <Field label="Member">
+        <Field label={t('timesheet.member', 'Member')}>
           <Select value={userId} onChange={(event) => setUserId(event.target.value)}>
-            <option value="">Everyone</option>
+            <option value="">{t('timesheet.everyone', 'Everyone')}</option>
             {members.map((membership) => (
               <option key={membership.user_id} value={membership.user_id}>
                 {membership.user?.full_name || membership.user?.email || membership.user_id}
@@ -64,7 +74,9 @@ export function TimesheetPage() {
         <>
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
             <Card className="px-4 py-3">
-              <p className="text-[11px] uppercase tracking-wide text-slate-400">Total</p>
+              <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                {t('timesheet.total', 'Total')}
+              </p>
               <p className="text-xl font-semibold text-slate-800">
                 {formatMinutes(timesheet.data.total_minutes)}
               </p>
@@ -83,20 +95,25 @@ export function TimesheetPage() {
 
           {timesheet.data.rows.length === 0 ? (
             <EmptyState
-              title="No time logged"
-              description="Log time from a task's Time tracking section."
+              title={t('timesheet.emptyTitle', 'No time logged')}
+              description={t(
+                'timesheet.emptyBody',
+                "Log time from a task's Time tracking section.",
+              )}
             />
           ) : (
             <Card className="overflow-hidden">
-              <CardHeader title="Entries" />
+              <CardHeader title={t('timesheet.entries', 'Entries')} />
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] text-sm">
                   <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <tr>
-                      <th className="px-4 py-2.5 font-medium">Day</th>
-                      <th className="px-4 py-2.5 font-medium">Member</th>
-                      <th className="px-4 py-2.5 font-medium">Task</th>
-                      <th className="px-4 py-2.5 font-medium">Time</th>
+                      <th className="px-4 py-2.5 font-medium">{t('timesheet.day', 'Day')}</th>
+                      <th className="px-4 py-2.5 font-medium">
+                        {t('timesheet.member', 'Member')}
+                      </th>
+                      <th className="px-4 py-2.5 font-medium">{t('timesheet.task', 'Task')}</th>
+                      <th className="px-4 py-2.5 font-medium">{t('timesheet.time', 'Time')}</th>
                     </tr>
                   </thead>
                   <tbody>

@@ -20,17 +20,19 @@ import {
 import { useToast } from '../contexts/toast'
 import { ApiError, projectsApi, templatesApi } from '../lib/api'
 import { useProjects } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import { canManage } from '../lib/types'
 import { cn, formatDate } from '../lib/utils'
 
 const FILTERS = [
-  { value: '', label: 'All' },
-  { value: 'active', label: 'Active' },
-  { value: 'archived', label: 'Archived' },
+  { value: '', label: 'All', key: 'projects.filter.all' },
+  { value: 'active', label: 'Active', key: 'projects.filter.active' },
+  { value: 'archived', label: 'Archived', key: 'projects.filter.archived' },
 ] as const
 
 export function ProjectsPage() {
   const { org, role } = useOrg()
+  const { t } = useI18n()
   const [filter, setFilter] = useState('')
   const projects = useProjects(org.slug, filter)
   const queryClient = useQueryClient()
@@ -67,21 +69,24 @@ export function ProjectsPage() {
       setDescription('')
       setTemplateId('')
       setError(null)
-      toast.success('Project created')
+      toast.success(t('projects.createdToast', 'Project created'))
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : 'Could not create project'),
+    onError: (err) =>
+      setError(err instanceof ApiError ? err.message : t('projects.createError', 'Could not create project')),
   })
 
   return (
     <div className="space-y-6 p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Projects</h1>
-          <p className="text-sm text-slate-500">Everything your team is working on.</p>
+          <h1 className="text-lg font-semibold text-slate-900">{t('projects.title', 'Projects')}</h1>
+          <p className="text-sm text-slate-500">
+            {t('projects.subtitle', 'Everything your team is working on.')}
+          </p>
         </div>
         {canManage(role) && (
           <Button onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" /> New project
+            <Plus className="h-4 w-4" /> {t('projects.new', 'New project')}
           </Button>
         )}
       </div>
@@ -98,24 +103,27 @@ export function ProjectsPage() {
                 : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700',
             )}
           >
-            {entry.label}
+            {t(entry.key, entry.label)}
           </button>
         ))}
       </div>
 
       {projects.isLoading && <PageSpinner />}
       {projects.isError && (
-        <ErrorState message="Could not load projects." onRetry={() => void projects.refetch()} />
+        <ErrorState
+          message={t('projects.loadError', 'Could not load projects.')}
+          onRetry={() => void projects.refetch()}
+        />
       )}
 
       {projects.data?.length === 0 && (
         <EmptyState
           icon={<FolderKanban className="h-8 w-8" />}
-          title="No projects here"
+          title={t('projects.empty.title', 'No projects here')}
           description={
             canManage(role)
-              ? 'Create a project to start tracking tasks on a board.'
-              : 'Ask a manager to create the first project.'
+              ? t('projects.empty.canManage', 'Create a project to start tracking tasks on a board.')
+              : t('projects.empty.member', 'Ask a manager to create the first project.')
           }
         />
       )}
@@ -135,14 +143,21 @@ export function ProjectsPage() {
                       : 'bg-slate-100 text-slate-600'
                   }
                 >
-                  {project.status}
+                  {t(
+                    `projects.status.${project.status}`,
+                    project.status === 'active' ? 'Active' : 'Archived',
+                  )}
                 </Badge>
               </div>
               <p className="mt-3 font-semibold text-slate-900">{project.name}</p>
               <p className="mt-1 line-clamp-2 flex-1 text-sm text-slate-500">
-                {project.description || 'No description'}
+                {project.description || t('projects.noDescription', 'No description')}
               </p>
-              <p className="mt-3 text-xs text-slate-400">Created {formatDate(project.created_at)}</p>
+              <p className="mt-3 text-xs text-slate-400">
+                {t('projects.created', 'Created {date}', {
+                  date: formatDate(project.created_at),
+                })}
+              </p>
             </Card>
           </Link>
         ))}
@@ -151,18 +166,18 @@ export function ProjectsPage() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="New project"
+        title={t('projects.new', 'New project')}
         footer={
           <>
             <Button variant="secondary" onClick={() => setOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={() => create.mutate()}
               loading={create.isPending}
               disabled={name.trim().length === 0}
             >
-              Create project
+              {t('projects.create', 'Create project')}
             </Button>
           </>
         }
@@ -170,11 +185,11 @@ export function ProjectsPage() {
         <div className="space-y-4">
           {error && <ErrorState message={error} />}
           <Field
-            label="Template"
-            hint="Scrum/Kanban/Bug triage preset, a saved template, or blank"
+            label={t('projects.template', 'Template')}
+            hint={t('projects.templateHint', 'Scrum/Kanban/Bug triage preset, a saved template, or blank')}
           >
             <Select value={templateId} onChange={(event) => setTemplateId(event.target.value)}>
-              <option value="">Blank project</option>
+              <option value="">{t('projects.blankProject', 'Blank project')}</option>
               {(templates.data ?? []).map((template) => (
                 <option key={template.id} value={template.id}>
                   {template.is_builtin ? '★ ' : ''}
@@ -183,21 +198,21 @@ export function ProjectsPage() {
               ))}
             </Select>
           </Field>
-          <Field label="Name">
+          <Field label={t('common.name', 'Name')}>
             <Input
               autoFocus
               value={name}
               maxLength={255}
               onChange={(event) => setName(event.target.value)}
-              placeholder="Website redesign"
+              placeholder={t('projects.namePlaceholder', 'Website redesign')}
             />
           </Field>
-          <Field label="Description">
+          <Field label={t('common.description', 'Description')}>
             <Textarea
               value={description}
               maxLength={10_000}
               onChange={(event) => setDescription(event.target.value)}
-              placeholder="What is this project about?"
+              placeholder={t('projects.descriptionPlaceholder', 'What is this project about?')}
             />
           </Field>
         </div>

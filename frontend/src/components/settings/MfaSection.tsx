@@ -19,7 +19,7 @@ function CopyButton({ value }: { value: string }) {
       onClick={() => {
         void navigator.clipboard.writeText(value).then(
           () => toast.success(t('common.copied', 'Copied')),
-          () => toast.error('Could not copy'),
+          () => toast.error(t('settings.couldNotCopy', 'Could not copy')),
         )
       }}
     >
@@ -47,7 +47,9 @@ export function MfaSection() {
       setError(null)
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.message : 'Could not start MFA setup'),
+      toast.error(
+        err instanceof ApiError ? err.message : t('settings.couldNotStartMfa', 'Could not start MFA setup'),
+      ),
   })
 
   const enable = useMutation({
@@ -55,9 +57,10 @@ export function MfaSection() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: qk.mfaStatus })
       setSetup(null)
-      toast.success('Two-factor authentication enabled')
+      toast.success(t('settings.mfaEnabled', 'Two-factor authentication enabled'))
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : 'Could not verify code'),
+    onError: (err) =>
+      setError(err instanceof ApiError ? err.message : t('settings.couldNotVerifyCode', 'Could not verify code')),
   })
 
   const disable = useMutation({
@@ -66,17 +69,17 @@ export function MfaSection() {
       void queryClient.invalidateQueries({ queryKey: qk.mfaStatus })
       setDisableOpen(false)
       setDisableCode('')
-      toast.success('Two-factor authentication disabled')
+      toast.success(t('settings.mfaDisabled', 'Two-factor authentication disabled'))
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.message : 'Could not disable MFA'),
+      toast.error(err instanceof ApiError ? err.message : t('settings.couldNotDisableMfa', 'Could not disable MFA')),
   })
 
   return (
     <Card>
       <CardHeader
         title={t('settings.security', 'Security & sign-in')}
-        description="Protect your account with a TOTP authenticator app."
+        description={t('settings.mfaDescription', 'Protect your account with a TOTP authenticator app.')}
         action={
           status.data && (
             <Badge
@@ -86,7 +89,7 @@ export function MfaSection() {
                   : 'bg-slate-100 text-slate-600'
               }
             >
-              {status.data.enabled ? 'Enabled' : 'Disabled'}
+              {status.data.enabled ? t('settings.enabled', 'Enabled') : t('settings.disabled', 'Disabled')}
             </Badge>
           )
         }
@@ -95,15 +98,18 @@ export function MfaSection() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-md text-sm text-slate-600">
             {status.data?.enabled
-              ? 'Sign-in requires a code from your authenticator app.'
-              : 'Add a second factor so a stolen password is not enough to sign in.'}
+              ? t('settings.mfaEnabledHint', 'Sign-in requires a code from your authenticator app.')
+              : t(
+                  'settings.mfaSetupHint',
+                  'Add a second factor so a stolen password is not enough to sign in.',
+                )}
           </p>
           <div className="flex items-center gap-2">
             {status.data?.enabled ? (
               <>
                 <ShieldCheck className="h-4 w-4 text-emerald-500" />
                 <Button variant="danger" size="sm" onClick={() => setDisableOpen(true)}>
-                  <ShieldOff className="h-3.5 w-3.5" /> Disable
+                  <ShieldOff className="h-3.5 w-3.5" /> {t('settings.disable', 'Disable')}
                 </Button>
               </>
             ) : (
@@ -112,7 +118,7 @@ export function MfaSection() {
                 onClick={() => startSetup.mutate()}
                 loading={startSetup.isPending}
               >
-                <ShieldCheck className="h-3.5 w-3.5" /> Set up MFA
+                <ShieldCheck className="h-3.5 w-3.5" /> {t('settings.setUpMfa', 'Set up MFA')}
               </Button>
             )}
           </div>
@@ -122,8 +128,11 @@ export function MfaSection() {
       <Modal
         open={Boolean(setup)}
         onClose={() => setSetup(null)}
-        title="Set up two-factor authentication"
-        description="Add the secret to your authenticator app, then confirm with a code."
+        title={t('settings.mfaSetupTitle', 'Set up two-factor authentication')}
+        description={t(
+          'settings.mfaSetupDescription',
+          'Add the secret to your authenticator app, then confirm with a code.',
+        )}
         footer={
           <>
             <Button variant="secondary" onClick={() => setSetup(null)}>
@@ -142,21 +151,23 @@ export function MfaSection() {
         <div className="space-y-4">
           {error && <ErrorState message={error} />}
           <div>
-            <p className="text-sm font-medium text-slate-700">otpauth URI</p>
+            <p className="text-sm font-medium text-slate-700">{t('settings.otpauthUri', 'otpauth URI')}</p>
             <div className="mt-1 flex items-start gap-2 rounded bg-slate-50 px-3 py-2 font-mono text-xs">
               <span className="min-w-0 flex-1 break-all">{setup?.otpauth_uri}</span>
               <CopyButton value={setup?.otpauth_uri ?? ''} />
             </div>
           </div>
           <div>
-            <p className="text-sm font-medium text-slate-700">Secret</p>
+            <p className="text-sm font-medium text-slate-700">{t('settings.secret', 'Secret')}</p>
             <div className="mt-1 flex items-center gap-2 rounded bg-slate-50 px-3 py-2 font-mono text-xs">
               <span className="min-w-0 flex-1 break-all">{setup?.secret}</span>
               <CopyButton value={setup?.secret ?? ''} />
             </div>
           </div>
           <div>
-            <p className="text-sm font-medium text-slate-700">Recovery codes</p>
+            <p className="text-sm font-medium text-slate-700">
+              {t('settings.recoveryCodes', 'Recovery codes')}
+            </p>
             <div className="mt-1 grid grid-cols-2 gap-1 rounded bg-slate-50 px-3 py-2 font-mono text-xs">
               {(setup?.recovery_codes ?? []).map((recovery) => (
                 <span key={recovery}>{recovery}</span>
@@ -168,7 +179,7 @@ export function MfaSection() {
                     .writeText((setup?.recovery_codes ?? []).join('\n'))
                     .then(
                       () => toast.success(t('common.copied', 'Copied')),
-                      () => toast.error('Could not copy'),
+                      () => toast.error(t('settings.couldNotCopy', 'Could not copy')),
                     )
                 }}
               >
@@ -191,7 +202,7 @@ export function MfaSection() {
       <Modal
         open={disableOpen}
         onClose={() => setDisableOpen(false)}
-        title="Disable two-factor authentication"
+        title={t('settings.mfaDisableTitle', 'Disable two-factor authentication')}
         size="sm"
         footer={
           <>
@@ -204,14 +215,14 @@ export function MfaSection() {
               loading={disable.isPending}
               disabled={!disableCode.trim()}
             >
-              Disable
+              {t('settings.disable', 'Disable')}
             </Button>
           </>
         }
       >
         <Field
-          label="Code"
-          hint="A TOTP code or one of your recovery codes is required."
+          label={t('settings.code', 'Code')}
+          hint={t('settings.codeHint', 'A TOTP code or one of your recovery codes is required.')}
         >
           <Input
             autoFocus

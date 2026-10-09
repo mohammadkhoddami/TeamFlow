@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useToast } from '../contexts/toast'
 import { ApiError, projectMembersApi } from '../lib/api'
 import { qk, useProjectMembers } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import {
   PROJECT_MEMBER_ROLE_LABELS,
   type ProjectMemberRead,
@@ -23,6 +24,7 @@ export function ProjectMembersModal({
   open: boolean
   onClose: () => void
 }) {
+  const { t } = useI18n()
   const toast = useToast()
   const queryClient = useQueryClient()
   const members = useProjectMembers(projectId, open)
@@ -43,9 +45,10 @@ export function ProjectMembersModal({
       setEmail('')
       setRole('member')
       setError(null)
-      toast.success('Project member added')
+      toast.success(t('projectMembers.added', 'Project member added'))
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : 'Could not add member'),
+    onError: (err) =>
+      setError(err instanceof ApiError ? err.message : t('projectMembers.addError', 'Could not add member')),
   })
 
   const changeRole = useMutation({
@@ -53,9 +56,10 @@ export function ProjectMembersModal({
       projectMembersApi.update(projectId, member.user_id, nextRole),
     onSuccess: () => {
       invalidate()
-      toast.success('Project role updated')
+      toast.success(t('projectMembers.roleUpdated', 'Project role updated'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update role'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('projectMembers.roleError', 'Could not update role')),
   })
 
   const remove = useMutation({
@@ -63,40 +67,41 @@ export function ProjectMembersModal({
       projectMembersApi.remove(projectId, member.user_id),
     onSuccess: () => {
       invalidate()
-      toast.success('Project member removed')
+      toast.success(t('projectMembers.removed', 'Project member removed'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not remove member'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('projectMembers.removeError', 'Could not remove member')),
   })
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="Project members"
-      description="Only listed members can access a private project."
+      title={t('projectMembers.title', 'Project members')}
+      description={t('projectMembers.description', 'Only listed members can access a private project.')}
       size="lg"
     >
       <div className="space-y-4">
         <div className="flex flex-wrap items-end gap-2">
           <div className="min-w-48 flex-1">
-            <Field label="Email">
+            <Field label={t('projectMembers.email', 'Email')}>
               <Input
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="teammate@company.com"
+                placeholder={t('projectMembers.emailPlaceholder', 'teammate@company.com')}
               />
             </Field>
           </div>
           <div className="w-36">
-            <Field label="Role">
+            <Field label={t('projectMembers.role', 'Role')}>
               <Select
                 value={role}
                 onChange={(event) => setRole(event.target.value as ProjectMemberRole)}
               >
                 {ROLES.map((entry) => (
                   <option key={entry} value={entry}>
-                    {PROJECT_MEMBER_ROLE_LABELS[entry]}
+                    {t(`projectRole.${entry}`, PROJECT_MEMBER_ROLE_LABELS[entry])}
                   </option>
                 ))}
               </Select>
@@ -107,16 +112,21 @@ export function ProjectMembersModal({
             loading={add.isPending}
             disabled={!email.trim()}
           >
-            Add
+            {t('common.add', 'Add')}
           </Button>
         </div>
 
         {error && <ErrorState message={error} />}
 
-        {members.isLoading && <p className="text-sm text-slate-400">Loading members…</p>}
+        {members.isLoading && (
+          <p className="text-sm text-slate-400">{t('projectMembers.loading', 'Loading members…')}</p>
+        )}
         {(members.data?.length ?? 0) === 0 && !members.isLoading && (
           <p className="text-sm text-slate-400">
-            No explicit members — the project follows workspace visibility.
+            {t(
+              'projectMembers.empty',
+              'No explicit members — the project follows workspace visibility.',
+            )}
           </p>
         )}
         <ul className="space-y-2">
@@ -132,7 +142,7 @@ export function ProjectMembersModal({
               />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-slate-800">
-                  {member.user?.full_name || 'Unnamed'}
+                  {member.user?.full_name || t('common.unnamed', 'Unnamed')}
                 </p>
                 <p className="truncate text-xs text-slate-500">{member.user?.email}</p>
               </div>
@@ -148,13 +158,13 @@ export function ProjectMembersModal({
               >
                 {ROLES.map((entry) => (
                   <option key={entry} value={entry}>
-                    {PROJECT_MEMBER_ROLE_LABELS[entry]}
+                    {t(`projectRole.${entry}`, PROJECT_MEMBER_ROLE_LABELS[entry])}
                   </option>
                 ))}
               </Select>
               <button
                 className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                title="Remove"
+                title={t('common.remove', 'Remove')}
                 onClick={() => remove.mutate(member)}
               >
                 <Trash2 className="h-4 w-4" />

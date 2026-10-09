@@ -2,6 +2,7 @@ import { ImageOff, Square, SquareCheck } from 'lucide-react'
 import { Fragment, createElement, useEffect, useMemo, useState } from 'react'
 
 import { attachmentsApi } from '../lib/api'
+import { useI18n } from '../lib/i18n'
 import type { InlineToken, MarkdownBlock } from '../lib/markdown'
 import { parseInline, parseMarkdown } from '../lib/markdown'
 import { cn } from '../lib/utils'
@@ -30,6 +31,7 @@ function MarkdownImage({
   alt: string
   className?: string
 }) {
+  const { t } = useI18n()
   const [resolved, setResolved] = useState<string | null>(
     src.startsWith('attachment://') ? null : src,
   )
@@ -56,14 +58,14 @@ function MarkdownImage({
   if (failed || (!resolved && !src.startsWith('attachment://'))) {
     return (
       <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-1 text-xs text-slate-500">
-        <ImageOff className="h-3.5 w-3.5" /> {alt || 'image'}
+        <ImageOff className="h-3.5 w-3.5" /> {alt || t('markdown.imageFallback', 'image')}
       </span>
     )
   }
   if (!resolved) {
     return (
       <span className="inline-block animate-pulse rounded bg-slate-100 px-6 py-3 text-xs text-slate-400">
-        {alt || 'Loading image…'}
+        {alt || t('markdown.loadingImage', 'Loading image…')}
       </span>
     )
   }
@@ -265,17 +267,20 @@ function renderBlock(block: MarkdownBlock, key: number): React.ReactNode {
 export function Markdown({
   text,
   className,
-  emptyText = 'No description',
+  emptyText,
 }: {
   text: string | null | undefined
   className?: string
   emptyText?: string
 }) {
+  const { t } = useI18n()
   const blocks = useMemo(() => parseMarkdown(text ?? ''), [text])
+  const resolvedEmptyText =
+    emptyText === undefined ? t('markdown.noDescription', 'No description') : emptyText
 
   if (blocks.length === 0) {
-    return emptyText ? (
-      <p className={cn('text-sm text-slate-400', className)}>{emptyText}</p>
+    return resolvedEmptyText ? (
+      <p className={cn('text-sm text-slate-400', className)}>{resolvedEmptyText}</p>
     ) : null
   }
 

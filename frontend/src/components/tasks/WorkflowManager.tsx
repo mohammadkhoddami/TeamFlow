@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useToast } from '../../contexts/toast'
 import { ApiError, workflowsApi } from '../../lib/api'
 import { qk, useWorkflow } from '../../lib/hooks'
+import { useI18n } from '../../lib/i18n'
 import type { TaskCategory, WorkflowStatusInput } from '../../lib/types'
 import { Button, Checkbox, Field, Input, Modal, Select } from '../ui'
 
@@ -32,6 +33,7 @@ export function WorkflowManager({
   open: boolean
   onClose: () => void
 }) {
+  const { t } = useI18n()
   const workflow = useWorkflow(projectId)
   const queryClient = useQueryClient()
   const toast = useToast()
@@ -58,11 +60,11 @@ export function WorkflowManager({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: qk.workflow(projectId) })
       void queryClient.invalidateQueries({ queryKey: ['orgs'] })
-      toast.success('Workflow saved')
+      toast.success(t('workflow.saved', 'Workflow saved'))
       onClose()
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.message : 'Could not save the workflow'),
+      toast.error(err instanceof ApiError ? err.message : t('workflow.saveError', 'Could not save the workflow')),
   })
 
   const update = (index: number, patch: Partial<WorkflowStatusInput>) => {
@@ -92,26 +94,28 @@ export function WorkflowManager({
     <Modal
       open={open}
       onClose={onClose}
-      title="Workflow & WIP limits"
+      title={t('workflow.title', 'Workflow & WIP limits')}
       size="lg"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={() => save.mutate()} loading={save.isPending}>
-            Save workflow
+            {t('workflow.save', 'Save workflow')}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
         <p className="text-xs text-slate-500">
-          Default is the classic four-column flow. Renaming keys is not supported;
-          add new statuses for custom flows. Removing a status re-homes its tasks.
+          {t(
+            'workflow.description',
+            'Default is the classic four-column flow. Renaming keys is not supported; add new statuses for custom flows. Removing a status re-homes its tasks.',
+          )}
         </p>
         <Checkbox
-          label="Enforce WIP limits (reject moves into a full column)"
+          label={t('workflow.enforceWip', 'Enforce WIP limits (reject moves into a full column)')}
           checked={wipEnforced}
           onChange={(event) => setWipEnforced(event.target.checked)}
         />
@@ -120,13 +124,13 @@ export function WorkflowManager({
           {statuses.map((entry, index) => (
             <div key={entry.key} className="rounded-lg border border-slate-200 p-3">
               <div className="grid gap-3 sm:grid-cols-3">
-                <Field label="Name">
+                <Field label={t('common.name', 'Name')}>
                   <Input
                     value={entry.name}
                     onChange={(event) => update(index, { name: event.target.value })}
                   />
                 </Field>
-                <Field label="Key" hint="Immutable once created">
+                <Field label={t('workflow.key', 'Key')} hint={t('workflow.keyHint', 'Immutable once created')}>
                   <Input
                     value={entry.key}
                     disabled={!entry.key.startsWith('new_')}
@@ -135,7 +139,7 @@ export function WorkflowManager({
                     }
                   />
                 </Field>
-                <Field label="Category">
+                <Field label={t('workflow.category', 'Category')}>
                   <Select
                     value={entry.category}
                     onChange={(event) =>
@@ -144,12 +148,12 @@ export function WorkflowManager({
                   >
                     {CATEGORIES.map((category) => (
                       <option key={category.value} value={category.value}>
-                        {category.label}
+                        {t(`status.${category.value}`, category.label)}
                       </option>
                     ))}
                   </Select>
                 </Field>
-                <Field label="WIP limit" hint="Empty = unlimited">
+                <Field label={t('workflow.wipLimit', 'WIP limit')} hint={t('workflow.wipHint', 'Empty = unlimited')}>
                   <Input
                     type="number"
                     min={0}
@@ -163,7 +167,9 @@ export function WorkflowManager({
                 </Field>
               </div>
               <div className="mt-2">
-                <p className="text-[11px] font-medium text-slate-500">Allowed next statuses</p>
+                <p className="text-[11px] font-medium text-slate-500">
+                  {t('workflow.allowedNext', 'Allowed next statuses')}
+                </p>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {statuses
                     .filter((candidate) => candidate.key !== entry.key)
@@ -191,7 +197,7 @@ export function WorkflowManager({
                   }
                   className="inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-red-600"
                 >
-                  <Trash2 className="h-3 w-3" /> Remove status
+                  <Trash2 className="h-3 w-3" /> {t('workflow.removeStatus', 'Remove status')}
                 </button>
               </div>
             </div>
@@ -206,7 +212,7 @@ export function WorkflowManager({
               ...current,
               {
                 key: `new_${current.length + 1}`,
-                name: 'New status',
+                name: t('workflow.newStatus', 'New status'),
                 category: 'in_progress',
                 wip_limit: null,
                 transitions: [],
@@ -214,7 +220,7 @@ export function WorkflowManager({
             ])
           }
         >
-          <Plus className="h-3.5 w-3.5" /> Add status
+          <Plus className="h-3.5 w-3.5" /> {t('workflow.addStatus', 'Add status')}
         </Button>
       </div>
     </Modal>

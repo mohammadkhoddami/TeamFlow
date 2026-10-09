@@ -325,9 +325,12 @@ Phase 4 makes TeamFlow enterprise-ready and opens the ecosystem:
   shell, push/notificationclick handlers) and web-push subscription
   management; `pywebpush` optional behind VAPID settings.
   `/notifications/push/*`.
-- **i18n, RTL & Jalali** — locale framework (English/Persian chrome),
-  automatic RTL layout for `fa`, and locale-aware Jalali dates via `Intl`;
-  locale persists per user (`PATCH /auth/me`).
+- **i18n, RTL & Jalali** — full English/Persian UI across every page and
+  component (modular dictionaries under `frontend/src/lib/locales`, guarded by
+  key/placeholder parity tests), an in-app language switcher (header, auth and
+  public forms), automatic RTL layout for `fa`, and locale-aware relative
+  times plus Jalali dates via `Intl`; the locale persists per user
+  (`PATCH /auth/me`) and follows the account onto new devices.
 - **Theming** — org accent color applied live to the design tokens plus
   workspace-level audit retention settings (dark mode shipped in M1).
 - **Plugin API & directory** — first-party directory with one-click install,

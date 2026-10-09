@@ -16,6 +16,7 @@ import {
 import { useToast } from '../contexts/toast'
 import { ApiError, organizationsApi } from '../lib/api'
 import { qk, useOrganizations } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import { ROLE_LABELS, type MembershipRole } from '../lib/types'
 
 function slugify(value: string): string {
@@ -30,6 +31,7 @@ function slugify(value: string): string {
 export function OrganizationsPage() {
   const organizations = useOrganizations()
   const queryClient = useQueryClient()
+  const { t } = useI18n()
   const toast = useToast()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
@@ -45,10 +47,14 @@ export function OrganizationsPage() {
       setName('')
       setSlug('')
       setSlugTouched(false)
-      toast.success(`Workspace "${org.name}" created`)
+      toast.success(t('organizations.created', 'Workspace "{name}" created', { name: org.name }))
     },
     onError: (err) => {
-      setError(err instanceof ApiError ? err.message : 'Could not create workspace')
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : t('organizations.createError', 'Could not create workspace'),
+      )
     },
   })
 
@@ -56,18 +62,22 @@ export function OrganizationsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Workspaces</h1>
-          <p className="text-sm text-slate-500">Pick a workspace or create a new one.</p>
+          <h1 className="text-lg font-semibold text-slate-900">
+            {t('organizations.title', 'Workspaces')}
+          </h1>
+          <p className="text-sm text-slate-500">
+            {t('organizations.subtitle', 'Pick a workspace or create a new one.')}
+          </p>
         </div>
         <Button onClick={() => setOpen(true)}>
-          <Plus className="h-4 w-4" /> New workspace
+          <Plus className="h-4 w-4" /> {t('organizations.new', 'New workspace')}
         </Button>
       </div>
 
       {organizations.isLoading && <PageSpinner />}
       {organizations.isError && (
         <ErrorState
-          message="Could not load workspaces."
+          message={t('organizations.loadError', 'Could not load workspaces.')}
           onRetry={() => void organizations.refetch()}
         />
       )}
@@ -75,9 +85,16 @@ export function OrganizationsPage() {
       {organizations.data && organizations.data.length === 0 && (
         <EmptyState
           icon={<Building2 className="h-8 w-8" />}
-          title="No workspaces yet"
-          description="Create your first workspace to start managing projects and tasks."
-          action={<Button onClick={() => setOpen(true)}>Create workspace</Button>}
+          title={t('organizations.emptyTitle', 'No workspaces yet')}
+          description={t(
+            'organizations.emptyBody',
+            'Create your first workspace to start managing projects and tasks.',
+          )}
+          action={
+            <Button onClick={() => setOpen(true)}>
+              {t('organizations.create', 'Create workspace')}
+            </Button>
+          }
         />
       )}
 
@@ -90,7 +107,7 @@ export function OrganizationsPage() {
                   <Building2 className="h-5 w-5" />
                 </div>
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                  {ROLE_LABELS[role as MembershipRole] ?? role}
+                  {t(`role.${role}`, ROLE_LABELS[role as MembershipRole] ?? role)}
                 </span>
               </div>
               <p className="mt-3 font-semibold text-slate-900">{organization.name}</p>
@@ -103,26 +120,29 @@ export function OrganizationsPage() {
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="New workspace"
-        description="Workspaces are the tenant boundary: projects, tasks and members live inside one."
+        title={t('organizations.new', 'New workspace')}
+        description={t(
+          'organizations.newHint',
+          'Workspaces are the tenant boundary: projects, tasks and members live inside one.',
+        )}
         footer={
           <>
             <Button variant="secondary" onClick={() => setOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={() => create.mutate()}
               loading={create.isPending}
               disabled={name.trim().length === 0 || slug.length < 2}
             >
-              Create
+              {t('common.create', 'Create')}
             </Button>
           </>
         }
       >
         <div className="space-y-4">
           {error && <ErrorState message={error} />}
-          <Field label="Name">
+          <Field label={t('common.name', 'Name')}>
             <Input
               value={name}
               autoFocus
@@ -130,17 +150,23 @@ export function OrganizationsPage() {
                 setName(event.target.value)
                 if (!slugTouched) setSlug(slugify(event.target.value))
               }}
-              placeholder="Acme Inc."
+              placeholder={t('organizations.namePlaceholder', 'Acme Inc.')}
             />
           </Field>
-          <Field label="Slug" hint="Lowercase letters, numbers and dashes; used in URLs.">
+          <Field
+            label={t('organizations.slug', 'Slug')}
+            hint={t(
+              'organizations.slugHint',
+              'Lowercase letters, numbers and dashes; used in URLs.',
+            )}
+          >
             <Input
               value={slug}
               onChange={(event) => {
                 setSlugTouched(true)
                 setSlug(slugify(event.target.value))
               }}
-              placeholder="acme-inc"
+              placeholder={t('organizations.slugPlaceholder', 'acme-inc')}
             />
           </Field>
         </div>

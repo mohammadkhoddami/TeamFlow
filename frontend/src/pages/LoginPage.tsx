@@ -41,7 +41,7 @@ export function LoginPage() {
       }
       afterLogin()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Login failed')
+      setError(err instanceof ApiError ? err.message : t('auth.loginFailed', 'Login failed'))
     } finally {
       setBusy(false)
     }
@@ -56,7 +56,9 @@ export function LoginPage() {
       await verifyMfa(mfaToken, mfaCode.trim())
       afterLogin()
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Verification failed')
+      setError(
+        err instanceof ApiError ? err.message : t('auth.verifyFailed', 'Verification failed'),
+      )
     } finally {
       setBusy(false)
     }

@@ -13,4 +13,12 @@ describe('translate', () => {
     expect(translate('fa', 'missing.key', 'Fallback')).toBe('Fallback')
     expect(translate('en', 'missing.key')).toBe('missing.key')
   })
+
+  it('interpolates {placeholders}', () => {
+    expect(translate('fa', 'layout.noMatches', 'x', { query: 'سلام' })).toBe(
+      'نتیجه‌ای برای «سلام» یافت نشد.',
+    )
+    expect(translate('en', 'missing.key', 'Hello {name}', { name: 'Ada' })).toBe('Hello Ada')
+    expect(translate('en', 'missing.key', 'Hello {name}')).toBe('Hello {name}')
+  })
 })

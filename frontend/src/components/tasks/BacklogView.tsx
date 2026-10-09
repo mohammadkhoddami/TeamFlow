@@ -4,6 +4,7 @@ import { Inbox } from 'lucide-react'
 import { useToast } from '../../contexts/toast'
 import { ApiError, tasksApi } from '../../lib/api'
 import { qk, useBacklog, useSprints } from '../../lib/hooks'
+import { useI18n } from '../../lib/i18n'
 import {
   PRIORITY_BADGE,
   PRIORITY_LABELS,
@@ -20,6 +21,7 @@ export function BacklogView({
   projectId: string
   onOpen: (task: TaskRead) => void
 }) {
+  const { t } = useI18n()
   const backlog = useBacklog(projectId)
   const sprints = useSprints(projectId)
   const queryClient = useQueryClient()
@@ -34,29 +36,39 @@ export function BacklogView({
       void queryClient.invalidateQueries({ queryKey: ['orgs'] })
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.message : 'Could not move the task'),
+      toast.error(err instanceof ApiError ? err.message : t('backlog.moveError', 'Could not move the task')),
   })
 
   const items = backlog.data?.items ?? []
   const plannedSprints = (sprints.data ?? []).filter((sprint) => sprint.state !== 'completed')
   const totalPoints = items.reduce((sum, task) => sum + (task.estimate ?? 0), 0)
 
-  if (backlog.isLoading) return <PageSpinner label="Loading backlog…" />
+  if (backlog.isLoading) return <PageSpinner label={t('backlog.loading', 'Loading backlog…')} />
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
         <span>
-          {items.length} backlog task{items.length === 1 ? '' : 's'} (not in any sprint)
+          {items.length === 1
+            ? t('backlog.countOne', '{count} backlog task (not in any sprint)', {
+                count: items.length,
+              })
+            : t('backlog.countMany', '{count} backlog tasks (not in any sprint)', {
+                count: items.length,
+              })}
         </span>
-        <span>{totalPoints ? `${totalPoints} pts` : 'No estimates yet'}</span>
+        <span>
+          {totalPoints
+            ? t('backlog.points', '{points} pts', { points: totalPoints })
+            : t('backlog.noEstimates', 'No estimates yet')}
+        </span>
       </div>
 
       {items.length === 0 ? (
         <EmptyState
           icon={<Inbox className="h-8 w-8" />}
-          title="Backlog is empty"
-          description="Every task is assigned to a sprint."
+          title={t('backlog.emptyTitle', 'Backlog is empty')}
+          description={t('backlog.emptyDescription', 'Every task is assigned to a sprint.')}
         />
       ) : (
         <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -71,17 +83,19 @@ export function BacklogView({
                   {task.key}
                 </span>
               )}
-              <Badge className={TYPE_BADGE[task.type]}>{TYPE_LABELS[task.type]}</Badge>
+              <Badge className={TYPE_BADGE[task.type]}>
+                {t(`type.${task.type}`, TYPE_LABELS[task.type])}
+              </Badge>
               <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">
                 {task.title}
               </span>
               {task.estimate != null && (
                 <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
-                  {task.estimate} pts
+                  {t('backlog.points', '{points} pts', { points: task.estimate })}
                 </span>
               )}
               <Badge className={PRIORITY_BADGE[task.priority]}>
-                {PRIORITY_LABELS[task.priority]}
+                {t(`priority.${task.priority}`, PRIORITY_LABELS[task.priority])}
               </Badge>
               <div onClick={(event) => event.stopPropagation()}>
                 <Select
@@ -93,11 +107,14 @@ export function BacklogView({
                     }
                   }}
                 >
-                  <option value="">Add to sprint…</option>
+                  <option value="">{t('backlog.addToSprint', 'Add to sprint…')}</option>
                   {plannedSprints.map((sprint) => (
                     <option key={sprint.id} value={sprint.id}>
-                      {sprint.name}
-                      {sprint.state === 'active' ? ' (active)' : ''}
+                      {sprint.state === 'active'
+                        ? t('backlog.sprintOptionActive', '{name} (active)', {
+                            name: sprint.name,
+                          })
+                        : sprint.name}
                     </option>
                   ))}
                 </Select>

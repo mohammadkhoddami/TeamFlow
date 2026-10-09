@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { preferencesApi } from '../lib/api'
+import { useI18n } from '../lib/i18n'
 
 export function UnsubscribePage() {
+  const { t } = useI18n()
   const [params] = useSearchParams()
   const token = params.get('token') ?? ''
   const [state, setState] = useState<'working' | 'done' | 'error'>(
@@ -23,28 +25,30 @@ export function UnsubscribePage() {
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <p className="text-sm font-bold tracking-tight text-brand-700">TeamFlow</p>
         {state === 'working' && (
-          <p className="mt-3 text-sm text-slate-600">Updating your preferences…</p>
+          <p className="mt-3 text-sm text-slate-600">
+            {t('auth.unsubscribeWorking', 'Updating your preferences…')}
+          </p>
         )}
         {state === 'done' && (
           <>
             <p className="mt-3 text-sm font-medium text-slate-800">
-              You will no longer receive email notifications.
+              {t('auth.unsubscribed', 'You will no longer receive email notifications.')}
             </p>
             <p className="mt-1 text-xs text-slate-500">
-              You can turn them back on any time in Settings.
+              {t('auth.unsubscribeHint', 'You can turn them back on any time in Settings.')}
             </p>
           </>
         )}
         {state === 'error' && (
           <p className="mt-3 text-sm text-red-600">
-            This unsubscribe link is invalid or has expired.
+            {t('auth.unsubscribeInvalid', 'This unsubscribe link is invalid or has expired.')}
           </p>
         )}
         <Link
           to="/organizations"
           className="mt-4 inline-block text-xs font-medium text-brand-700 hover:underline"
         >
-          Back to TeamFlow
+          {t('auth.backToTeamFlow', 'Back to TeamFlow')}
         </Link>
       </div>
     </div>

@@ -21,6 +21,7 @@ import {
 import { useToast } from '../contexts/toast'
 import { ApiError, goalsApi } from '../lib/api'
 import { qk, useGoals, useTasks } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import {
   GOAL_STATUS_BADGE,
   GOAL_STATUS_LABELS,
@@ -50,6 +51,7 @@ const EMPTY_FORM: GoalForm = {
 
 export function GoalsPage() {
   const { org, members } = useOrg()
+  const { t } = useI18n()
   const toast = useToast()
   const queryClient = useQueryClient()
   const goals = useGoals(org.slug)
@@ -88,9 +90,10 @@ export function GoalsPage() {
       setFormOpen(false)
       setEditing(null)
       setError(null)
-      toast.success(editing ? 'Goal updated' : 'Goal created')
+      toast.success(editing ? t('goals.updated', 'Goal updated') : t('goals.created', 'Goal created'))
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : 'Could not save goal'),
+    onError: (err) =>
+      setError(err instanceof ApiError ? err.message : t('goals.saveError', 'Could not save goal')),
   })
 
   const remove = useMutation({
@@ -99,9 +102,12 @@ export function GoalsPage() {
       invalidate()
       setDeleting(null)
       if (editing && deleting && editing.id === deleting.id) setEditing(null)
-      toast.success('Goal deleted')
+      toast.success(t('goals.deleted', 'Goal deleted'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete goal'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : t('goals.deleteError', 'Could not delete goal'),
+      ),
   })
 
   const link = useMutation({
@@ -111,9 +117,12 @@ export function GoalsPage() {
       invalidate()
       setEditing(goal)
       setLinkSearch('')
-      toast.success('Task linked')
+      toast.success(t('goals.taskLinked', 'Task linked'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not link task'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : t('goals.linkError', 'Could not link task'),
+      ),
   })
 
   const unlink = useMutation({
@@ -123,7 +132,10 @@ export function GoalsPage() {
       invalidate()
       setEditing(goal)
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not unlink task'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : t('goals.unlinkError', 'Could not unlink task'),
+      ),
   })
 
   const liveEditing = useMemo(
@@ -153,30 +165,52 @@ export function GoalsPage() {
     setFormOpen(true)
   }
 
+  function goalMeta(goal: GoalRead): string {
+    return [
+      goal.owner
+        ? t('goals.ownerLabel', 'Owner {name}', { name: goal.owner.full_name })
+        : null,
+      goal.due_date
+        ? t('goals.dueLabel', 'Due {date}', { date: formatDate(goal.due_date) })
+        : null,
+      goal.tasks.length === 1
+        ? t('goals.linkedTaskOne', '{count} linked task', { count: goal.tasks.length })
+        : t('goals.linkedTaskMany', '{count} linked tasks', { count: goal.tasks.length }),
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  }
+
   return (
     <div className="space-y-6 p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Goals</h1>
+          <h1 className="text-lg font-semibold text-slate-900">{t('goals.title', 'Goals')}</h1>
           <p className="text-sm text-slate-500">
-            Objectives linked to work items, with rolled-up progress.
+            {t('goals.subtitle', 'Objectives linked to work items, with rolled-up progress.')}
           </p>
         </div>
         <Button onClick={openCreate}>
-          <Plus className="h-4 w-4" /> New goal
+          <Plus className="h-4 w-4" /> {t('goals.new', 'New goal')}
         </Button>
       </div>
 
-      {goals.isLoading && <PageSpinner label="Loading goals…" />}
+      {goals.isLoading && <PageSpinner label={t('goals.loading', 'Loading goals…')} />}
       {goals.isError && (
-        <ErrorState message="Could not load goals." onRetry={() => void goals.refetch()} />
+        <ErrorState
+          message={t('goals.loadError', 'Could not load goals.')}
+          onRetry={() => void goals.refetch()}
+        />
       )}
       {goals.data?.length === 0 && (
         <EmptyState
           icon={<Target className="h-8 w-8" />}
-          title="No goals yet"
-          description="Create an objective and link epics or tasks to track progress."
-          action={<Button onClick={openCreate}>Create a goal</Button>}
+          title={t('goals.emptyTitle', 'No goals yet')}
+          description={t(
+            'goals.emptyDescription',
+            'Create an objective and link epics or tasks to track progress.',
+          )}
+          action={<Button onClick={openCreate}>{t('goals.create', 'Create a goal')}</Button>}
         />
       )}
 
@@ -193,17 +227,14 @@ export function GoalsPage() {
                       'bg-slate-100 text-slate-600'
                     }
                   >
-                    {GOAL_STATUS_LABELS[(goal.status as GoalStatus) ?? 'active'] ?? goal.status}
+                    {t(
+                      `goalStatus.${(goal.status as GoalStatus) ?? 'active'}`,
+                      GOAL_STATUS_LABELS[(goal.status as GoalStatus) ?? 'active'] ?? goal.status,
+                    )}
                   </Badge>
                 </span>
               }
-              description={
-                <>
-                  {goal.owner ? `Owner ${goal.owner.full_name} · ` : ''}
-                  {goal.due_date ? `Due ${formatDate(goal.due_date)} · ` : ''}
-                  {goal.tasks.length} linked task{goal.tasks.length === 1 ? '' : 's'}
-                </>
-              }
+              description={goalMeta(goal)}
               action={
                 <div className="flex items-center gap-1">
                   <Button size="sm" variant="ghost" onClick={() => openEdit(goal)}>
@@ -211,7 +242,7 @@ export function GoalsPage() {
                   </Button>
                   <button
                     className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                    title="Delete goal"
+                    title={t('goals.deleteTitle', 'Delete goal')}
                     onClick={() => setDeleting(goal)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -225,7 +256,7 @@ export function GoalsPage() {
               )}
               <div>
                 <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span>Progress</span>
+                  <span>{t('goals.progress', 'Progress')}</span>
                   <span>{goal.progress_pct}%</span>
                 </div>
                 <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
@@ -255,7 +286,7 @@ export function GoalsPage() {
                           'bg-slate-100 text-slate-600'
                         }
                       >
-                        {task.status}
+                        {t(`status.${task.status}`, task.status)}
                       </Badge>
                     </li>
                   ))}
@@ -269,26 +300,26 @@ export function GoalsPage() {
       <Modal
         open={formOpen}
         onClose={() => setFormOpen(false)}
-        title={editing ? 'Edit goal' : 'New goal'}
+        title={editing ? t('goals.edit', 'Edit goal') : t('goals.new', 'New goal')}
         size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setFormOpen(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={() => save.mutate()}
               loading={save.isPending}
               disabled={!form.name.trim()}
             >
-              Save goal
+              {t('goals.save', 'Save goal')}
             </Button>
           </>
         }
       >
         <div className="space-y-4">
           {error && <ErrorState message={error} />}
-          <Field label="Name">
+          <Field label={t('common.name', 'Name')}>
             <Input
               autoFocus
               value={form.name}
@@ -296,7 +327,7 @@ export function GoalsPage() {
               onChange={(event) => setForm({ ...form, name: event.target.value })}
             />
           </Field>
-          <Field label="Description">
+          <Field label={t('common.description', 'Description')}>
             <Textarea
               value={form.description}
               maxLength={20_000}
@@ -304,7 +335,7 @@ export function GoalsPage() {
             />
           </Field>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Status">
+            <Field label={t('common.status', 'Status')}>
               <Select
                 value={form.status}
                 onChange={(event) =>
@@ -313,24 +344,24 @@ export function GoalsPage() {
               >
                 {(['active', 'achieved', 'cancelled'] as GoalStatus[]).map((status) => (
                   <option key={status} value={status}>
-                    {GOAL_STATUS_LABELS[status]}
+                    {t(`goalStatus.${status}`, GOAL_STATUS_LABELS[status])}
                   </option>
                 ))}
               </Select>
             </Field>
-            <Field label="Due date">
+            <Field label={t('common.dueDate', 'Due date')}>
               <Input
                 type="datetime-local"
                 value={form.dueDate}
                 onChange={(event) => setForm({ ...form, dueDate: event.target.value })}
               />
             </Field>
-            <Field label="Owner">
+            <Field label={t('goals.owner', 'Owner')}>
               <Select
                 value={form.ownerId}
                 onChange={(event) => setForm({ ...form, ownerId: event.target.value })}
               >
-                <option value="">Unassigned</option>
+                <option value="">{t('common.unassigned', 'Unassigned')}</option>
                 {members.map((membership) => (
                   <option key={membership.user_id} value={membership.user_id}>
                     {membership.user?.full_name || membership.user?.email}
@@ -343,10 +374,10 @@ export function GoalsPage() {
           {liveEditing && (
             <div className="space-y-2 rounded-lg border border-slate-200 p-3">
               <p className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                <Link2 className="h-3.5 w-3.5" /> Linked work items
+                <Link2 className="h-3.5 w-3.5" /> {t('goals.linkedItems', 'Linked work items')}
               </p>
               {liveEditing.tasks.length === 0 && (
-                <p className="text-xs text-slate-400">Nothing linked yet.</p>
+                <p className="text-xs text-slate-400">{t('goals.nothingLinked', 'Nothing linked yet.')}</p>
               )}
               <ul className="space-y-1">
                 {liveEditing.tasks.map((task) => (
@@ -355,10 +386,12 @@ export function GoalsPage() {
                       {task.key ? `${task.key} · ` : ''}
                       {task.title}
                     </span>
-                    <Badge>{TYPE_LABELS[task.type as TaskType] ?? task.type}</Badge>
+                    <Badge>
+                      {t(`type.${task.type}`, TYPE_LABELS[task.type as TaskType] ?? task.type)}
+                    </Badge>
                     <button
                       className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                      title="Unlink"
+                      title={t('goals.unlink', 'Unlink')}
                       onClick={() => unlink.mutate({ goalId: liveEditing.id, taskId: task.id })}
                     >
                       <X className="h-3.5 w-3.5" />
@@ -372,7 +405,7 @@ export function GoalsPage() {
                   <Input
                     className="pl-8"
                     value={linkSearch}
-                    placeholder="Search epics and tasks…"
+                    placeholder={t('goals.searchPlaceholder', 'Search epics and tasks…')}
                     onChange={(event) => setLinkSearch(event.target.value)}
                   />
                 </div>
@@ -399,12 +432,14 @@ export function GoalsPage() {
                             link.mutate({ goalId: liveEditing.id, taskId: task.id })
                           }
                         >
-                          Link
+                          {t('goals.link', 'Link')}
                         </Button>
                       </li>
                     ))}
                   {linkQuery.isFetching && (
-                    <li className="px-2 py-1 text-xs text-slate-400">Searching…</li>
+                    <li className="px-2 py-1 text-xs text-slate-400">
+                      {t('goals.searching', 'Searching…')}
+                    </li>
                   )}
                 </ul>
               )}
@@ -415,8 +450,10 @@ export function GoalsPage() {
 
       <ConfirmDialog
         open={Boolean(deleting)}
-        title="Delete goal"
-        message={`Delete "${deleting?.name ?? ''}"? Linked tasks are not affected.`}
+        title={t('goals.deleteTitle', 'Delete goal')}
+        message={t('goals.deleteMessage', 'Delete "{name}"? Linked tasks are not affected.', {
+          name: deleting?.name ?? '',
+        })}
         busy={remove.isPending}
         onClose={() => setDeleting(null)}
         onConfirm={() => deleting && remove.mutate(deleting)}

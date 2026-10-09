@@ -66,9 +66,10 @@ export function RolesSection() {
       setFormOpen(false)
       setEditing(null)
       setError(null)
-      toast.success(editing ? 'Role updated' : 'Role created')
+      toast.success(editing ? t('settings.roleUpdated', 'Role updated') : t('settings.roleCreated', 'Role created'))
     },
-    onError: (err) => setError(err instanceof ApiError ? err.message : 'Could not save role'),
+    onError: (err) =>
+      setError(err instanceof ApiError ? err.message : t('settings.couldNotSaveRole', 'Could not save role')),
   })
 
   const remove = useMutation({
@@ -76,9 +77,10 @@ export function RolesSection() {
     onSuccess: () => {
       invalidate()
       setDeleting(null)
-      toast.success('Role deleted')
+      toast.success(t('settings.roleDeleted', 'Role deleted'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete role'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('settings.couldNotDeleteRole', 'Could not delete role')),
   })
 
   function openCreate() {
@@ -103,16 +105,19 @@ export function RolesSection() {
     <Card>
       <CardHeader
         title={t('settings.roles', 'Custom roles')}
-        description="Fine-grained permission bundles you can assign to members."
+        description={t(
+          'settings.rolesDescription',
+          'Fine-grained permission bundles you can assign to members.',
+        )}
         action={
           <Button size="sm" variant="secondary" onClick={openCreate}>
-            <Plus className="h-3.5 w-3.5" /> New role
+            <Plus className="h-3.5 w-3.5" /> {t('settings.newRole', 'New role')}
           </Button>
         }
       />
       <div className="space-y-3 p-5">
         {(roles.data?.length ?? 0) === 0 && (
-          <p className="text-sm text-slate-400">No custom roles yet.</p>
+          <p className="text-sm text-slate-400">{t('settings.noCustomRoles', 'No custom roles yet.')}</p>
         )}
         {roles.data?.map((role) => (
           <div
@@ -127,8 +132,10 @@ export function RolesSection() {
               <div className="mt-1 flex flex-wrap gap-1">
                 {role.permissions.map((permission) => (
                   <Badge key={permission}>
-                    {PERMISSION_LABELS[permission as keyof typeof PERMISSION_LABELS] ??
-                      permission}
+                    {t(
+                      `permission.${permission}`,
+                      PERMISSION_LABELS[permission as keyof typeof PERMISSION_LABELS] ?? permission,
+                    )}
                   </Badge>
                 ))}
               </div>
@@ -139,7 +146,7 @@ export function RolesSection() {
               </Button>
               <button
                 className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                title="Delete role"
+                title={t('settings.deleteRole', 'Delete role')}
                 onClick={() => setDeleting(role)}
               >
                 <Trash2 className="h-4 w-4" />
@@ -152,7 +159,7 @@ export function RolesSection() {
       <Modal
         open={formOpen}
         onClose={() => setFormOpen(false)}
-        title={editing ? 'Edit custom role' : 'New custom role'}
+        title={editing ? t('settings.editCustomRole', 'Edit custom role') : t('settings.newCustomRole', 'New custom role')}
         footer={
           <>
             <Button variant="secondary" onClick={() => setFormOpen(false)}>
@@ -170,7 +177,7 @@ export function RolesSection() {
       >
         <div className="space-y-3">
           {error && <p className="text-xs text-red-600">{error}</p>}
-          <Field label="Name">
+          <Field label={t('common.name', 'Name')}>
             <Input
               autoFocus
               value={form.name}
@@ -178,7 +185,7 @@ export function RolesSection() {
               onChange={(event) => setForm({ ...form, name: event.target.value })}
             />
           </Field>
-          <Field label="Description">
+          <Field label={t('common.description', 'Description')}>
             <Textarea
               value={form.description}
               maxLength={1000}
@@ -186,11 +193,11 @@ export function RolesSection() {
             />
           </Field>
           <div className="space-y-1.5">
-            <p className="text-sm font-medium text-slate-700">Permissions</p>
+            <p className="text-sm font-medium text-slate-700">{t('settings.permissions', 'Permissions')}</p>
             {PERMISSION_KEYS.map((permission) => (
               <Checkbox
                 key={permission}
-                label={PERMISSION_LABELS[permission]}
+                label={t(`permission.${permission}`, PERMISSION_LABELS[permission])}
                 checked={form.permissions.includes(permission)}
                 onChange={(event) =>
                   setForm({
@@ -208,8 +215,12 @@ export function RolesSection() {
 
       <ConfirmDialog
         open={Boolean(deleting)}
-        title="Delete custom role"
-        message={`Delete "${deleting?.name ?? ''}"? Members keeping it lose its permissions.`}
+        title={t('settings.deleteCustomRole', 'Delete custom role')}
+        message={t(
+          'settings.deleteRoleConfirm',
+          'Delete "{name}"? Members keeping it lose its permissions.',
+          { name: deleting?.name ?? '' },
+        )}
         busy={remove.isPending}
         onClose={() => setDeleting(null)}
         onConfirm={() => deleting && remove.mutate(deleting)}

@@ -20,6 +20,7 @@ import {
 import { useToast } from '../contexts/toast'
 import { ApiError, tokensApi } from '../lib/api'
 import { useApiTokens, useOAuthApps, useServiceAccounts } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import type { ApiTokenCreated, ApiTokenRead, OAuthAppCreated, OAuthAppRead } from '../lib/types'
 import { canManage } from '../lib/types'
 import { formatDate, relativeTime } from '../lib/utils'
@@ -37,19 +38,28 @@ function SecretReveal({
   title: string
   secret: string
 }) {
+  const { t } = useI18n()
   const toast = useToast()
   return (
-    <Modal open={open} onClose={onClose} title={title} size="sm" footer={<Button onClick={onClose}>Done</Button>}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      size="sm"
+      footer={<Button onClick={onClose}>{t('api.done', 'Done')}</Button>}
+    >
       <div className="space-y-2">
-        <p className="text-xs text-slate-500">Copy it now — it is never shown again.</p>
+        <p className="text-xs text-slate-500">
+          {t('api.copyNow', 'Copy it now — it is never shown again.')}
+        </p>
         <div className="flex items-center gap-2 rounded bg-slate-50 px-3 py-2 font-mono text-xs">
           <span className="min-w-0 flex-1 break-all">{secret}</span>
           <button
             className="shrink-0 text-slate-400 hover:text-slate-700"
             onClick={() => {
               void navigator.clipboard.writeText(secret).then(
-                () => toast.success('Copied'),
-                () => toast.error('Could not copy'),
+                () => toast.success(t('common.copied', 'Copied')),
+                () => toast.error(t('api.copyError', 'Could not copy')),
               )
             }}
           >
@@ -63,6 +73,7 @@ function SecretReveal({
 
 export function ApiTokensPage() {
   const { org, role } = useOrg()
+  const { t } = useI18n()
   const toast = useToast()
   const queryClient = useQueryClient()
   const elevated = canManage(role)
@@ -76,7 +87,10 @@ export function ApiTokensPage() {
   const [usageFor, setUsageFor] = useState<string | null>(null)
   const [accountModal, setAccountModal] = useState(false)
   const [appModal, setAppModal] = useState(false)
-  const [createdSecret, setCreatedSecret] = useState<{ title: string; secret: string } | null>(null)
+  const [createdSecret, setCreatedSecret] = useState<{
+    kind: 'created' | 'rotated'
+    secret: string
+  } | null>(null)
 
   const [tokenForm, setTokenForm] = useState({
     name: '',
@@ -115,7 +129,8 @@ export function ApiTokensPage() {
       setCreatedToken(created)
       setTokenForm({ name: '', scopes: ['read', 'write'], expires_in_days: '', rate_limit_per_minute: '', service_account_id: '' })
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not create token'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('api.createError', 'Could not create token')),
   })
 
   const rotateToken = useMutation({
@@ -124,7 +139,8 @@ export function ApiTokensPage() {
       invalidateTokens()
       setCreatedToken(created)
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not rotate token'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('api.rotateError', 'Could not rotate token')),
   })
 
   const revokeToken = useMutation({
@@ -132,9 +148,10 @@ export function ApiTokensPage() {
     onSuccess: () => {
       invalidateTokens()
       setRevoking(null)
-      toast.success('Token revoked')
+      toast.success(t('api.revokeSuccess', 'Token revoked'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not revoke token'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('api.revokeError', 'Could not revoke token')),
   })
 
   const usage = useQuery({
@@ -153,19 +170,21 @@ export function ApiTokensPage() {
     onSuccess: () => {
       setAccountModal(false)
       invalidateAccounts()
-      toast.success('Service account created')
+      toast.success(t('api.accountCreated', 'Service account created'))
       setAccountForm({ name: '', description: '', scopes: ['read', 'write'] })
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not create account'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('api.accountCreateError', 'Could not create account')),
   })
 
   const removeAccount = useMutation({
     mutationFn: (accountId: string) => tokensApi.removeServiceAccount(org.slug, accountId),
     onSuccess: () => {
       invalidateAccounts()
-      toast.success('Service account deleted')
+      toast.success(t('api.accountDeleted', 'Service account deleted'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete account'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('api.accountDeleteError', 'Could not delete account')),
   })
 
   const createApp = useMutation({
@@ -181,37 +200,42 @@ export function ApiTokensPage() {
     onSuccess: (created) => {
       setAppModal(false)
       invalidateApps()
-      setCreatedSecret({ title: 'OAuth client secret', secret: created.client_secret })
+      setCreatedSecret({ kind: 'created', secret: created.client_secret })
       setAppForm({ name: '', redirect_uris: '', scopes: ['read'] })
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not create app'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('api.appCreateError', 'Could not create app')),
   })
 
   const rotateApp = useMutation({
     mutationFn: (app: OAuthAppRead) => tokensApi.rotateOAuthSecret(org.slug, app.id),
     onSuccess: (created: OAuthAppCreated) => {
       invalidateApps()
-      setCreatedSecret({ title: 'New OAuth client secret', secret: created.client_secret })
+      setCreatedSecret({ kind: 'rotated', secret: created.client_secret })
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not rotate secret'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('api.rotateSecretError', 'Could not rotate secret')),
   })
 
   const removeApp = useMutation({
     mutationFn: (app: OAuthAppRead) => tokensApi.removeOAuthApp(org.slug, app.id),
     onSuccess: () => {
       invalidateApps()
-      toast.success('OAuth app deleted')
+      toast.success(t('api.appDeleted', 'OAuth app deleted'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete app'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('api.appDeleteError', 'Could not delete app')),
   })
 
   return (
     <div className="space-y-6 p-4 md:p-6">
       <div>
-        <h1 className="text-lg font-semibold text-slate-900">API access</h1>
+        <h1 className="text-lg font-semibold text-slate-900">{t('api.title', 'API access')}</h1>
         <p className="text-sm text-slate-500">
-          Personal tokens, service accounts and OAuth apps — automations and CI never need a
-          human password.
+          {t(
+            'api.subtitle',
+            'Personal tokens, service accounts and OAuth apps — automations and CI never need a human password.',
+          )}
         </p>
       </div>
 
@@ -219,21 +243,25 @@ export function ApiTokensPage() {
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
-            <KeyRound className="h-4 w-4 text-slate-400" /> Personal access tokens
+            <KeyRound className="h-4 w-4 text-slate-400" />{' '}
+            {t('api.personalTokens', 'Personal access tokens')}
           </h2>
           <Button size="sm" onClick={() => setTokenModal(true)}>
-            <Plus className="h-3.5 w-3.5" /> New token
+            <Plus className="h-3.5 w-3.5" /> {t('api.newToken', 'New token')}
           </Button>
         </div>
         {tokens.isLoading && <PageSpinner />}
         {tokens.isError && (
-          <ErrorState message="Could not load tokens." onRetry={() => void tokens.refetch()} />
+          <ErrorState
+            message={t('api.loadError', 'Could not load tokens.')}
+            onRetry={() => void tokens.refetch()}
+          />
         )}
         {tokens.data?.length === 0 && (
           <EmptyState
             icon={<KeyRound className="h-8 w-8" />}
-            title="No tokens yet"
-            description="Create a token for the MCP server, CI or scripts."
+            title={t('api.emptyTitle', 'No tokens yet')}
+            description={t('api.emptyBody', 'Create a token for the MCP server, CI or scripts.')}
           />
         )}
         <div className="space-y-2">
@@ -242,19 +270,36 @@ export function ApiTokensPage() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-slate-800">
                   {token.name}
-                  {!token.is_active && <Badge className="ml-2">revoked</Badge>}
+                  {!token.is_active && (
+                    <Badge className="ml-2">{t('api.revoked', 'revoked')}</Badge>
+                  )}
                 </p>
                 <p className="text-xs text-slate-500">
                   <code className="rounded bg-slate-100 px-1">{token.token_prefix}…</code> ·{' '}
-                  {token.scopes.join(', ')} · {token.usage_count} requests
-                  {token.last_used_at ? ` · last ${relativeTime(token.last_used_at)}` : ''}
-                  {token.expires_at ? ` · expires ${formatDate(token.expires_at)}` : ''}
-                  {token.rate_limit_per_minute ? ` · ${token.rate_limit_per_minute}/min` : ''}
+                  {token.scopes.join(', ')} ·{' '}
+                  {t('api.requests', '{count} requests', { count: token.usage_count })}
+                  {token.last_used_at
+                    ? t('api.lastUsed', ' · last {time}', {
+                        time: relativeTime(token.last_used_at),
+                      })
+                    : ''}
+                  {token.expires_at
+                    ? t('api.expires', ' · expires {date}', {
+                        date: formatDate(token.expires_at),
+                      })
+                    : ''}
+                  {token.rate_limit_per_minute
+                    ? t('api.perMinute', ' · {count}/min', {
+                        count: token.rate_limit_per_minute,
+                      })
+                    : ''}
                 </p>
                 {usageFor === token.id && usage.data && (
                   <p className="mt-1 text-xs text-brand-700">
-                    {usage.data.requests_last_minute} requests this minute · {usage.data.usage_count}{' '}
-                    total
+                    {t('api.usageSummary', '{minute} requests this minute · {total} total', {
+                      minute: usage.data.requests_last_minute,
+                      total: usage.data.usage_count,
+                    })}
                   </p>
                 )}
               </div>
@@ -264,16 +309,21 @@ export function ApiTokensPage() {
                   variant="ghost"
                   onClick={() => setUsageFor(usageFor === token.id ? null : token.id)}
                 >
-                  Usage
+                  {t('api.usage', 'Usage')}
                 </Button>
-                <Button size="sm" variant="ghost" title="Rotate" onClick={() => rotateToken.mutate(token)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  title={t('api.rotate', 'Rotate')}
+                  onClick={() => rotateToken.mutate(token)}
+                >
                   <RefreshCw className="h-3.5 w-3.5" />
                 </Button>
                 {token.is_active && (
                   <button
                     className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
                     onClick={() => setRevoking(token)}
-                    title="Revoke"
+                    title={t('api.revoke', 'Revoke')}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -289,24 +339,32 @@ export function ApiTokensPage() {
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
-              <UserCog className="h-4 w-4 text-slate-400" /> Service accounts
+              <UserCog className="h-4 w-4 text-slate-400" />{' '}
+              {t('api.serviceAccounts', 'Service accounts')}
             </h2>
             <Button size="sm" variant="secondary" onClick={() => setAccountModal(true)}>
-              <Plus className="h-3.5 w-3.5" /> New account
+              <Plus className="h-3.5 w-3.5" /> {t('api.newAccount', 'New account')}
             </Button>
           </div>
           <p className="text-xs text-slate-500">
-            Non-human identities with scoped tokens; hidden from the member roster.
+            {t(
+              'api.serviceAccountsHint',
+              'Non-human identities with scoped tokens; hidden from the member roster.',
+            )}
           </p>
           {(serviceAccounts.data?.length ?? 0) === 0 && (
-            <p className="text-sm text-slate-400">No service accounts.</p>
+            <p className="text-sm text-slate-400">
+              {t('api.noServiceAccounts', 'No service accounts.')}
+            </p>
           )}
           {serviceAccounts.data?.map((account) => (
             <Card key={account.id} className="flex flex-wrap items-center gap-3 p-3">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-slate-800">
                   {account.name}
-                  {!account.is_active && <Badge className="ml-2">disabled</Badge>}
+                  {!account.is_active && (
+                    <Badge className="ml-2">{t('api.disabled', 'disabled')}</Badge>
+                  )}
                 </p>
                 <p className="text-xs text-slate-500">
                   {account.scopes.join(', ')}
@@ -316,7 +374,7 @@ export function ApiTokensPage() {
               <button
                 className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
                 onClick={() => removeAccount.mutate(account.id)}
-                title="Delete service account"
+                title={t('api.deleteAccount', 'Delete service account')}
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -329,17 +387,24 @@ export function ApiTokensPage() {
       {elevated && (
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-slate-800">OAuth apps</h2>
+            <h2 className="text-sm font-semibold text-slate-800">
+              {t('api.oauthApps', 'OAuth apps')}
+            </h2>
             <Button size="sm" variant="secondary" onClick={() => setAppModal(true)}>
-              <Plus className="h-3.5 w-3.5" /> New OAuth app
+              <Plus className="h-3.5 w-3.5" /> {t('api.newOAuthApp', 'New OAuth app')}
             </Button>
           </div>
           <p className="text-xs text-slate-500">
-            Client-credentials access for server-to-server integrations
-            (<code className="rounded bg-slate-100 px-1">POST /api/v1/oauth/token</code>).
+            {t(
+              'api.oauthHint',
+              'Client-credentials access for server-to-server integrations ({endpoint}).',
+              { endpoint: 'POST /api/v1/oauth/token' },
+            )}
           </p>
           {(oauthApps.data?.length ?? 0) === 0 && (
-            <p className="text-sm text-slate-400">No OAuth apps registered.</p>
+            <p className="text-sm text-slate-400">
+              {t('api.noApps', 'No OAuth apps registered.')}
+            </p>
           )}
           {oauthApps.data?.map((app) => (
             <Card key={app.id} className="flex flex-wrap items-center gap-3 p-3">
@@ -348,10 +413,19 @@ export function ApiTokensPage() {
                 <p className="text-xs text-slate-500">
                   client_id <code className="rounded bg-slate-100 px-1">{app.client_id}</code> ·{' '}
                   {app.scopes.join(', ')}
-                  {app.last_used_at ? ` · last ${relativeTime(app.last_used_at)}` : ''}
+                  {app.last_used_at
+                    ? t('api.lastUsed', ' · last {time}', {
+                        time: relativeTime(app.last_used_at),
+                      })
+                    : ''}
                 </p>
               </div>
-              <Button size="sm" variant="ghost" title="Rotate secret" onClick={() => rotateApp.mutate(app)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                title={t('api.rotateSecret', 'Rotate secret')}
+                onClick={() => rotateApp.mutate(app)}
+              >
                 <RefreshCw className="h-3.5 w-3.5" />
               </Button>
               <button
@@ -369,33 +443,33 @@ export function ApiTokensPage() {
       <Modal
         open={tokenModal}
         onClose={() => setTokenModal(false)}
-        title="New API token"
+        title={t('api.newTokenTitle', 'New API token')}
         footer={
           <>
             <Button variant="secondary" onClick={() => setTokenModal(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={() => createToken.mutate()}
               disabled={!tokenForm.name.trim() || tokenForm.scopes.length === 0}
               loading={createToken.isPending}
             >
-              Create token
+              {t('api.createToken', 'Create token')}
             </Button>
           </>
         }
       >
         <div className="space-y-3">
-          <Field label="Name">
+          <Field label={t('common.name', 'Name')}>
             <Input
               value={tokenForm.name}
               maxLength={128}
               onChange={(event) => setTokenForm({ ...tokenForm, name: event.target.value })}
-              placeholder="CI deploy token"
+              placeholder={t('api.tokenNamePlaceholder', 'CI deploy token')}
             />
           </Field>
           <div className="space-y-1.5">
-            <p className="text-sm font-medium text-slate-700">Scopes</p>
+            <p className="text-sm font-medium text-slate-700">{t('api.scopes', 'Scopes')}</p>
             {SCOPES.map((scope) => (
               <Checkbox
                 key={scope}
@@ -413,7 +487,10 @@ export function ApiTokensPage() {
             ))}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Expires in (days)" hint="Empty = no expiry">
+            <Field
+              label={t('api.expiresIn', 'Expires in (days)')}
+              hint={t('api.expiresHint', 'Empty = no expiry')}
+            >
               <Input
                 type="number"
                 min={1}
@@ -423,7 +500,10 @@ export function ApiTokensPage() {
                 }
               />
             </Field>
-            <Field label="Rate limit / minute" hint="Empty = unlimited">
+            <Field
+              label={t('api.rateLimit', 'Rate limit / minute')}
+              hint={t('api.rateLimitHint', 'Empty = unlimited')}
+            >
               <Input
                 type="number"
                 min={1}
@@ -435,14 +515,17 @@ export function ApiTokensPage() {
             </Field>
           </div>
           {elevated && (serviceAccounts.data?.length ?? 0) > 0 && (
-            <Field label="Owner" hint="Attach to a service account instead of yourself">
+            <Field
+              label={t('api.owner', 'Owner')}
+              hint={t('api.ownerHint', 'Attach to a service account instead of yourself')}
+            >
               <Select
                 value={tokenForm.service_account_id}
                 onChange={(event) =>
                   setTokenForm({ ...tokenForm, service_account_id: event.target.value })
                 }
               >
-                <option value="">Me</option>
+                <option value="">{t('api.me', 'Me')}</option>
                 {serviceAccounts.data?.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.name}
@@ -458,32 +541,32 @@ export function ApiTokensPage() {
       <Modal
         open={accountModal}
         onClose={() => setAccountModal(false)}
-        title="New service account"
+        title={t('api.newAccountTitle', 'New service account')}
         footer={
           <>
             <Button variant="secondary" onClick={() => setAccountModal(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={() => createAccount.mutate()}
               disabled={!accountForm.name.trim()}
               loading={createAccount.isPending}
             >
-              Create account
+              {t('api.createAccount', 'Create account')}
             </Button>
           </>
         }
       >
         <div className="space-y-3">
-          <Field label="Name">
+          <Field label={t('common.name', 'Name')}>
             <Input
               value={accountForm.name}
               maxLength={128}
               onChange={(event) => setAccountForm({ ...accountForm, name: event.target.value })}
-              placeholder="Deploy bot"
+              placeholder={t('api.accountNamePlaceholder', 'Deploy bot')}
             />
           </Field>
-          <Field label="Description">
+          <Field label={t('common.description', 'Description')}>
             <Input
               value={accountForm.description}
               maxLength={2000}
@@ -493,7 +576,9 @@ export function ApiTokensPage() {
             />
           </Field>
           <div className="space-y-1.5">
-            <p className="text-sm font-medium text-slate-700">Max scopes</p>
+            <p className="text-sm font-medium text-slate-700">
+              {t('api.maxScopes', 'Max scopes')}
+            </p>
             {SCOPES.map((scope) => (
               <Checkbox
                 key={scope}
@@ -517,39 +602,47 @@ export function ApiTokensPage() {
       <Modal
         open={appModal}
         onClose={() => setAppModal(false)}
-        title="Register OAuth app"
+        title={t('api.registerApp', 'Register OAuth app')}
         footer={
           <>
             <Button variant="secondary" onClick={() => setAppModal(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={() => createApp.mutate()}
               disabled={!appForm.name.trim()}
               loading={createApp.isPending}
             >
-              Register app
+              {t('api.register', 'Register app')}
             </Button>
           </>
         }
       >
         <div className="space-y-3">
-          <Field label="Name">
+          <Field label={t('common.name', 'Name')}>
             <Input
               value={appForm.name}
               maxLength={128}
               onChange={(event) => setAppForm({ ...appForm, name: event.target.value })}
             />
           </Field>
-          <Field label="Redirect URIs" hint="One per line (optional for client credentials)">
+          <Field
+            label={t('api.redirectUris', 'Redirect URIs')}
+            hint={t('api.redirectHint', 'One per line (optional for client credentials)')}
+          >
             <Input
               value={appForm.redirect_uris}
               onChange={(event) => setAppForm({ ...appForm, redirect_uris: event.target.value })}
-              placeholder="https://example.com/oauth/callback"
+              placeholder={t(
+                'api.redirectPlaceholder',
+                'https://example.com/oauth/callback',
+              )}
             />
           </Field>
           <div className="space-y-1.5">
-            <p className="text-sm font-medium text-slate-700">Registered scopes</p>
+            <p className="text-sm font-medium text-slate-700">
+              {t('api.registeredScopes', 'Registered scopes')}
+            </p>
             {SCOPES.map((scope) => (
               <Checkbox
                 key={scope}
@@ -572,20 +665,28 @@ export function ApiTokensPage() {
       <SecretReveal
         open={Boolean(createdToken)}
         onClose={() => setCreatedToken(null)}
-        title="API token"
+        title={t('api.apiToken', 'API token')}
         secret={createdToken?.token ?? ''}
       />
       <SecretReveal
         open={Boolean(createdSecret)}
         onClose={() => setCreatedSecret(null)}
-        title={createdSecret?.title ?? 'Client secret'}
+        title={
+          createdSecret?.kind === 'rotated'
+            ? t('api.oauthClientSecretRotated', 'New OAuth client secret')
+            : t('api.oauthClientSecret', 'OAuth client secret')
+        }
         secret={createdSecret?.secret ?? ''}
       />
 
       <ConfirmDialog
         open={Boolean(revoking)}
-        title="Revoke API token"
-        message={`Revoke "${revoking?.name ?? ''}"? Requests with it will fail immediately.`}
+        title={t('api.revokeTitle', 'Revoke API token')}
+        message={t(
+          'api.revokeMessage',
+          'Revoke "{name}"? Requests with it will fail immediately.',
+          { name: revoking?.name ?? '' },
+        )}
         busy={revokeToken.isPending}
         onClose={() => setRevoking(null)}
         onConfirm={() => revoking && revokeToken.mutate(revoking)}

@@ -2,20 +2,36 @@ import { Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type { SwimlaneBy, TaskRead, WorkflowStatusRead } from '../../lib/types'
-import { CATEGORY_BADGE } from '../../lib/types'
+import { CATEGORY_BADGE, PRIORITY_LABELS } from '../../lib/types'
+import { useI18n } from '../../lib/i18n'
 import { cn } from '../../lib/utils'
 import { Badge } from '../ui'
 import { TaskCard } from './TaskCard'
 
-function laneValue(task: TaskRead, swimlaneBy: SwimlaneBy): string {
+type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+
+function laneKey(task: TaskRead, swimlaneBy: SwimlaneBy): string {
   if (swimlaneBy === 'assignee') {
-    return task.assignee?.full_name || task.assignee?.email || 'Unassigned'
+    return task.assignee?.id ?? '__unassigned__'
   }
   if (swimlaneBy === 'priority') {
     return task.priority
   }
   if (swimlaneBy === 'label') {
-    return task.labels[0]?.name ?? 'No label'
+    return task.labels[0]?.id ?? '__no_label__'
+  }
+  return ''
+}
+
+function laneLabel(task: TaskRead, swimlaneBy: SwimlaneBy, t: Translate): string {
+  if (swimlaneBy === 'assignee') {
+    return task.assignee?.full_name || task.assignee?.email || t('common.unassigned', 'Unassigned')
+  }
+  if (swimlaneBy === 'priority') {
+    return t(`priority.${task.priority}`, PRIORITY_LABELS[task.priority])
+  }
+  if (swimlaneBy === 'label') {
+    return task.labels[0]?.name ?? t('tasks.laneNoLabel', 'No label')
   }
   return ''
 }
@@ -39,6 +55,7 @@ export function TaskBoard({
 }) {
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [overStatus, setOverStatus] = useState<string | null>(null)
+  const { t } = useI18n()
 
   const columns = useMemo(
     () => [...statuses].sort((a, b) => a.position - b.position),
@@ -49,13 +66,17 @@ export function TaskBoard({
     if (swimlaneBy === 'none') return [{ key: '', label: '', tasks }]
     const grouped = new Map<string, TaskRead[]>()
     for (const task of tasks) {
-      const key = laneValue(task, swimlaneBy)
+      const key = laneKey(task, swimlaneBy)
       grouped.set(key, [...(grouped.get(key) ?? []), task])
     }
     return [...grouped.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, laneTasks]) => ({ key, label: key, tasks: laneTasks }))
-  }, [tasks, swimlaneBy])
+      .map(([key, laneTasks]) => ({
+        key,
+        label: laneLabel(laneTasks[0], swimlaneBy, t),
+        tasks: laneTasks,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [tasks, swimlaneBy, t])
 
   const renderColumn = (status: WorkflowStatusRead, laneTasks: TaskRead[]) => {
     const columnTasks = laneTasks.filter((task) => task.status === status.key)
@@ -91,7 +112,11 @@ export function TaskBoard({
                 'text-xs font-medium',
                 overLimit && wipEnforced ? 'text-red-600' : 'text-slate-500',
               )}
-              title={status.wip_limit != null ? `WIP limit ${status.wip_limit}` : undefined}
+              title={
+                status.wip_limit != null
+                  ? t('tasks.wipLimit', 'WIP limit {limit}', { limit: status.wip_limit })
+                  : undefined
+              }
             >
               {columnTasks.length}
               {status.wip_limit != null ? `/${status.wip_limit}` : ''}
@@ -101,7 +126,7 @@ export function TaskBoard({
             <button
               onClick={() => onAdd(status.key)}
               className="rounded-md p-1 text-slate-400 hover:bg-white hover:text-slate-700"
-              title={`Add task to ${status.name}`}
+              title={t('tasks.addTaskTo', 'Add task to {status}', { status: status.name })}
             >
               <Plus className="h-3.5 w-3.5" />
             </button>
@@ -123,7 +148,9 @@ export function TaskBoard({
             />
           ))}
           {columnTasks.length === 0 && (
-            <p className="px-2 py-6 text-center text-xs text-slate-400">Drop tasks here</p>
+            <p className="px-2 py-6 text-center text-xs text-slate-400">
+              {t('tasks.dropTasksHere', 'Drop tasks here')}
+            </p>
           )}
         </div>
       </section>
@@ -138,7 +165,9 @@ export function TaskBoard({
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
               {lane.label}
               <span className="ml-2 font-normal normal-case text-slate-400">
-                {lane.tasks.length} task{lane.tasks.length === 1 ? '' : 's'}
+                {lane.tasks.length === 1
+                  ? t('tasks.laneTaskCountOne', '{count} task', { count: lane.tasks.length })
+                  : t('tasks.laneTaskCount', '{count} tasks', { count: lane.tasks.length })}
               </span>
             </p>
           )}

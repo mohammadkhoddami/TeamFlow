@@ -27,6 +27,7 @@ import {
   useOrgMembers,
   useProjects,
 } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import type {
   AutomationAction,
   AutomationCondition,
@@ -34,7 +35,11 @@ import type {
   AutomationTemplateRead,
   AutomationTrigger,
 } from '../lib/types'
-import { AUTOMATION_TRIGGER_LABELS } from '../lib/types'
+import {
+  AUTOMATION_TRIGGER_LABELS,
+  PRIORITIES,
+  PRIORITY_LABELS,
+} from '../lib/types'
 import { cn, formatDate } from '../lib/utils'
 
 const TRIGGERS: AutomationTrigger[] = [
@@ -84,6 +89,18 @@ const ACTION_LABELS: Record<string, string> = {
   webhook: 'Call a webhook',
   add_label: 'Add a label',
   set_priority: 'Set priority',
+}
+const CONDITION_OP_LABELS: Record<string, string> = {
+  equals: 'equals',
+  not_equals: 'not equals',
+  contains: 'contains',
+  not_contains: 'not contains',
+  in: 'in',
+  not_in: 'not in',
+  gt: 'gt',
+  lt: 'lt',
+  is_set: 'is set',
+  is_empty: 'is empty',
 }
 
 const EMPTY_ACTION: AutomationAction = { type: 'comment', body: '' }
@@ -188,6 +205,7 @@ function RuleModal({
   initial: RuleDraft
   editing: AutomationRuleRead | null
 }) {
+  const { t } = useI18n()
   const toast = useToast()
   const queryClient = useQueryClient()
   const projects = useProjects(slug)
@@ -206,10 +224,13 @@ function RuleModal({
         : automationsApi.create(slug, draftToInput(draft)),
     onSuccess: () => {
       invalidate()
-      toast.success(editing ? 'Rule updated' : 'Rule created')
+      toast.success(editing ? t('automations.updated', 'Rule updated') : t('automations.created', 'Rule created'))
       onClose()
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not save rule'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : t('automations.saveError', 'Could not save rule'),
+      ),
   })
 
   const valid =
@@ -221,35 +242,44 @@ function RuleModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={editing ? 'Edit automation rule' : 'New automation rule'}
+      title={
+        editing
+          ? t('automations.editRule', 'Edit automation rule')
+          : t('automations.newRuleTitle', 'New automation rule')
+      }
       size="lg"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={() => save.mutate()} disabled={!valid} loading={save.isPending}>
-            {editing ? 'Save rule' : 'Create rule'}
+            {editing
+              ? t('automations.saveRule', 'Save rule')
+              : t('automations.createRule', 'Create rule')}
           </Button>
         </>
       }
     >
       <div className="space-y-5">
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Name">
+          <Field label={t('common.name', 'Name')}>
             <Input
               value={draft.name}
               maxLength={128}
               onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-              placeholder="Notify leads on urgent work"
+              placeholder={t('automations.namePlaceholder', 'Notify leads on urgent work')}
             />
           </Field>
-          <Field label="Applies to" hint="Org-wide when empty">
+          <Field
+            label={t('automations.appliesTo', 'Applies to')}
+            hint={t('automations.appliesToHint', 'Org-wide when empty')}
+          >
             <Select
               value={draft.project_id}
               onChange={(event) => setDraft({ ...draft, project_id: event.target.value })}
             >
-              <option value="">All projects</option>
+              <option value="">{t('automations.allProjects', 'All projects')}</option>
               {(projects.data ?? []).map((project) => (
                 <option key={project.id} value={project.id}>
                   {project.name}
@@ -258,7 +288,7 @@ function RuleModal({
             </Select>
           </Field>
         </div>
-        <Field label="Description">
+        <Field label={t('common.description', 'Description')}>
           <Input
             value={draft.description}
             maxLength={2000}
@@ -268,7 +298,9 @@ function RuleModal({
 
         {/* Trigger */}
         <div className="space-y-2 rounded-lg border border-slate-200 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trigger</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {t('automations.trigger', 'Trigger')}
+          </p>
           <Select
             value={draft.trigger_type}
             onChange={(event) =>
@@ -277,12 +309,15 @@ function RuleModal({
           >
             {TRIGGERS.map((trigger) => (
               <option key={trigger} value={trigger}>
-                {AUTOMATION_TRIGGER_LABELS[trigger]}
+                {t(`automationTrigger.${trigger}`, AUTOMATION_TRIGGER_LABELS[trigger])}
               </option>
             ))}
           </Select>
           {draft.trigger_type === 'status_changed' && (
-            <Field label="To status" hint="Workflow status key, e.g. in_review">
+            <Field
+              label={t('automations.toStatus', 'To status')}
+              hint={t('automations.toStatusHint', 'Workflow status key, e.g. in_review')}
+            >
               <Input
                 value={draft.to_status}
                 onChange={(event) => setDraft({ ...draft, to_status: event.target.value })}
@@ -292,18 +327,18 @@ function RuleModal({
           )}
           {draft.trigger_type === 'schedule' && (
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Interval">
+              <Field label={t('automations.interval', 'Interval')}>
                 <Select
                   value={draft.interval}
                   onChange={(event) => setDraft({ ...draft, interval: event.target.value })}
                 >
-                  <option value="hourly">Hourly</option>
-                  <option value="daily">Daily</option>
-                  <option value="weekly">Weekly</option>
+                  <option value="hourly">{t('automations.hourly', 'Hourly')}</option>
+                  <option value="daily">{t('automations.daily', 'Daily')}</option>
+                  <option value="weekly">{t('automations.weekly', 'Weekly')}</option>
                 </Select>
               </Field>
               {draft.interval === 'daily' && (
-                <Field label="At (UTC)">
+                <Field label={t('automations.atUtc', 'At (UTC)')}>
                   <Input
                     type="time"
                     value={draft.at}
@@ -319,7 +354,7 @@ function RuleModal({
         <div className="space-y-2 rounded-lg border border-slate-200 p-3">
           <div className="flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Conditions
+              {t('automations.conditions', 'Conditions')}
             </p>
             <Button
               size="sm"
@@ -328,11 +363,13 @@ function RuleModal({
                 setDraft({ ...draft, conditions: [...draft.conditions, { ...EMPTY_CONDITION }] })
               }
             >
-              <Plus className="h-3.5 w-3.5" /> Condition
+              <Plus className="h-3.5 w-3.5" /> {t('automations.addCondition', 'Condition')}
             </Button>
           </div>
           {draft.conditions.length === 0 && (
-            <p className="text-xs text-slate-400">Always run (no conditions).</p>
+            <p className="text-xs text-slate-400">
+              {t('automations.noConditions', 'Always run (no conditions).')}
+            </p>
           )}
           {draft.conditions.map((condition, index) => (
             <div key={index} className="flex items-center gap-2">
@@ -347,7 +384,7 @@ function RuleModal({
               >
                 {CONDITION_FIELDS.map((field) => (
                   <option key={field} value={field}>
-                    {field}
+                    {t(`automations.condField.${field}`, field)}
                   </option>
                 ))}
               </Select>
@@ -362,14 +399,14 @@ function RuleModal({
               >
                 {CONDITION_OPS.map((op) => (
                   <option key={op} value={op}>
-                    {op.replace('_', ' ')}
+                    {t(`automations.condOp.${op}`, CONDITION_OP_LABELS[op] ?? op)}
                   </option>
                 ))}
               </Select>
               {!['is_set', 'is_empty'].includes(condition.op) && (
                 <Input
                   value={String(condition.value ?? '')}
-                  placeholder="value"
+                  placeholder={t('automations.valuePlaceholder', 'value')}
                   onChange={(event) => {
                     const next = [...draft.conditions]
                     next[index] = { ...condition, value: event.target.value }
@@ -395,13 +432,15 @@ function RuleModal({
         {/* Actions */}
         <div className="space-y-2 rounded-lg border border-slate-200 p-3">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {t('common.actions', 'Actions')}
+            </p>
             <Button
               size="sm"
               variant="ghost"
               onClick={() => setDraft({ ...draft, actions: [...draft.actions, { ...EMPTY_ACTION }] })}
             >
-              <Plus className="h-3.5 w-3.5" /> Action
+              <Plus className="h-3.5 w-3.5" /> {t('automations.addAction', 'Action')}
             </Button>
           </div>
           {draft.actions.map((action, index) => {
@@ -422,7 +461,7 @@ function RuleModal({
                   >
                     {ACTION_TYPES.map((type) => (
                       <option key={type} value={type}>
-                        {ACTION_LABELS[type]}
+                        {t(`automations.actionType.${type}`, ACTION_LABELS[type])}
                       </option>
                     ))}
                   </Select>
@@ -443,7 +482,7 @@ function RuleModal({
                     value={action.assignee_id ?? ''}
                     onChange={(event) => updateAction({ assignee_id: event.target.value })}
                   >
-                    <option value="">Select assignee…</option>
+                    <option value="">{t('automations.selectAssignee', 'Select assignee…')}</option>
                     {(members.data ?? []).map((member) => (
                       <option key={member.user_id} value={member.user_id}>
                         {member.user?.full_name || member.user?.email || member.user_id}
@@ -454,7 +493,7 @@ function RuleModal({
                 {action.type === 'transition' && (
                   <Input
                     value={action.status ?? ''}
-                    placeholder="Status key, e.g. in_progress"
+                    placeholder={t('automations.statusKeyPlaceholder', 'Status key, e.g. in_progress')}
                     onChange={(event) => updateAction({ status: event.target.value })}
                   />
                 )}
@@ -462,7 +501,7 @@ function RuleModal({
                   <Textarea
                     value={action.body ?? ''}
                     maxLength={20_000}
-                    placeholder="Comment body (Markdown)"
+                    placeholder={t('automations.commentPlaceholder', 'Comment body (Markdown)')}
                     onChange={(event) => updateAction({ body: event.target.value })}
                   />
                 )}
@@ -474,11 +513,13 @@ function RuleModal({
                         updateAction({ role: event.target.value || null, user_id: null })
                       }
                     >
-                      <option value="">Notify a role…</option>
-                      <option value="owner">Owners</option>
-                      <option value="admin">Admins</option>
-                      <option value="manager">Managers</option>
-                      <option value="member">All members</option>
+                      <option value="">{t('automations.notifyRole', 'Notify a role…')}</option>
+                      <option value="owner">{t('automations.roleOwners', 'Owners')}</option>
+                      <option value="admin">{t('automations.roleAdmins', 'Admins')}</option>
+                      <option value="manager">{t('automations.roleManagers', 'Managers')}</option>
+                      <option value="member">
+                        {t('automations.roleAllMembers', 'All members')}
+                      </option>
                     </Select>
                     <Select
                       value={action.user_id ?? ''}
@@ -486,7 +527,9 @@ function RuleModal({
                         updateAction({ user_id: event.target.value || null, role: null })
                       }
                     >
-                      <option value="">…or a specific person</option>
+                      <option value="">
+                        {t('automations.specificPerson', '…or a specific person')}
+                      </option>
                       {(members.data ?? []).map((member) => (
                         <option key={member.user_id} value={member.user_id}>
                           {member.user?.full_name || member.user?.email || member.user_id}
@@ -507,7 +550,7 @@ function RuleModal({
                     value={action.label_id ?? ''}
                     onChange={(event) => updateAction({ label_id: event.target.value })}
                   >
-                    <option value="">Select label…</option>
+                    <option value="">{t('automations.selectLabel', 'Select label…')}</option>
                     {(labels.data ?? []).map((label) => (
                       <option key={label.id} value={label.id}>
                         {label.name}
@@ -524,9 +567,9 @@ function RuleModal({
                       })
                     }
                   >
-                    {['low', 'medium', 'high', 'urgent'].map((priority) => (
+                    {PRIORITIES.map((priority) => (
                       <option key={priority} value={priority}>
-                        {priority}
+                        {t(`priority.${priority}`, PRIORITY_LABELS[priority])}
                       </option>
                     ))}
                   </Select>
@@ -543,7 +586,7 @@ function RuleModal({
             onChange={(event) => setDraft({ ...draft, is_active: event.target.checked })}
             className="h-4 w-4 rounded border-slate-300 text-brand-600"
           />
-          Rule is active
+          {t('automations.ruleActive', 'Rule is active')}
         </label>
       </div>
     </Modal>
@@ -552,6 +595,7 @@ function RuleModal({
 
 export function AutomationsPage() {
   const { org } = useOrg()
+  const { t } = useI18n()
   const toast = useToast()
   const queryClient = useQueryClient()
   const rules = useAutomations(org.slug)
@@ -579,16 +623,22 @@ export function AutomationsPage() {
     onSuccess: () => {
       invalidate()
       setDeleting(null)
-      toast.success('Rule deleted')
+      toast.success(t('automations.deleted', 'Rule deleted'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete rule'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : t('automations.deleteError', 'Could not delete rule'),
+      ),
   })
 
   const toggle = useMutation({
     mutationFn: (rule: AutomationRuleRead) =>
       automationsApi.update(org.slug, rule.id, { is_active: !rule.is_active }),
     onSuccess: invalidate,
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update rule'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : t('automations.updateError', 'Could not update rule'),
+      ),
   })
 
   function openEditor(rule: AutomationRuleRead | null, template?: AutomationTemplateRead) {
@@ -600,22 +650,27 @@ export function AutomationsPage() {
   }
 
   const TABS = [
-    { id: 'rules' as const, label: 'Rules', icon: Zap },
-    { id: 'templates' as const, label: 'Templates', icon: ListChecks },
-    { id: 'executions' as const, label: 'Execution log', icon: ScrollText },
+    { id: 'rules' as const, label: t('automations.tabRules', 'Rules'), icon: Zap },
+    { id: 'templates' as const, label: t('automations.tabTemplates', 'Templates'), icon: ListChecks },
+    { id: 'executions' as const, label: t('automations.tabExecutions', 'Execution log'), icon: ScrollText },
   ]
 
   return (
     <div className="space-y-5 p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Automations</h1>
+          <h1 className="text-lg font-semibold text-slate-900">
+            {t('automations.title', 'Automations')}
+          </h1>
           <p className="text-sm text-slate-500">
-            If-this-then-that rules that handle recurring coordination for you.
+            {t(
+              'automations.subtitle',
+              'If-this-then-that rules that handle recurring coordination for you.',
+            )}
           </p>
         </div>
         <Button size="sm" onClick={() => openEditor(null)}>
-          <Plus className="h-4 w-4" /> New rule
+          <Plus className="h-4 w-4" /> {t('automations.newRule', 'New rule')}
         </Button>
       </div>
 
@@ -640,16 +695,22 @@ export function AutomationsPage() {
         <div className="space-y-2">
           {rules.isLoading && <PageSpinner />}
           {rules.isError && (
-            <ErrorState message="Could not load rules." onRetry={() => void rules.refetch()} />
+            <ErrorState
+              message={t('automations.loadError', 'Could not load rules.')}
+              onRetry={() => void rules.refetch()}
+            />
           )}
           {rules.data?.length === 0 && (
             <EmptyState
               icon={<Bot className="h-8 w-8" />}
-              title="No automation rules yet"
-              description="Start from a template or build a rule from scratch."
+              title={t('automations.emptyTitle', 'No automation rules yet')}
+              description={t(
+                'automations.emptyDescription',
+                'Start from a template or build a rule from scratch.',
+              )}
               action={
                 <Button size="sm" onClick={() => setTab('templates')}>
-                  Browse templates
+                  {t('automations.browseTemplates', 'Browse templates')}
                 </Button>
               }
             />
@@ -665,26 +726,52 @@ export function AutomationsPage() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-slate-800">{rule.name}</p>
                 <p className="text-xs text-slate-500">
-                  {AUTOMATION_TRIGGER_LABELS[rule.trigger_type]}
+                  {t(`automationTrigger.${rule.trigger_type}`, AUTOMATION_TRIGGER_LABELS[rule.trigger_type])}
                   {rule.project_id
-                    ? ` · ${projectNames.get(rule.project_id) ?? 'project'}`
-                    : ' · all projects'}
+                    ? t('automations.projectLabel', ' · {project}', {
+                        project:
+                          projectNames.get(rule.project_id) ??
+                          t('automations.projectFallback', 'project'),
+                      })
+                    : t('automations.allProjectsSuffix', ' · all projects')}
                   {rule.conditions?.length
-                    ? ` · ${rule.conditions.length} condition(s)`
+                    ? rule.conditions.length === 1
+                      ? t('automations.conditionCountOne', ' · {count} condition', {
+                          count: rule.conditions.length,
+                        })
+                      : t('automations.conditionCountMany', ' · {count} conditions', {
+                          count: rule.conditions.length,
+                        })
                     : ''}
-                  {` · ${rule.actions.length} action(s)`}
+                  {rule.actions.length === 1
+                    ? t('automations.actionCountOne', ' · {count} action', {
+                        count: rule.actions.length,
+                      })
+                    : t('automations.actionCountMany', ' · {count} actions', {
+                        count: rule.actions.length,
+                      })}
                 </p>
               </div>
               <div className="flex items-center gap-3 text-xs text-slate-400">
-                <span>{rule.run_count} runs</span>
-                {rule.last_run_at && <span>last {formatDate(rule.last_run_at)}</span>}
+                <span>
+                  {t('automations.runCount', '{count} runs', { count: rule.run_count })}
+                </span>
+                {rule.last_run_at && (
+                  <span>
+                    {t('automations.lastRun', 'last {date}', {
+                      date: formatDate(rule.last_run_at),
+                    })}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-1">
                 <Button size="sm" variant="ghost" onClick={() => toggle.mutate(rule)}>
-                  {rule.is_active ? 'Pause' : 'Activate'}
+                  {rule.is_active
+                    ? t('automations.pause', 'Pause')
+                    : t('automations.activate', 'Activate')}
                 </Button>
                 <Button size="sm" variant="secondary" onClick={() => openEditor(rule)}>
-                  Edit
+                  {t('common.edit', 'Edit')}
                 </Button>
                 <button
                   className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
@@ -706,10 +793,13 @@ export function AutomationsPage() {
               <p className="text-xs text-slate-500">{template.description}</p>
               <div className="flex items-center justify-between">
                 <Badge className="bg-slate-100 text-slate-600">
-                  {AUTOMATION_TRIGGER_LABELS[template.trigger_type]}
+                  {t(
+                    `automationTrigger.${template.trigger_type}`,
+                    AUTOMATION_TRIGGER_LABELS[template.trigger_type],
+                  )}
                 </Badge>
                 <Button size="sm" variant="secondary" onClick={() => openEditor(null, template)}>
-                  Use template
+                  {t('automations.useTemplate', 'Use template')}
                 </Button>
               </div>
             </Card>
@@ -721,7 +811,9 @@ export function AutomationsPage() {
         <div className="space-y-2">
           {executions.isLoading && <PageSpinner />}
           {executions.data?.length === 0 && (
-            <p className="text-sm text-slate-400">No executions recorded yet.</p>
+            <p className="text-sm text-slate-400">
+              {t('automations.noExecutions', 'No executions recorded yet.')}
+            </p>
           )}
           {executions.data?.map((execution) => (
             <Card key={execution.id} className="flex items-start gap-3 p-3">
@@ -734,15 +826,25 @@ export function AutomationsPage() {
               )}
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-slate-800">
-                  {execution.rule_name ?? 'Rule'} · {execution.trigger_event}
+                  {execution.rule_name ?? t('automations.ruleFallback', 'Rule')} · {execution.trigger_event}
                 </p>
                 <p className="text-xs text-slate-500">
                   {execution.actions_log
-                    .map((entry) => `${entry.action}: ${entry.status}`)
-                    .join(' · ') || 'no actions'}
+                    .map((entry) =>
+                      t('automations.executionAction', '{action}: {status}', {
+                        action: t(
+                          `automations.actionType.${entry.action}`,
+                          ACTION_LABELS[entry.action] ?? entry.action,
+                        ),
+                        status: t(`automations.executionStatus.${entry.status}`, entry.status),
+                      }),
+                    )
+                    .join(' · ') || t('automations.noActions', 'no actions')}
                 </p>
                 {execution.error && (
-                  <p className="text-xs text-red-600">Error: {execution.error}</p>
+                  <p className="text-xs text-red-600">
+                    {t('automations.executionError', 'Error: {error}', { error: execution.error })}
+                  </p>
                 )}
               </div>
               <span className="shrink-0 text-xs text-slate-400">
@@ -766,8 +868,12 @@ export function AutomationsPage() {
 
       <ConfirmDialog
         open={Boolean(deleting)}
-        title="Delete automation rule"
-        message={`Delete "${deleting?.name ?? ''}"? Its execution history is removed too.`}
+        title={t('automations.deleteTitle', 'Delete automation rule')}
+        message={t(
+          'automations.deleteMessage',
+          'Delete "{name}"? Its execution history is removed too.',
+          { name: deleting?.name ?? '' },
+        )}
         busy={remove.isPending}
         onClose={() => setDeleting(null)}
         onConfirm={() => deleting && remove.mutate(deleting)}

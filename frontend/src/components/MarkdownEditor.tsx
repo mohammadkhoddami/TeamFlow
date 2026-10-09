@@ -19,6 +19,7 @@ import { useRef, useState } from 'react'
 
 import { Markdown } from './Markdown'
 import { useOrgOptional } from './OrgLayout'
+import { useI18n } from '../lib/i18n'
 import { cn } from '../lib/utils'
 
 interface MentionSuggestion {
@@ -58,7 +59,7 @@ function ToolbarButton({
 export function MarkdownEditor({
   value,
   onChange,
-  placeholder = 'Write a description…',
+  placeholder,
   maxLength = 20_000,
   minRows = 5,
   autoFocus = false,
@@ -79,9 +80,12 @@ export function MarkdownEditor({
   /** Override mention candidates; defaults to the current org's members. */
   mentions?: MentionSuggestion[]
 }) {
+  const { t } = useI18n()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [tab, setTab] = useState<'write' | 'preview'>('write')
   const org = useOrgOptional()
+
+  const resolvedPlaceholder = placeholder ?? t('markdownEditor.placeholder', 'Write a description…')
 
   const candidates: MentionSuggestion[] =
     mentions ??
@@ -160,7 +164,7 @@ export function MarkdownEditor({
 
   const applyLink = () => {
     const { start, end } = selection()
-    const selected = value.slice(start, end) || 'link text'
+    const selected = value.slice(start, end) || t('markdownEditor.linkText', 'link text')
     const url = 'https://'
     onChange(`${value.slice(0, start)}[${selected}](${url})${value.slice(end)}`)
     setTab('write')
@@ -169,7 +173,7 @@ export function MarkdownEditor({
 
   const applyImage = () => {
     const { start, end } = selection()
-    const alt = value.slice(start, end) || 'description'
+    const alt = value.slice(start, end) || t('markdownEditor.imageAlt', 'description')
     const url = 'https://'
     onChange(`${value.slice(0, start)}![${alt}](${url})${value.slice(end)}`)
     setTab('write')
@@ -177,7 +181,10 @@ export function MarkdownEditor({
   }
 
   const applyTable = () => {
-    const table = '| Column | Column |\n| --- | --- |\n| Cell | Cell |'
+    const table = t(
+      'markdownEditor.tableSnippet',
+      '| Column | Column |\n| --- | --- |\n| Cell | Cell |',
+    )
     const { start, end } = selection()
     const prefix = start > 0 && !value.slice(0, start).endsWith('\n') ? '\n' : ''
     const suffix = value.slice(end).startsWith('\n') ? '' : '\n'
@@ -263,13 +270,13 @@ export function MarkdownEditor({
     const key = event.key.toLowerCase()
     if (key === 'b') {
       event.preventDefault()
-      applyWrap('**', '**', 'bold text')
+      applyWrap('**', '**', t('markdownEditor.boldText', 'bold text'))
     } else if (key === 'i') {
       event.preventDefault()
-      applyWrap('*', '*', 'italic text')
+      applyWrap('*', '*', t('markdownEditor.italicText', 'italic text'))
     } else if (key === 'e') {
       event.preventDefault()
-      applyWrap('`', '`', 'code')
+      applyWrap('`', '`', t('markdownEditor.codeText', 'code'))
     } else if (key === 'k') {
       event.preventDefault()
       applyLink()
@@ -289,35 +296,37 @@ export function MarkdownEditor({
       <div className="flex flex-wrap items-center justify-between gap-1 border-b border-slate-200 bg-slate-50 px-1.5 py-1">
         <div className="flex flex-wrap items-center gap-0.5">
           <ToolbarButton
-            title="Bold (Ctrl+B)"
+            title={t('markdownEditor.bold', 'Bold (Ctrl+B)')}
             disabled={toolbarDisabled}
-            onClick={() => applyWrap('**', '**', 'bold text')}
+            onClick={() => applyWrap('**', '**', t('markdownEditor.boldText', 'bold text'))}
           >
             <Bold className="h-3.5 w-3.5" />
           </ToolbarButton>
           <ToolbarButton
-            title="Italic (Ctrl+I)"
+            title={t('markdownEditor.italic', 'Italic (Ctrl+I)')}
             disabled={toolbarDisabled}
-            onClick={() => applyWrap('*', '*', 'italic text')}
+            onClick={() => applyWrap('*', '*', t('markdownEditor.italicText', 'italic text'))}
           >
             <Italic className="h-3.5 w-3.5" />
           </ToolbarButton>
           <ToolbarButton
-            title="Strikethrough"
+            title={t('markdownEditor.strikethrough', 'Strikethrough')}
             disabled={toolbarDisabled}
-            onClick={() => applyWrap('~~', '~~', 'strikethrough')}
+            onClick={() =>
+              applyWrap('~~', '~~', t('markdownEditor.strikethroughText', 'strikethrough'))
+            }
           >
             <Strikethrough className="h-3.5 w-3.5" />
           </ToolbarButton>
           <ToolbarButton
-            title="Inline code (Ctrl+E)"
+            title={t('markdownEditor.inlineCode', 'Inline code (Ctrl+E)')}
             disabled={toolbarDisabled}
-            onClick={() => applyWrap('`', '`', 'code')}
+            onClick={() => applyWrap('`', '`', t('markdownEditor.codeText', 'code'))}
           >
             <Code className="h-3.5 w-3.5" />
           </ToolbarButton>
           <ToolbarButton
-            title="Link (Ctrl+K)"
+            title={t('markdownEditor.link', 'Link (Ctrl+K)')}
             disabled={toolbarDisabled}
             onClick={applyLink}
           >
@@ -325,45 +334,53 @@ export function MarkdownEditor({
           </ToolbarButton>
           <span className="mx-0.5 h-4 w-px bg-slate-200" />
           <ToolbarButton
-            title="Heading"
+            title={t('markdownEditor.heading', 'Heading')}
             disabled={toolbarDisabled}
             onClick={() => applyLinePrefix('## ')}
           >
             <Heading2 className="h-3.5 w-3.5" />
           </ToolbarButton>
           <ToolbarButton
-            title="Bulleted list"
+            title={t('markdownEditor.bulletedList', 'Bulleted list')}
             disabled={toolbarDisabled}
             onClick={() => applyLinePrefix('- ')}
           >
             <List className="h-3.5 w-3.5" />
           </ToolbarButton>
           <ToolbarButton
-            title="Numbered list"
+            title={t('markdownEditor.numberedList', 'Numbered list')}
             disabled={toolbarDisabled}
             onClick={applyOrderedList}
           >
             <ListOrdered className="h-3.5 w-3.5" />
           </ToolbarButton>
           <ToolbarButton
-            title="Quote"
+            title={t('markdownEditor.quote', 'Quote')}
             disabled={toolbarDisabled}
             onClick={() => applyLinePrefix('> ')}
           >
             <Quote className="h-3.5 w-3.5" />
           </ToolbarButton>
           <ToolbarButton
-            title="Code block"
+            title={t('markdownEditor.codeBlock', 'Code block')}
             disabled={toolbarDisabled}
-            onClick={() => applyWrap('\n```\n', '\n```', 'code')}
+            onClick={() => applyWrap('\n```\n', '\n```', t('markdownEditor.codeText', 'code'))}
           >
             <Terminal className="h-3.5 w-3.5" />
           </ToolbarButton>
           <span className="mx-0.5 h-4 w-px bg-slate-200" />
-          <ToolbarButton title="Image" disabled={toolbarDisabled} onClick={applyImage}>
+          <ToolbarButton
+            title={t('markdownEditor.image', 'Image')}
+            disabled={toolbarDisabled}
+            onClick={applyImage}
+          >
             <ImageIcon className="h-3.5 w-3.5" />
           </ToolbarButton>
-          <ToolbarButton title="Table" disabled={toolbarDisabled} onClick={applyTable}>
+          <ToolbarButton
+            title={t('markdownEditor.table', 'Table')}
+            disabled={toolbarDisabled}
+            onClick={applyTable}
+          >
             <TableIcon className="h-3.5 w-3.5" />
           </ToolbarButton>
         </div>
@@ -377,7 +394,7 @@ export function MarkdownEditor({
               tab === 'write' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-700',
             )}
           >
-            <PenLine className="h-3 w-3" /> Write
+            <PenLine className="h-3 w-3" /> {t('markdownEditor.write', 'Write')}
           </button>
           <button
             type="button"
@@ -387,14 +404,17 @@ export function MarkdownEditor({
               tab === 'preview' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-700',
             )}
           >
-            <Eye className="h-3 w-3" /> Preview
+            <Eye className="h-3 w-3" /> {t('markdownEditor.preview', 'Preview')}
           </button>
         </div>
       </div>
 
       {tab === 'preview' ? (
         <div className="min-h-24 px-3 py-2">
-          <Markdown text={value} emptyText="Nothing to preview yet" />
+          <Markdown
+            text={value}
+            emptyText={t('markdownEditor.nothingToPreview', 'Nothing to preview yet')}
+          />
         </div>
       ) : (
         <textarea
@@ -404,7 +424,7 @@ export function MarkdownEditor({
           rows={minRows}
           value={value}
           maxLength={maxLength}
-          placeholder={placeholder}
+          placeholder={resolvedPlaceholder}
           autoFocus={autoFocus}
           disabled={disabled}
           onChange={(event) => {
@@ -420,7 +440,7 @@ export function MarkdownEditor({
       {tab === 'write' && mentionQuery && filteredMentions.length > 0 && (
         <div className="border-t border-slate-200 bg-white px-1 py-1">
           <p className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">
-            <AtSign className="h-3 w-3" /> Mention
+            <AtSign className="h-3 w-3" /> {t('markdownEditor.mention', 'Mention')}
           </p>
           {filteredMentions.map((candidate, index) => (
             <button
@@ -446,7 +466,7 @@ export function MarkdownEditor({
 
       <div className="flex items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-2 py-1 text-[10px] text-slate-400">
         <span className="hidden sm:inline">
-          Markdown: **bold**, *italic*, `code`, [link](url), lists
+          {t('markdownEditor.help', 'Markdown: **bold**, *italic*, `code`, [link](url), lists')}
         </span>
         <span className={cn(value.length > maxLength * 0.9 && 'font-medium text-amber-600')}>
           {value.length.toLocaleString()}/{maxLength.toLocaleString()}

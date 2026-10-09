@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 
 import { notificationsApi } from '../lib/api'
 import { useNotifications, useUnreadCount } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import type { NotificationRead } from '../lib/types'
 import { cn, relativeTime } from '../lib/utils'
 import { Spinner } from './ui'
@@ -12,6 +13,7 @@ import { Spinner } from './ui'
 export function NotificationBell() {
   const [open, setOpen] = useState(false)
   const { slug } = useParams<{ slug: string }>()
+  const { t } = useI18n()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const unread = useUnreadCount()
@@ -39,11 +41,11 @@ export function NotificationBell() {
       <button
         onClick={() => setOpen((value) => !value)}
         className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-        aria-label="Notifications"
+        aria-label={t('layout.notifications', 'Notifications')}
       >
         <Bell className="h-5 w-5" />
         {count > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+          <span className="absolute -end-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
             {count > 99 ? '99+' : count}
           </span>
         )}
@@ -52,16 +54,18 @@ export function NotificationBell() {
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-40 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+          <div className="absolute end-0 z-40 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
-              <span className="text-sm font-semibold text-slate-800">Notifications</span>
+              <span className="text-sm font-semibold text-slate-800">
+                {t('layout.notifications', 'Notifications')}
+              </span>
               {count > 0 && (
                 <button
                   className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700"
                   onClick={() => markAllRead.mutate()}
                   disabled={markAllRead.isPending}
                 >
-                  <CheckCheck className="h-3.5 w-3.5" /> Mark all read
+                  <CheckCheck className="h-3.5 w-3.5" /> {t('layout.markAllRead', 'Mark all read')}
                 </button>
               )}
             </div>
@@ -73,7 +77,9 @@ export function NotificationBell() {
                 </div>
               )}
               {!recent.isLoading && items.length === 0 && (
-                <p className="px-4 py-8 text-center text-sm text-slate-500">You're all caught up.</p>
+                <p className="px-4 py-8 text-center text-sm text-slate-500">
+                  {t('layout.allCaughtUp', "You're all caught up.")}
+                </p>
               )}
               {items.map((notification) => (
                 <button
@@ -106,7 +112,7 @@ export function NotificationBell() {
                 if (slug) navigate(`/org/${slug}/notifications`)
               }}
             >
-              View all notifications
+              {t('layout.viewAllNotifications', 'View all notifications')}
             </button>
           </div>
         </>

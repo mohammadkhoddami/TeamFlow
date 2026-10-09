@@ -5,9 +5,11 @@ import { AuthShell } from '../components/AuthShell'
 import { Button, ErrorState, Field, Input } from '../components/ui'
 import { useAuth } from '../contexts/auth'
 import { ApiError, authApi } from '../lib/api'
+import { useI18n } from '../lib/i18n'
 
 export function RegisterPage() {
   const { register } = useAuth()
+  const { t } = useI18n()
   const navigate = useNavigate()
   const [stage, setStage] = useState<'details' | 'code'>('details')
   const [fullName, setFullName] = useState('')
@@ -26,9 +28,19 @@ export function RegisterPage() {
       await authApi.requestOtp(email)
       setStage('code')
       setCode('')
-      setNotice(`We emailed a verification code to ${email}. It expires in 10 minutes.`)
+      setNotice(
+        t(
+          'auth.verificationSentTo',
+          'We emailed a verification code to {email}. It expires in 10 minutes.',
+          { email },
+        ),
+      )
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not send the verification code')
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : t('auth.sendCodeFailed', 'Could not send the verification code'),
+      )
     } finally {
       setBusy(false)
     }
@@ -38,11 +50,11 @@ export function RegisterPage() {
     event.preventDefault()
     if (stage === 'details') {
       if (password.length < 10) {
-        setError('Password must be at least 10 characters')
+        setError(t('auth.passwordMinLength', 'Password must be at least 10 characters'))
         return
       }
       if (password !== confirm) {
-        setError('Passwords do not match')
+        setError(t('auth.passwordsMismatch', 'Passwords do not match'))
         return
       }
       await sendCode()
@@ -54,7 +66,11 @@ export function RegisterPage() {
       await register({ email, password, full_name: fullName, code })
       navigate('/organizations', { replace: true })
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Registration failed')
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : t('auth.registrationFailed', 'Registration failed'),
+      )
     } finally {
       setBusy(false)
     }
@@ -69,17 +85,17 @@ export function RegisterPage() {
 
   return (
     <AuthShell
-      title="Create your account"
+      title={t('auth.registerTitle', 'Create your account')}
       subtitle={
         stage === 'details'
-          ? 'Start collaborating with your team'
-          : 'Enter the code we emailed you to finish'
+          ? t('auth.registerSubtitle', 'Start collaborating with your team')
+          : t('auth.registerCodeSubtitle', 'Enter the code we emailed you to finish')
       }
       footer={
         <>
-          Already registered?{' '}
+          {t('auth.alreadyRegistered', 'Already registered?')}{' '}
           <Link to="/login" className="font-medium text-brand-600 hover:text-brand-700">
-            Sign in
+            {t('auth.signIn', 'Sign in')}
           </Link>
         </>
       }
@@ -89,7 +105,7 @@ export function RegisterPage() {
         {notice && (
           <p className="rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-700">{notice}</p>
         )}
-        <Field label="Full name">
+        <Field label={t('auth.fullName', 'Full name')}>
           <Input
             value={fullName}
             onChange={(event) => setFullName(event.target.value)}
@@ -98,7 +114,7 @@ export function RegisterPage() {
             disabled={stage === 'code'}
           />
         </Field>
-        <Field label="Email">
+        <Field label={t('auth.email', 'Email')}>
           <Input
             type="email"
             required
@@ -111,7 +127,10 @@ export function RegisterPage() {
         </Field>
         {stage === 'details' ? (
           <>
-            <Field label="Password" hint="At least 10 characters">
+            <Field
+              label={t('auth.password', 'Password')}
+              hint={t('auth.passwordHint', 'At least 10 characters')}
+            >
               <Input
                 type="password"
                 required
@@ -120,7 +139,7 @@ export function RegisterPage() {
                 onChange={(event) => setPassword(event.target.value)}
               />
             </Field>
-            <Field label="Confirm password">
+            <Field label={t('auth.confirmPassword', 'Confirm password')}>
               <Input
                 type="password"
                 required
@@ -131,7 +150,10 @@ export function RegisterPage() {
             </Field>
           </>
         ) : (
-          <Field label="Verification code" hint="The 6-digit code from the email">
+          <Field
+            label={t('auth.verificationCode', 'Verification code')}
+            hint={t('auth.codeFromEmail', 'The 6-digit code from the email')}
+          >
             <Input
               inputMode="numeric"
               autoComplete="one-time-code"
@@ -146,7 +168,9 @@ export function RegisterPage() {
           </Field>
         )}
         <Button type="submit" className="w-full" loading={busy}>
-          {stage === 'details' ? 'Send verification code' : 'Create account'}
+          {stage === 'details'
+            ? t('auth.sendVerificationCode', 'Send verification code')
+            : t('auth.createAccount', 'Create account')}
         </Button>
         {stage === 'code' && (
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
@@ -156,7 +180,7 @@ export function RegisterPage() {
               disabled={busy}
               onClick={backToDetails}
             >
-              Use a different email
+              {t('auth.useDifferentEmail', 'Use a different email')}
             </button>
             <button
               type="button"
@@ -164,7 +188,7 @@ export function RegisterPage() {
               disabled={busy}
               onClick={sendCode}
             >
-              Send a new code
+              {t('auth.sendNewCode', 'Send a new code')}
             </button>
           </div>
         )}

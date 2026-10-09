@@ -5,9 +5,11 @@ import { AuthShell } from '../components/AuthShell'
 import { Button, ErrorState, Field, Input } from '../components/ui'
 import { useAuth } from '../contexts/auth'
 import { ApiError, authApi } from '../lib/api'
+import { useI18n } from '../lib/i18n'
 
 export function OtpPage() {
   const { loginWithOtp } = useAuth()
+  const { t } = useI18n()
   const navigate = useNavigate()
   const [stage, setStage] = useState<'email' | 'code'>('email')
   const [email, setEmail] = useState('')
@@ -23,9 +25,19 @@ export function OtpPage() {
       await authApi.requestOtp(email)
       setStage('code')
       setCode('')
-      setNotice(`We emailed a sign-in code to ${email}. It expires in 10 minutes.`)
+      setNotice(
+        t(
+          'auth.signInCodeSentTo',
+          'We emailed a sign-in code to {email}. It expires in 10 minutes.',
+          { email },
+        ),
+      )
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not send the code')
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : t('auth.sendSignInCodeFailed', 'Could not send the code'),
+      )
     } finally {
       setBusy(false)
     }
@@ -47,7 +59,9 @@ export function OtpPage() {
       }
       navigate('/organizations', { replace: true })
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Sign-in failed')
+      setError(
+        err instanceof ApiError ? err.message : t('auth.signInFailed', 'Sign-in failed'),
+      )
     } finally {
       setBusy(false)
     }
@@ -55,13 +69,13 @@ export function OtpPage() {
 
   return (
     <AuthShell
-      title="Sign in with email"
-      subtitle="We will email you a one-time code — no password needed"
+      title={t('auth.otpTitle', 'Sign in with email')}
+      subtitle={t('auth.otpSubtitle', 'We will email you a one-time code — no password needed')}
       footer={
         <>
-          Prefer a password?{' '}
+          {t('auth.preferPassword', 'Prefer a password?')}{' '}
           <Link to="/login" className="font-medium text-brand-600 hover:text-brand-700">
-            Sign in
+            {t('auth.signIn', 'Sign in')}
           </Link>
         </>
       }
@@ -71,7 +85,7 @@ export function OtpPage() {
         {notice && (
           <p className="rounded-lg bg-brand-50 px-3 py-2 text-sm text-brand-700">{notice}</p>
         )}
-        <Field label="Email">
+        <Field label={t('auth.email', 'Email')}>
           <Input
             type="email"
             autoComplete="email"
@@ -83,7 +97,10 @@ export function OtpPage() {
           />
         </Field>
         {stage === 'code' && (
-          <Field label="Sign-in code" hint="The 6-digit code from the email">
+          <Field
+            label={t('auth.signInCode', 'Sign-in code')}
+            hint={t('auth.codeFromEmail', 'The 6-digit code from the email')}
+          >
             <Input
               inputMode="numeric"
               autoComplete="one-time-code"
@@ -98,7 +115,7 @@ export function OtpPage() {
           </Field>
         )}
         <Button type="submit" className="w-full" loading={busy}>
-          {stage === 'email' ? 'Email me a code' : 'Sign in'}
+          {stage === 'email' ? t('auth.emailMeCode', 'Email me a code') : t('auth.signIn', 'Sign in')}
         </Button>
         {stage === 'code' && (
           <button
@@ -107,7 +124,7 @@ export function OtpPage() {
             disabled={busy}
             onClick={requestCode}
           >
-            Send a new code
+            {t('auth.sendNewCode', 'Send a new code')}
           </button>
         )}
       </form>

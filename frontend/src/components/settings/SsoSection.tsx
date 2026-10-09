@@ -53,17 +53,22 @@ export function SsoSection() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: qk.ssoConfig(org.slug) })
       setClientSecret('')
-      toast.success('SSO configuration saved')
+      toast.success(t('settings.ssoSaved', 'SSO configuration saved'))
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.message : 'Could not save SSO configuration'),
+      toast.error(
+        err instanceof ApiError ? err.message : t('settings.couldNotSaveSso', 'Could not save SSO configuration'),
+      ),
   })
 
   return (
     <Card>
       <CardHeader
         title={t('settings.sso', 'Single sign-on (SSO)')}
-        description="Connect an OIDC identity provider for your workspace."
+        description={t(
+          'settings.ssoDescription',
+          'Connect an OIDC identity provider for your workspace.',
+        )}
         action={
           config.data && (
             <Badge
@@ -73,7 +78,9 @@ export function SsoSection() {
                   : 'bg-amber-100 text-amber-700'
               }
             >
-              {config.data.has_secret ? 'Secret stored' : 'No secret'}
+              {config.data.has_secret
+                ? t('settings.secretStored', 'Secret stored')
+                : t('settings.noSecret', 'No secret')}
             </Badge>
           )
         }
@@ -81,27 +88,36 @@ export function SsoSection() {
       <div className="space-y-4 p-5">
         {config.isError && (
           <p className="text-xs text-slate-500">
-            SSO is not configured yet. Fill in the provider details to enable it.
+            {t(
+              'settings.ssoNotConfigured',
+              'SSO is not configured yet. Fill in the provider details to enable it.',
+            )}
           </p>
         )}
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Issuer URL" hint="The OIDC discovery issuer">
+          <Field
+            label={t('settings.issuerUrl', 'Issuer URL')}
+            hint={t('settings.issuerHint', 'The OIDC discovery issuer')}
+          >
             <Input
               value={issuer}
               onChange={(event) => setIssuer(event.target.value)}
               placeholder="https://idp.example.com"
             />
           </Field>
-          <Field label="Client ID">
+          <Field label={t('settings.clientId', 'Client ID')}>
             <Input value={clientId} onChange={(event) => setClientId(event.target.value)} />
           </Field>
         </div>
         <Field
-          label="Client secret"
+          label={t('settings.clientSecret', 'Client secret')}
           hint={
             config.data?.has_secret
-              ? 'A secret is stored; leave blank to keep it unchanged.'
-              : 'Required the first time you save.'
+              ? t(
+                  'settings.clientSecretStoredHint',
+                  'A secret is stored; leave blank to keep it unchanged.',
+                )
+              : t('settings.clientSecretRequiredHint', 'Required the first time you save.')
           }
         >
           <Input
@@ -112,28 +128,31 @@ export function SsoSection() {
           />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Scopes" hint="Comma separated">
+          <Field label={t('settings.scopes', 'Scopes')} hint={t('settings.scopesHint', 'Comma separated')}>
             <Input value={scopes} onChange={(event) => setScopes(event.target.value)} />
           </Field>
-          <Field label="Default role" hint="Granted to auto-provisioned members">
+          <Field
+            label={t('settings.defaultRole', 'Default role')}
+            hint={t('settings.defaultRoleHint', 'Granted to auto-provisioned members')}
+          >
             <Select
               value={defaultRole}
               onChange={(event) => setDefaultRole(event.target.value as MembershipRole)}
             >
-              <option value="member">{ROLE_LABELS.member}</option>
-              <option value="manager">{ROLE_LABELS.manager}</option>
-              <option value="admin">{ROLE_LABELS.admin}</option>
+              <option value="member">{t('role.member', ROLE_LABELS.member)}</option>
+              <option value="manager">{t('role.manager', ROLE_LABELS.manager)}</option>
+              <option value="admin">{t('role.admin', ROLE_LABELS.admin)}</option>
             </Select>
           </Field>
         </div>
         <div className="flex flex-wrap gap-4">
           <Checkbox
-            label="Enable SSO sign-in"
+            label={t('settings.enableSso', 'Enable SSO sign-in')}
             checked={isEnabled}
             onChange={(event) => setIsEnabled(event.target.checked)}
           />
           <Checkbox
-            label="Auto-provision new users"
+            label={t('settings.autoProvision', 'Auto-provision new users')}
             checked={autoProvision}
             onChange={(event) => setAutoProvision(event.target.checked)}
           />

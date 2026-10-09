@@ -19,6 +19,7 @@ import {
 import { useToast } from '../contexts/toast'
 import { ApiError, pluginsApi } from '../lib/api'
 import { qk, useDirectory, usePlugins } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import { isAdmin, type PluginCreated, type PluginDirectoryEntry, type PluginRead } from '../lib/types'
 
 interface InstallState {
@@ -31,6 +32,7 @@ const EMPTY_INSTALL: InstallState = { entry: null, webhookUrl: '', events: [] }
 
 export function PluginsPage() {
   const { org, role } = useOrg()
+  const { t } = useI18n()
   const toast = useToast()
   const queryClient = useQueryClient()
   const directory = useDirectory(org.slug)
@@ -61,7 +63,9 @@ export function PluginsPage() {
       setCreated(plugin)
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.message : 'Could not install plugin'),
+      toast.error(
+        err instanceof ApiError ? err.message : t('plugins.installError', 'Could not install plugin'),
+      ),
   })
 
   const toggle = useMutation({
@@ -69,9 +73,12 @@ export function PluginsPage() {
       pluginsApi.update(org.slug, plugin.id, { is_active: !plugin.is_active }),
     onSuccess: () => {
       invalidate()
-      toast.success('Plugin updated')
+      toast.success(t('plugins.updated', 'Plugin updated'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update plugin'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : t('plugins.updateError', 'Could not update plugin'),
+      ),
   })
 
   const uninstall = useMutation({
@@ -79,10 +86,14 @@ export function PluginsPage() {
     onSuccess: () => {
       invalidate()
       setUninstalling(null)
-      toast.success('Plugin uninstalled')
+      toast.success(t('plugins.uninstalled', 'Plugin uninstalled'))
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.message : 'Could not uninstall plugin'),
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : t('plugins.uninstallError', 'Could not uninstall plugin'),
+      ),
   })
 
   function openInstall(entry: PluginDirectoryEntry) {
@@ -92,20 +103,23 @@ export function PluginsPage() {
   return (
     <div className="space-y-6 p-4 md:p-6">
       <div>
-        <h1 className="text-lg font-semibold text-slate-900">Plugins</h1>
+        <h1 className="text-lg font-semibold text-slate-900">{t('plugins.title', 'Plugins')}</h1>
         <p className="text-sm text-slate-500">
-          Extend the workspace with directory apps that receive event webhooks.
+          {t(
+            'plugins.subtitle',
+            'Extend the workspace with directory apps that receive event webhooks.',
+          )}
         </p>
       </div>
 
       <section className="space-y-3">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
-          <Puzzle className="h-4 w-4 text-slate-400" /> Directory
+          <Puzzle className="h-4 w-4 text-slate-400" /> {t('plugins.directory', 'Directory')}
         </h2>
         {directory.isLoading && <PageSpinner />}
         {directory.isError && (
           <ErrorState
-            message="Could not load the plugin directory."
+            message={t('plugins.directoryError', 'Could not load the plugin directory.')}
             onRetry={() => void directory.refetch()}
           />
         )}
@@ -115,10 +129,14 @@ export function PluginsPage() {
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="text-sm font-semibold text-slate-800">{entry.name}</p>
-                  <p className="text-xs text-slate-500">by {entry.author}</p>
+                  <p className="text-xs text-slate-500">
+                    {t('plugins.byAuthor', 'by {author}', { author: entry.author })}
+                  </p>
                 </div>
                 {entry.installed && (
-                  <Badge className="bg-emerald-100 text-emerald-700">installed</Badge>
+                  <Badge className="bg-emerald-100 text-emerald-700">
+                    {t('plugins.installedBadge', 'installed')}
+                  </Badge>
                 )}
               </div>
               <p className="mt-2 flex-1 text-sm text-slate-600">{entry.description}</p>
@@ -135,11 +153,11 @@ export function PluginsPage() {
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700"
                 >
-                  <ExternalLink className="h-3 w-3" /> Homepage
+                  <ExternalLink className="h-3 w-3" /> {t('plugins.homepage', 'Homepage')}
                 </a>
                 {admin && !entry.installed && (
                   <Button size="sm" onClick={() => openInstall(entry)}>
-                    <Plus className="h-3.5 w-3.5" /> Install
+                    <Plus className="h-3.5 w-3.5" /> {t('plugins.install', 'Install')}
                   </Button>
                 )}
               </div>
@@ -150,13 +168,16 @@ export function PluginsPage() {
 
       <section className="space-y-3">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
-          <Plug className="h-4 w-4 text-slate-400" /> Installed
+          <Plug className="h-4 w-4 text-slate-400" /> {t('plugins.installed', 'Installed')}
         </h2>
         {(installed.data?.length ?? 0) === 0 && (
           <EmptyState
             icon={<Puzzle className="h-8 w-8" />}
-            title="No plugins installed"
-            description="Install one from the directory to start receiving events."
+            title={t('plugins.emptyTitle', 'No plugins installed')}
+            description={t(
+              'plugins.emptyDescription',
+              'Install one from the directory to start receiving events.',
+            )}
           />
         )}
         {installed.data?.map((plugin) => (
@@ -164,7 +185,9 @@ export function PluginsPage() {
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-slate-800">
                 {plugin.name}
-                {!plugin.is_active && <Badge className="ml-2">disabled</Badge>}
+                {!plugin.is_active && (
+                  <Badge className="ml-2">{t('plugins.disabledBadge', 'disabled')}</Badge>
+                )}
               </p>
               <p className="text-xs text-slate-500">
                 {plugin.description ?? ''}
@@ -179,11 +202,13 @@ export function PluginsPage() {
             {admin && (
               <div className="flex items-center gap-1">
                 <Button size="sm" variant="secondary" onClick={() => toggle.mutate(plugin)}>
-                  {plugin.is_active ? 'Disable' : 'Enable'}
+                  {plugin.is_active
+                    ? t('plugins.disable', 'Disable')
+                    : t('plugins.enable', 'Enable')}
                 </Button>
                 <button
                   className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                  title="Uninstall"
+                  title={t('plugins.uninstall', 'Uninstall')}
                   onClick={() => setUninstalling(plugin)}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -197,25 +222,33 @@ export function PluginsPage() {
       <Modal
         open={Boolean(install.entry)}
         onClose={() => setInstall(EMPTY_INSTALL)}
-        title={`Install ${install.entry?.name ?? 'plugin'}`}
-        description="Events are delivered as signed webhook POSTs to your endpoint."
+        title={t('plugins.installTitle', 'Install {name}', {
+          name: install.entry?.name ?? t('plugins.pluginFallback', 'plugin'),
+        })}
+        description={t(
+          'plugins.installDescription',
+          'Events are delivered as signed webhook POSTs to your endpoint.',
+        )}
         footer={
           <>
             <Button variant="secondary" onClick={() => setInstall(EMPTY_INSTALL)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button
               onClick={() => installPlugin.mutate()}
               loading={installPlugin.isPending}
               disabled={!install.webhookUrl.trim()}
             >
-              Install
+              {t('plugins.install', 'Install')}
             </Button>
           </>
         }
       >
         <div className="space-y-4">
-          <Field label="Webhook URL" hint="Where TeamFlow POSTs plugin events">
+          <Field
+            label={t('plugins.webhookUrl', 'Webhook URL')}
+            hint={t('plugins.webhookUrlHint', 'Where TeamFlow POSTs plugin events')}
+          >
             <Input
               autoFocus
               value={install.webhookUrl}
@@ -226,7 +259,7 @@ export function PluginsPage() {
             />
           </Field>
           <div className="space-y-1.5">
-            <p className="text-sm font-medium text-slate-700">Events</p>
+            <p className="text-sm font-medium text-slate-700">{t('plugins.events', 'Events')}</p>
             {(install.entry?.events ?? []).map((event) => (
               <Checkbox
                 key={event}
@@ -249,13 +282,13 @@ export function PluginsPage() {
       <Modal
         open={Boolean(created)}
         onClose={() => setCreated(null)}
-        title="Plugin signing secret"
+        title={t('plugins.secretTitle', 'Plugin signing secret')}
         size="sm"
-        footer={<Button onClick={() => setCreated(null)}>Done</Button>}
+        footer={<Button onClick={() => setCreated(null)}>{t('plugins.done', 'Done')}</Button>}
       >
         <div className="space-y-2">
           <p className="text-xs text-slate-500">
-            Use it to verify webhook signatures. It is never shown again.
+            {t('plugins.secretHint', 'Use it to verify webhook signatures. It is never shown again.')}
           </p>
           <div className="flex items-center gap-2 rounded bg-slate-50 px-3 py-2 font-mono text-xs">
             <span className="min-w-0 flex-1 break-all">{created?.secret ?? ''}</span>
@@ -263,8 +296,8 @@ export function PluginsPage() {
               className="shrink-0 text-slate-400 hover:text-slate-700"
               onClick={() => {
                 void navigator.clipboard.writeText(created?.secret ?? '').then(
-                  () => toast.success('Copied'),
-                  () => toast.error('Could not copy'),
+                  () => toast.success(t('plugins.copied', 'Copied')),
+                  () => toast.error(t('plugins.copyError', 'Could not copy')),
                 )
               }}
             >
@@ -276,8 +309,12 @@ export function PluginsPage() {
 
       <ConfirmDialog
         open={Boolean(uninstalling)}
-        title="Uninstall plugin"
-        message={`Uninstall "${uninstalling?.name ?? ''}"? Webhook delivery stops immediately.`}
+        title={t('plugins.uninstallTitle', 'Uninstall plugin')}
+        message={t(
+          'plugins.uninstallMessage',
+          'Uninstall "{name}"? Webhook delivery stops immediately.',
+          { name: uninstalling?.name ?? '' },
+        )}
         busy={uninstall.isPending}
         onClose={() => setUninstalling(null)}
         onConfirm={() => uninstalling && uninstall.mutate(uninstalling)}

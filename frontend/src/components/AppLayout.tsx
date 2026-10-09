@@ -25,9 +25,10 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/auth'
 import { useOrganizations } from '../lib/hooks'
 import { useI18n } from '../lib/i18n'
-import { isAdmin } from '../lib/types'
+import { isAdmin, ROLE_LABELS, type MembershipRole } from '../lib/types'
 import { cn } from '../lib/utils'
 import { GlobalSearch } from './GlobalSearch'
+import { LanguageToggle } from './LanguageToggle'
 import { NotificationBell } from './NotificationBell'
 import { useOrg } from './OrgLayout'
 import { ThemeToggle } from './ThemeToggle'
@@ -59,11 +60,14 @@ export function AppLayout() {
   const organizations = useOrganizations()
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const roleLabel = t(`role.${role}`, ROLE_LABELS[role as MembershipRole])
 
   const sidebar = (
     <div className="flex h-full flex-col bg-white">
       <div className="border-b border-slate-200 px-4 py-4">
-        <p className="text-sm font-bold tracking-tight text-brand-700">TeamFlow</p>
+        <p className="text-sm font-bold tracking-tight text-brand-700">
+          {t('common.brand', 'TeamFlow')}
+        </p>
         <select
           className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-medium text-slate-800 focus:border-brand-500 focus:outline-none"
           value={org.slug}
@@ -75,7 +79,7 @@ export function AppLayout() {
             }
           }}
         >
-          <option value="__all__">All workspaces…</option>
+          <option value="__all__">{t('layout.allWorkspaces', 'All workspaces…')}</option>
           {organizations.data?.map((entry) => (
             <option key={entry.organization.id} value={entry.organization.slug}>
               {entry.organization.name}
@@ -113,19 +117,19 @@ export function AppLayout() {
           onClick={() => setMobileOpen(false)}
           className="block rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
         >
-          My invitations
+          {t('layout.myInvitations', 'My invitations')}
         </NavLink>
         <div className="mt-1 flex items-center gap-2.5 rounded-lg px-3 py-2">
           <Avatar name={user?.full_name || user?.email || '?'} email={user?.email} size="sm" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-slate-800">
-              {user?.full_name || 'Account'}
+              {user?.full_name || t('layout.account', 'Account')}
             </p>
             <p className="truncate text-xs text-slate-500">{user?.email}</p>
           </div>
           <button
             onClick={() => void logout()}
-            title="Log out"
+            title={t('layout.logOut', 'Log out')}
             className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
           >
             <LogOut className="h-4 w-4" />
@@ -152,17 +156,20 @@ export function AppLayout() {
             <button
               className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 md:hidden"
               onClick={() => setMobileOpen((value) => !value)}
-              aria-label="Toggle navigation"
+              aria-label={t('layout.toggleNavigation', 'Toggle navigation')}
             >
               {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
             <div>
               <p className="text-sm font-semibold text-slate-900">{org.name}</p>
-              <p className="text-xs capitalize text-slate-500">{role} workspace</p>
+              <p className="text-xs capitalize text-slate-500">
+                {t('layout.roleWorkspace', '{role} workspace', { role: roleLabel })}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <GlobalSearch />
+            <LanguageToggle />
             <ThemeToggle />
             <NotificationBell />
           </div>

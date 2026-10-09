@@ -4,8 +4,10 @@ import { Link } from 'react-router-dom'
 import { AuthShell } from '../components/AuthShell'
 import { Button, ErrorState, Field, Input } from '../components/ui'
 import { ApiError, authApi } from '../lib/api'
+import { useI18n } from '../lib/i18n'
 
 export function ForgotPasswordPage() {
+  const { t } = useI18n()
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -19,7 +21,7 @@ export function ForgotPasswordPage() {
       await authApi.forgotPassword(email)
       setSent(true)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Request failed')
+      setError(err instanceof ApiError ? err.message : t('auth.requestFailed', 'Request failed'))
     } finally {
       setBusy(false)
     }
@@ -27,23 +29,26 @@ export function ForgotPasswordPage() {
 
   return (
     <AuthShell
-      title="Reset your password"
-      subtitle="We'll email you a single-use reset link"
+      title={t('auth.forgotTitle', 'Reset your password')}
+      subtitle={t('auth.forgotSubtitle', "We'll email you a single-use reset link")}
       footer={
         <Link to="/login" className="font-medium text-brand-600 hover:text-brand-700">
-          Back to sign in
+          {t('auth.back', 'Back to sign in')}
         </Link>
       }
     >
       {sent ? (
         <p className="text-sm text-slate-600">
-          If an account exists for <span className="font-medium">{email}</span>, a reset link is on
-          its way. Check your inbox (and the backend console in development).
+          {t(
+            'auth.resetSent',
+            'If an account exists for {email}, a reset link is on its way. Check your inbox (and the backend console in development).',
+            { email },
+          )}
         </p>
       ) : (
         <form className="space-y-4" onSubmit={submit}>
           {error && <ErrorState message={error} />}
-          <Field label="Email">
+          <Field label={t('auth.email', 'Email')}>
             <Input
               type="email"
               required
@@ -53,7 +58,7 @@ export function ForgotPasswordPage() {
             />
           </Field>
           <Button type="submit" className="w-full" loading={busy}>
-            Send reset link
+            {t('auth.sendResetLink', 'Send reset link')}
           </Button>
         </form>
       )}

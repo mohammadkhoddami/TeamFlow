@@ -14,6 +14,7 @@ import {
 } from '../components/ui'
 import { notificationsApi } from '../lib/api'
 import { useNotificationMutes, useNotifications, useProjects } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import type { NotificationRead } from '../lib/types'
 import { cn, relativeTime } from '../lib/utils'
 
@@ -22,9 +23,9 @@ type GroupMode = 'project' | 'task' | 'none'
 function groupNotifications(
   items: NotificationRead[],
   mode: GroupMode,
-): { key: string; label: string; projectId: string | null; items: NotificationRead[] }[] {
+): { key: string; projectId: string | null; items: NotificationRead[] }[] {
   if (mode === 'none') {
-    return [{ key: 'all', label: 'All notifications', projectId: null, items }]
+    return [{ key: 'all', projectId: null, items }]
   }
   const groups = new Map<string, NotificationRead[]>()
   for (const item of items) {
@@ -36,7 +37,6 @@ function groupNotifications(
   }
   return [...groups.entries()].map(([key, grouped]) => ({
     key,
-    label: key === 'none' ? 'General' : key,
     projectId: mode === 'project' && key !== 'none' ? key : (grouped[0]?.project_id ?? null),
     items: grouped,
   }))
@@ -44,6 +44,7 @@ function groupNotifications(
 
 export function NotificationsPage() {
   const { org } = useOrg()
+  const { t } = useI18n()
   const [unreadOnly, setUnreadOnly] = useState(false)
   const [mode, setMode] = useState<GroupMode>('project')
   const notifications = useNotifications(unreadOnly)
@@ -84,13 +85,15 @@ export function NotificationsPage() {
     [notifications.data, mode],
   )
 
-  function labelFor(group: { key: string; label: string; items: NotificationRead[] }): string {
-    if (mode === 'project') return projectNames.get(group.key) ?? 'General'
+  function labelFor(group: { key: string; items: NotificationRead[] }): string {
+    if (mode === 'project') {
+      return projectNames.get(group.key) ?? t('notifications.general', 'General')
+    }
     if (mode === 'task') {
       const latest = group.items[0]
-      return latest?.title ?? 'Task activity'
+      return latest?.title ?? t('notifications.taskActivity', 'Task activity')
     }
-    return group.label
+    return t('notifications.allTitle', 'All notifications')
   }
 
   const modeButton = (value: GroupMode, icon: React.ReactNode, label: string) => (
@@ -113,19 +116,33 @@ export function NotificationsPage() {
     <div className="space-y-5 p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Notifications</h1>
+          <h1 className="text-lg font-semibold text-slate-900">
+            {t('notifications.title', 'Notifications')}
+          </h1>
           <p className="text-sm text-slate-500">
-            Updates for you across all of your workspaces.
+            {t('notifications.subtitle', 'Updates for you across all of your workspaces.')}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5">
-            {modeButton('project', <Layers className="h-3.5 w-3.5" />, 'By project')}
-            {modeButton('task', <ListTree className="h-3.5 w-3.5" />, 'By task')}
-            {modeButton('none', <LayoutList className="h-3.5 w-3.5" />, 'Flat')}
+            {modeButton(
+              'project',
+              <Layers className="h-3.5 w-3.5" />,
+              t('notifications.byProject', 'By project'),
+            )}
+            {modeButton(
+              'task',
+              <ListTree className="h-3.5 w-3.5" />,
+              t('notifications.byTask', 'By task'),
+            )}
+            {modeButton(
+              'none',
+              <LayoutList className="h-3.5 w-3.5" />,
+              t('notifications.flat', 'Flat'),
+            )}
           </div>
           <Checkbox
-            label="Unread only"
+            label={t('notifications.unreadOnly', 'Unread only')}
             checked={unreadOnly}
             onChange={(event) => setUnreadOnly(event.target.checked)}
           />
@@ -135,21 +152,23 @@ export function NotificationsPage() {
             onClick={() => markAll.mutate()}
             loading={markAll.isPending}
           >
-            <CheckCheck className="h-4 w-4" /> Mark all read
+            <CheckCheck className="h-4 w-4" /> {t('notifications.markAllRead', 'Mark all read')}
           </Button>
         </div>
       </div>
 
       {(mutes.data?.length ?? 0) > 0 && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span className="font-medium">Muted projects:</span>
+          <span className="font-medium">
+            {t('notifications.mutedProjects', 'Muted projects:')}
+          </span>
           {mutes.data?.map((entry) => (
             <button
               key={entry.id}
               onClick={() => unmute.mutate(entry.project_id)}
               disabled={mutesBusy}
               className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 font-medium text-slate-600 hover:border-slate-300"
-              title="Unmute"
+              title={t('notifications.unmute', 'Unmute')}
             >
               <BellOff className="h-3 w-3" />
               {projectNames.get(entry.project_id) ?? entry.project_id.slice(0, 8)}
@@ -161,7 +180,7 @@ export function NotificationsPage() {
       {notifications.isLoading && <PageSpinner />}
       {notifications.isError && (
         <ErrorState
-          message="Could not load notifications."
+          message={t('notifications.loadError', 'Could not load notifications.')}
           onRetry={() => void notifications.refetch()}
         />
       )}
@@ -169,8 +188,8 @@ export function NotificationsPage() {
       {notifications.data?.items.length === 0 && (
         <EmptyState
           icon={<Bell className="h-8 w-8" />}
-          title="Nothing here"
-          description="You're all caught up."
+          title={t('notifications.emptyTitle', 'Nothing here')}
+          description={t('notifications.emptyBody', "You're all caught up.")}
         />
       )}
 
@@ -192,15 +211,19 @@ export function NotificationsPage() {
                     }
                     disabled={mutesBusy}
                     className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
-                    title={mutedIds.has(group.projectId) ? 'Unmute project' : 'Mute project'}
+                    title={
+                      mutedIds.has(group.projectId)
+                        ? t('notifications.unmuteProject', 'Unmute project')
+                        : t('notifications.muteProject', 'Mute project')
+                    }
                   >
                     {mutedIds.has(group.projectId) ? (
                       <>
-                        <BellOff className="h-3.5 w-3.5" /> Muted
+                        <BellOff className="h-3.5 w-3.5" /> {t('notifications.muted', 'Muted')}
                       </>
                     ) : (
                       <>
-                        <Bell className="h-3.5 w-3.5" /> Mute
+                        <Bell className="h-3.5 w-3.5" /> {t('notifications.mute', 'Mute')}
                       </>
                     )}
                   </button>
@@ -229,10 +252,19 @@ export function NotificationsPage() {
                       <p className="mt-0.5 text-sm text-slate-600">{notification.body}</p>
                     )}
                     <p className="mt-1 text-xs text-slate-400">
-                      {notification.type} · {relativeTime(notification.created_at)}
+                      {t('notifications.meta', '{type} · {time}', {
+                        type: notification.type,
+                        time: relativeTime(notification.created_at),
+                      })}
                       {notification.project_id &&
-                        ` · ${projectNames.get(notification.project_id) ?? 'project'}`}
-                      {notification.organization_id && (inThisOrg ? '' : ' · other workspace')}
+                        t('notifications.inProject', ' · {project}', {
+                          project:
+                            projectNames.get(notification.project_id) ??
+                            t('notifications.projectFallback', 'project'),
+                        })}
+                      {notification.organization_id &&
+                        !inThisOrg &&
+                        t('notifications.otherWorkspace', ' · other workspace')}
                     </p>
                   </div>
                   {!notification.read_at && (
@@ -242,7 +274,7 @@ export function NotificationsPage() {
                       onClick={() => markRead.mutate(notification.id)}
                       loading={markRead.isPending}
                     >
-                      Mark read
+                      {t('notifications.markRead', 'Mark read')}
                     </Button>
                   )}
                 </Card>

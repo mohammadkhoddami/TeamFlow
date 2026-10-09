@@ -5,6 +5,7 @@ import { useRef, useState } from 'react'
 import { useToast } from '../../contexts/toast'
 import { ApiError, attachmentsApi, uploadToStorage } from '../../lib/api'
 import { qk } from '../../lib/hooks'
+import { useI18n } from '../../lib/i18n'
 import { formatBytes, relativeTime } from '../../lib/utils'
 import { Badge, Button, Spinner } from '../ui'
 
@@ -17,6 +18,7 @@ export function AttachmentsSection({
   taskId: string
   onInsertMarkdown?: (markdown: string) => void
 }) {
+  const { t } = useI18n()
   const toast = useToast()
   const queryClient = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -34,17 +36,17 @@ export function AttachmentsSection({
   const remove = useMutation({
     mutationFn: attachmentsApi.remove,
     onSuccess: () => {
-      toast.success('Attachment deleted')
+      toast.success(t('attachments.deleted', 'Attachment deleted'))
       invalidate()
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete file'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('attachments.deleteError', 'Could not delete file')),
   })
 
   async function handleFiles(files: FileList | null) {
     const file = files?.[0]
     if (!file) return
     if (file.size > MAX_UPLOAD_BYTES) {
-      toast.error('Files are limited to 10 MB')
+      toast.error(t('attachments.sizeLimit', 'Files are limited to 10 MB'))
       return
     }
     setUploading(true)
@@ -57,10 +59,10 @@ export function AttachmentsSection({
       })
       await uploadToStorage(grant.upload_url, file, contentType)
       await attachmentsApi.confirm(taskId, grant.attachment.id)
-      toast.success('File uploaded')
+      toast.success(t('attachments.uploaded', 'File uploaded'))
       invalidate()
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : 'Upload failed')
+      toast.error(error instanceof ApiError ? error.message : t('attachments.uploadFailed', 'Upload failed'))
     } finally {
       setUploading(false)
       if (inputRef.current) inputRef.current.value = ''
@@ -78,7 +80,7 @@ export function AttachmentsSection({
       link.click()
       link.remove()
     } catch (error) {
-      toast.error(error instanceof ApiError ? error.message : 'Could not build download URL')
+      toast.error(error instanceof ApiError ? error.message : t('attachments.downloadUrlError', 'Could not build download URL'))
     }
   }
 
@@ -86,7 +88,11 @@ export function AttachmentsSection({
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-800">
-          Attachments{attachments.data ? ` (${attachments.data.length})` : ''}
+          {attachments.data
+            ? t('attachments.titleWithCount', 'Attachments ({count})', {
+                count: attachments.data.length,
+              })
+            : t('attachments.title', 'Attachments')}
         </h3>
         <Button
           size="sm"
@@ -94,7 +100,7 @@ export function AttachmentsSection({
           onClick={() => inputRef.current?.click()}
           loading={uploading}
         >
-          <Upload className="h-3.5 w-3.5" /> Upload
+          <Upload className="h-3.5 w-3.5" /> {t('common.upload', 'Upload')}
         </Button>
         <input
           ref={inputRef}
@@ -132,7 +138,7 @@ export function AttachmentsSection({
                 onClick={() =>
                   onInsertMarkdown(`![${attachment.filename}](attachment://${attachment.id})`)
                 }
-                title="Insert into description"
+                title={t('attachments.insertIntoDescription', 'Insert into description')}
               >
                 <ImagePlus className="h-4 w-4" />
               </button>
@@ -140,14 +146,14 @@ export function AttachmentsSection({
             <button
               className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               onClick={() => void download(attachment.id)}
-              title="Download"
+              title={t('common.download', 'Download')}
             >
               <Download className="h-4 w-4" />
             </button>
             <button
               className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-red-600"
               onClick={() => remove.mutate(attachment.id)}
-              title="Delete"
+              title={t('common.delete', 'Delete')}
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -156,7 +162,7 @@ export function AttachmentsSection({
       </ul>
 
       {attachments.data?.length === 0 && (
-        <p className="text-xs text-slate-400">No files attached yet.</p>
+        <p className="text-xs text-slate-400">{t('attachments.empty', 'No files attached yet.')}</p>
       )}
     </section>
   )

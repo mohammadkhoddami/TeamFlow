@@ -1,6 +1,7 @@
 import { Activity as ActivityIcon, Bot, MessageSquare, RefreshCw, Rocket, UserPlus } from 'lucide-react'
 
 import { useProjectActivity, useTaskActivity } from '../../lib/hooks'
+import { useI18n } from '../../lib/i18n'
 import type { ActivityRead } from '../../lib/types'
 import { relativeTime } from '../../lib/utils'
 import { Spinner } from '../ui'
@@ -28,6 +29,7 @@ function iconFor(verb: string) {
 }
 
 export function ActivityFeed({ scope }: { scope: Scope }) {
+  const { t } = useI18n()
   const taskQuery = useTaskActivity(scope.type === 'task' ? scope.id : undefined)
   const projectQuery = useProjectActivity(scope.type === 'project' ? scope.id : undefined)
   const query = scope.type === 'task' ? taskQuery : projectQuery
@@ -41,7 +43,7 @@ export function ActivityFeed({ scope }: { scope: Scope }) {
     )
   }
   if (items.length === 0) {
-    return <p className="py-2 text-xs text-slate-400">No activity yet.</p>
+    return <p className="py-2 text-xs text-slate-400">{t('activity.empty', 'No activity yet.')}</p>
   }
   return (
     <ul className="mt-1 space-y-1.5">

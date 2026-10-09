@@ -7,11 +7,20 @@ import { ApiError, tasksApi } from '../../lib/api'
 import { useInvalidateTasks } from '../../lib/hooks'
 import { useCalendar } from '../../lib/hooks'
 import type { CalendarTaskRead, TaskCategory } from '../../lib/types'
+import { useI18n } from '../../lib/i18n'
 import { cn } from '../../lib/utils'
 import { useOrg } from '../OrgLayout'
 import { Button, Spinner } from '../ui'
 
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DAY_LABELS: { key: string; label: string }[] = [
+  { key: 'sun', label: 'Sun' },
+  { key: 'mon', label: 'Mon' },
+  { key: 'tue', label: 'Tue' },
+  { key: 'wed', label: 'Wed' },
+  { key: 'thu', label: 'Thu' },
+  { key: 'fri', label: 'Fri' },
+  { key: 'sat', label: 'Sat' },
+]
 const MONTH_LABELS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -41,6 +50,7 @@ function dateKey(date: Date): string {
 }
 
 export function CalendarView({ projectId }: { projectId: string }) {
+  const { t } = useI18n()
   const { org } = useOrg()
   const toast = useToast()
   const queryClient = useQueryClient()
@@ -79,10 +89,10 @@ export function CalendarView({ projectId }: { projectId: string }) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['orgs', org.slug, 'calendar'] })
       invalidateTasks(org.slug)
-      toast.success('Task rescheduled')
+      toast.success(t('calendar.rescheduled', 'Task rescheduled'))
     },
     onError: (err) =>
-      toast.error(err instanceof ApiError ? err.message : 'Could not reschedule task'),
+      toast.error(err instanceof ApiError ? err.message : t('calendar.rescheduleError', 'Could not reschedule task')),
   })
 
   const byDay = useMemo(() => {
@@ -123,13 +133,22 @@ export function CalendarView({ projectId }: { projectId: string }) {
     reschedule.mutate({ taskId, date: next })
   }
 
+  const monthName = (date: Date) =>
+    t(`calendar.month.${date.getMonth()}`, MONTH_LABELS[date.getMonth()])
+
   const periodLabel =
     view === 'week'
-      ? `${rangeStart.getDate()} ${MONTH_LABELS[rangeStart.getMonth()]} – ${addDays(
-          rangeStart,
-          6,
-        ).getDate()} ${MONTH_LABELS[addDays(rangeStart, 6).getMonth()]} ${rangeStart.getFullYear()}`
-      : `${MONTH_LABELS[anchor.getMonth()]} ${anchor.getFullYear()}`
+      ? t('calendar.weekRange', '{startDay} {startMonth} – {endDay} {endMonth} {year}', {
+          startDay: rangeStart.getDate(),
+          startMonth: monthName(rangeStart),
+          endDay: addDays(rangeStart, 6).getDate(),
+          endMonth: monthName(addDays(rangeStart, 6)),
+          year: rangeStart.getFullYear(),
+        })
+      : t('calendar.monthLabel', '{month} {year}', {
+          month: monthName(anchor),
+          year: anchor.getFullYear(),
+        })
 
   return (
     <div className="space-y-3">
@@ -145,7 +164,7 @@ export function CalendarView({ projectId }: { projectId: string }) {
             <ChevronRight className="h-4 w-4" />
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setAnchor(startOfDay(new Date()))}>
-            Today
+            {t('common.today', 'Today')}
           </Button>
         </div>
         <div className="flex items-center rounded-lg border border-slate-200 bg-white p-0.5 text-xs font-medium">
@@ -160,7 +179,7 @@ export function CalendarView({ projectId }: { projectId: string }) {
                   : 'text-slate-500 hover:bg-slate-100',
               )}
             >
-              {value}
+              {value === 'month' ? t('common.month', 'Month') : t('common.week', 'Week')}
             </button>
           ))}
         </div>
@@ -174,12 +193,12 @@ export function CalendarView({ projectId }: { projectId: string }) {
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
-          {DAY_LABELS.map((label) => (
+          {DAY_LABELS.map((entry) => (
             <div
-              key={label}
+              key={entry.key}
               className="px-2 py-1.5 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500"
             >
-              {label}
+              {t(`calendar.day.${entry.key}`, entry.label)}
             </div>
           ))}
         </div>
@@ -236,7 +255,7 @@ export function CalendarView({ projectId }: { projectId: string }) {
                   ))}
                   {tasks.length > 4 && (
                     <p className="px-1 text-[10px] text-slate-400">
-                      +{tasks.length - 4} more
+                      {t('calendar.more', '+{count} more', { count: tasks.length - 4 })}
                     </p>
                   )}
                 </div>
@@ -246,7 +265,10 @@ export function CalendarView({ projectId }: { projectId: string }) {
         </div>
       </div>
       <p className="text-xs text-slate-400">
-        Drag a task to another day to reschedule it. Tasks without due dates are not shown.
+        {t(
+          'calendar.hint',
+          'Drag a task to another day to reschedule it. Tasks without due dates are not shown.',
+        )}
       </p>
     </div>
   )

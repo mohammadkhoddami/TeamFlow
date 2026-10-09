@@ -14,12 +14,14 @@ import {
 } from '../../lib/hooks'
 import type { TaskRead } from '../../lib/types'
 import { formatDateTime } from '../../lib/utils'
+import { useI18n } from '../../lib/i18n'
 import { useOrg } from '../OrgLayout'
 import { Badge, Button, Checkbox, Field, Input, Select } from '../ui'
 
 // ---------------------------------------------------------------- checklist
 
 export function ChecklistSection({ taskId }: { taskId: string }) {
+  const { t } = useI18n()
   const checklist = useTaskChecklist(taskId)
   const queryClient = useQueryClient()
   const toast = useToast()
@@ -36,7 +38,7 @@ export function ChecklistSection({ taskId }: { taskId: string }) {
       invalidate()
       setText('')
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not add item'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('taskExtras.addItemError', 'Could not add item')),
   })
   const toggle = useMutation({
     mutationFn: ({ itemId, done }: { itemId: string; done: boolean }) =>
@@ -54,10 +56,15 @@ export function ChecklistSection({ taskId }: { taskId: string }) {
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-800">Checklist</h3>
+        <h3 className="text-sm font-semibold text-slate-800">
+          {t('taskExtras.checklist', 'Checklist')}
+        </h3>
         {items.length > 0 && (
           <span className="text-xs text-slate-400">
-            {done}/{items.length} done
+            {t('taskExtras.checklistProgress', '{done}/{total} done', {
+              done,
+              total: items.length,
+            })}
           </span>
         )}
       </div>
@@ -83,7 +90,7 @@ export function ChecklistSection({ taskId }: { taskId: string }) {
               type="button"
               onClick={() => remove.mutate(item.id)}
               className="rounded p-1 text-slate-300 hover:text-red-600"
-              aria-label="Delete checklist item"
+              aria-label={t('taskExtras.deleteChecklistItem', 'Delete checklist item')}
             >
               <Trash2 className="h-3 w-3" />
             </button>
@@ -93,7 +100,7 @@ export function ChecklistSection({ taskId }: { taskId: string }) {
       <div className="flex gap-2">
         <Input
           value={text}
-          placeholder="Add a checklist item…"
+          placeholder={t('taskExtras.addChecklistItem', 'Add a checklist item…')}
           maxLength={500}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
@@ -101,7 +108,7 @@ export function ChecklistSection({ taskId }: { taskId: string }) {
           }}
         />
         <Button size="sm" onClick={() => add.mutate()} disabled={!text.trim()} loading={add.isPending}>
-          Add
+          {t('common.add', 'Add')}
         </Button>
       </div>
     </section>
@@ -111,6 +118,7 @@ export function ChecklistSection({ taskId }: { taskId: string }) {
 // ---------------------------------------------------------------- assignees
 
 export function AssigneesEditor({ taskId }: { taskId: string }) {
+  const { t } = useI18n()
   const { members } = useOrg()
   const assignees = useTaskAssignees(taskId)
   const queryClient = useQueryClient()
@@ -128,7 +136,7 @@ export function AssigneesEditor({ taskId }: { taskId: string }) {
     mutationFn: (entries: { user_id: string; role: 'assignee' | 'approver' }[]) =>
       checklistApi.setAssignees(taskId, entries),
     onSuccess: invalidate,
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update assignees'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('taskExtras.updateAssigneesError', 'Could not update assignees')),
   })
 
   const rows = assignees.data ?? []
@@ -138,13 +146,17 @@ export function AssigneesEditor({ taskId }: { taskId: string }) {
 
   return (
     <section className="space-y-2">
-      <h3 className="text-sm font-semibold text-slate-800">Assignees</h3>
+      <h3 className="text-sm font-semibold text-slate-800">
+        {t('taskExtras.assignees', 'Assignees')}
+      </h3>
       <div className="space-y-1">
         {rows.map((row) => (
           <div key={row.user_id} className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5">
             <span className="min-w-0 flex-1 truncate text-sm text-slate-700">{row.name}</span>
             <Badge className={row.role === 'approver' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600'}>
-              {row.role}
+              {row.role === 'approver'
+                ? t('taskExtras.roleApprover', 'Approver')
+                : t('taskExtras.roleAssignee', 'Assignee')}
             </Badge>
             <button
               type="button"
@@ -156,7 +168,7 @@ export function AssigneesEditor({ taskId }: { taskId: string }) {
                 )
               }
               className="rounded p-1 text-slate-300 hover:text-red-600"
-              aria-label="Remove assignee"
+              aria-label={t('taskExtras.removeAssignee', 'Remove assignee')}
             >
               <Trash2 className="h-3 w-3" />
             </button>
@@ -165,7 +177,7 @@ export function AssigneesEditor({ taskId }: { taskId: string }) {
       </div>
       <div className="flex gap-2">
         <Select value={userId} onChange={(event) => setUserId(event.target.value)}>
-          <option value="">Add member…</option>
+          <option value="">{t('taskExtras.addMember', 'Add member…')}</option>
           {candidates.map((membership) => (
             <option key={membership.user_id} value={membership.user_id}>
               {membership.user?.full_name || membership.user?.email || membership.user_id}
@@ -173,8 +185,8 @@ export function AssigneesEditor({ taskId }: { taskId: string }) {
           ))}
         </Select>
         <Select className="w-auto" value={role} onChange={(event) => setRole(event.target.value as 'assignee' | 'approver')}>
-          <option value="assignee">Assignee</option>
-          <option value="approver">Approver</option>
+          <option value="assignee">{t('taskExtras.roleAssignee', 'Assignee')}</option>
+          <option value="approver">{t('taskExtras.roleApprover', 'Approver')}</option>
         </Select>
         <Button
           size="sm"
@@ -185,7 +197,7 @@ export function AssigneesEditor({ taskId }: { taskId: string }) {
             setUserId('')
           }}
         >
-          Add
+          {t('common.add', 'Add')}
         </Button>
       </div>
     </section>
@@ -195,6 +207,7 @@ export function AssigneesEditor({ taskId }: { taskId: string }) {
 // ------------------------------------------------------------- custom fields
 
 export function CustomFieldsEditor({ task }: { task: TaskRead }) {
+  const { t } = useI18n()
   const fields = useCustomFields(task.project_id)
   const { members } = useOrg()
   const queryClient = useQueryClient()
@@ -207,7 +220,7 @@ export function CustomFieldsEditor({ task }: { task: TaskRead }) {
       void queryClient.invalidateQueries({ queryKey: qk.task(task.id) })
       void queryClient.invalidateQueries({ queryKey: ['orgs'] })
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not save value'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('taskExtras.saveValueError', 'Could not save value')),
   })
 
   const current = new Map(
@@ -218,7 +231,9 @@ export function CustomFieldsEditor({ task }: { task: TaskRead }) {
 
   return (
     <section className="space-y-2">
-      <h3 className="text-sm font-semibold text-slate-800">Custom fields</h3>
+      <h3 className="text-sm font-semibold text-slate-800">
+        {t('taskExtras.customFields', 'Custom fields')}
+      </h3>
       <div className="grid gap-3 sm:grid-cols-2">
         {list.map((field) => {
           const value = current.get(field.id)
@@ -314,6 +329,7 @@ export function CustomFieldsEditor({ task }: { task: TaskRead }) {
 // -------------------------------------------------------------------- links
 
 export function LinksSection({ task }: { task: TaskRead }) {
+  const { t } = useI18n()
   const links = useTaskLinks(task.id)
   const queryClient = useQueryClient()
   const toast = useToast()
@@ -337,7 +353,7 @@ export function LinksSection({ task }: { task: TaskRead }) {
       invalidate()
       setTargetId('')
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not create link'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('taskExtras.createLinkError', 'Could not create link')),
   })
   const remove = useMutation({
     mutationFn: (linkId: string) => linksApi.remove(task.id, linkId),
@@ -345,17 +361,17 @@ export function LinksSection({ task }: { task: TaskRead }) {
   })
 
   const groups: { label: string; entries: NonNullable<typeof links.data>['blocks'] }[] = [
-    { label: 'Blocks', entries: links.data?.blocks ?? [] },
-    { label: 'Blocked by', entries: links.data?.blocked_by ?? [] },
-    { label: 'Relates to', entries: links.data?.relates_to ?? [] },
-    { label: 'Duplicates', entries: links.data?.duplicates ?? [] },
-    { label: 'Clones', entries: links.data?.clones ?? [] },
+    { label: t('taskExtras.linkBlocks', 'Blocks'), entries: links.data?.blocks ?? [] },
+    { label: t('taskExtras.linkBlockedBy', 'Blocked by'), entries: links.data?.blocked_by ?? [] },
+    { label: t('taskExtras.linkRelatesTo', 'Relates to'), entries: links.data?.relates_to ?? [] },
+    { label: t('taskExtras.linkDuplicates', 'Duplicates'), entries: links.data?.duplicates ?? [] },
+    { label: t('taskExtras.linkClones', 'Clones'), entries: links.data?.clones ?? [] },
   ].filter((group) => group.entries.length > 0)
 
   return (
     <section className="space-y-2">
       <h3 className="flex items-center gap-1.5 text-sm font-semibold text-slate-800">
-        <Link2 className="h-3.5 w-3.5" /> Links & dependencies
+        <Link2 className="h-3.5 w-3.5" /> {t('taskExtras.links', 'Links & dependencies')}
       </h3>
       {groups.map((group) => (
         <div key={group.label} className="space-y-1">
@@ -371,13 +387,15 @@ export function LinksSection({ task }: { task: TaskRead }) {
                 {entry.task.title}
               </span>
               {entry.task.status_category === 'done' && (
-                <Badge className="bg-emerald-100 text-emerald-700">done</Badge>
+                <Badge className="bg-emerald-100 text-emerald-700">
+                  {t('taskExtras.doneBadge', 'done')}
+                </Badge>
               )}
               <button
                 type="button"
                 onClick={() => remove.mutate(entry.id)}
                 className="rounded p-1 text-slate-300 hover:text-red-600"
-                aria-label="Remove link"
+                aria-label={t('taskExtras.removeLink', 'Remove link')}
               >
                 <Trash2 className="h-3 w-3" />
               </button>
@@ -387,7 +405,7 @@ export function LinksSection({ task }: { task: TaskRead }) {
       ))}
       <div className="flex gap-2">
         <Select value={targetId} onChange={(event) => setTargetId(event.target.value)}>
-          <option value="">Link a task…</option>
+          <option value="">{t('taskExtras.linkTask', 'Link a task…')}</option>
           {(candidates.data?.items ?? [])
             .filter((entry) => entry.id !== task.id)
             .map((entry) => (
@@ -398,13 +416,13 @@ export function LinksSection({ task }: { task: TaskRead }) {
             ))}
         </Select>
         <Select className="w-auto" value={linkType} onChange={(event) => setLinkType(event.target.value)}>
-          <option value="blocks">Blocks</option>
-          <option value="relates_to">Relates to</option>
-          <option value="duplicates">Duplicates</option>
-          <option value="clones">Clones</option>
+          <option value="blocks">{t('taskExtras.linkBlocks', 'Blocks')}</option>
+          <option value="relates_to">{t('taskExtras.linkRelatesTo', 'Relates to')}</option>
+          <option value="duplicates">{t('taskExtras.linkDuplicates', 'Duplicates')}</option>
+          <option value="clones">{t('taskExtras.linkClones', 'Clones')}</option>
         </Select>
         <Button size="sm" disabled={!targetId} loading={create.isPending} onClick={() => create.mutate()}>
-          <Plus className="h-3.5 w-3.5" /> Link
+          <Plus className="h-3.5 w-3.5" /> {t('taskExtras.linkAction', 'Link')}
         </Button>
       </div>
     </section>
@@ -414,6 +432,7 @@ export function LinksSection({ task }: { task: TaskRead }) {
 // ----------------------------------------------------------------- worklogs
 
 export function WorklogSection({ task }: { task: TaskRead }) {
+  const { t } = useI18n()
   const { org } = useOrg()
   const worklogs = useTaskWorklogs(task.id)
   const queryClient = useQueryClient()
@@ -438,9 +457,9 @@ export function WorklogSection({ task }: { task: TaskRead }) {
     onSuccess: () => {
       invalidate()
       setDescription('')
-      toast.success('Time logged')
+      toast.success(t('taskExtras.timeLogged', 'Time logged'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not log time'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('taskExtras.logTimeError', 'Could not log time')),
   })
   const remove = useMutation({
     mutationFn: (worklogId: string) => worklogsApi.remove(org.slug, worklogId),
@@ -453,9 +472,14 @@ export function WorklogSection({ task }: { task: TaskRead }) {
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-800">Time tracking</h3>
+        <h3 className="text-sm font-semibold text-slate-800">
+          {t('taskExtras.timeTracking', 'Time tracking')}
+        </h3>
         <span className="text-xs text-slate-400">
-          {Math.floor(total / 60)}h {total % 60}m logged
+          {t('taskExtras.loggedTime', '{hours}h {minutes}m logged', {
+            hours: Math.floor(total / 60),
+            minutes: total % 60,
+          })}
         </span>
       </div>
       {rows.map((row) => (
@@ -465,13 +489,16 @@ export function WorklogSection({ task }: { task: TaskRead }) {
             {row.description || row.user_name}
           </span>
           <span className="font-medium text-slate-700">
-            {Math.floor(row.minutes / 60)}h {row.minutes % 60}m
+            {t('taskExtras.duration', '{hours}h {minutes}m', {
+              hours: Math.floor(row.minutes / 60),
+              minutes: row.minutes % 60,
+            })}
           </span>
           <button
             type="button"
             onClick={() => remove.mutate(row.id)}
             className="rounded p-1 text-slate-300 hover:text-red-600"
-            aria-label="Delete worklog"
+            aria-label={t('taskExtras.deleteWorklog', 'Delete worklog')}
           >
             <Trash2 className="h-3 w-3" />
           </button>
@@ -491,7 +518,7 @@ export function WorklogSection({ task }: { task: TaskRead }) {
         />
         <Input
           value={description}
-          placeholder="What did you work on?"
+          placeholder={t('taskExtras.worklogPlaceholder', 'What did you work on?')}
           maxLength={2000}
           onChange={(event) => setDescription(event.target.value)}
         />
@@ -501,7 +528,7 @@ export function WorklogSection({ task }: { task: TaskRead }) {
           loading={add.isPending}
           disabled={!minutes || Number(minutes) <= 0}
         >
-          Log time
+          {t('taskExtras.logTime', 'Log time')}
         </Button>
       </div>
     </section>

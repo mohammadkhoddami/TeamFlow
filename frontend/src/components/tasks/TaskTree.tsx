@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, Network, Plus } from 'lucide-react'
 import { useState } from 'react'
 
 import { Avatar, Badge, Button, EmptyState } from '../ui'
+import { useI18n } from '../../lib/i18n'
 import type { TaskRead, TaskTreeNode, WorkflowStatusRead } from '../../lib/types'
 import {
   PRIORITY_BADGE,
@@ -24,6 +25,7 @@ export function TaskTree({
   onOpen: (task: TaskRead) => void
   onAddChild?: (task: TaskRead) => void
 }) {
+  const { t } = useI18n()
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   const toggle = (id: string) => {
@@ -39,8 +41,11 @@ export function TaskTree({
     return (
       <EmptyState
         icon={<Network className="h-8 w-8" />}
-        title="No work items yet"
-        description="Start with an epic, then break it down into stories and tasks."
+        title={t('taskTree.emptyTitle', 'No work items yet')}
+        description={t(
+          'taskTree.emptyDescription',
+          'Start with an epic, then break it down into stories and tasks.',
+        )}
       />
     )
   }
@@ -71,7 +76,7 @@ export function TaskTree({
                 toggle(node.id)
               }}
               className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600"
-              title={isCollapsed ? 'Expand' : 'Collapse'}
+              title={isCollapsed ? t('taskTree.expand', 'Expand') : t('taskTree.collapse', 'Collapse')}
             >
               {isCollapsed ? (
                 <ChevronRight className="h-4 w-4" />
@@ -83,7 +88,9 @@ export function TaskTree({
             <span className="w-5" />
           )}
 
-          <Badge className={TYPE_BADGE[node.type]}>{TYPE_LABELS[node.type]}</Badge>
+          <Badge className={TYPE_BADGE[node.type]}>
+            {t(`type.${node.type}`, TYPE_LABELS[node.type])}
+          </Badge>
 
           <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">
             {node.title}
@@ -107,7 +114,7 @@ export function TaskTree({
           )}
 
           <Badge className={cn('hidden md:inline-flex', PRIORITY_BADGE[node.priority])}>
-            {PRIORITY_LABELS[node.priority]}
+            {t(`priority.${node.priority}`, PRIORITY_LABELS[node.priority])}
           </Badge>
 
           {node.assignee ? (
@@ -117,7 +124,9 @@ export function TaskTree({
               size="sm"
             />
           ) : (
-            <span className="hidden text-[11px] text-slate-400 md:inline">Unassigned</span>
+            <span className="hidden text-[11px] text-slate-400 md:inline">
+              {t('common.unassigned', 'Unassigned')}
+            </span>
           )}
 
           <Badge className={CATEGORY_BADGE[node.status_category]}>
@@ -134,7 +143,7 @@ export function TaskTree({
                 onAddChild(node)
               }}
             >
-              <Plus className="h-3.5 w-3.5" /> Child
+              <Plus className="h-3.5 w-3.5" /> {t('taskTree.child', 'Child')}
             </Button>
           )}
         </div>

@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/auth'
 import { useToast } from '../../contexts/toast'
 import { ApiError, commentsApi } from '../../lib/api'
 import { qk } from '../../lib/hooks'
+import { useI18n } from '../../lib/i18n'
 import type { CommentRead, ReactionSummary } from '../../lib/types'
 import { REACTION_EMOJIS, canManage } from '../../lib/types'
 import { cn, relativeTime } from '../../lib/utils'
@@ -21,6 +22,7 @@ function ReactionBar({
   comment: CommentRead
   onToggle: (emoji: string) => void
 }) {
+  const { t } = useI18n()
   const { user } = useAuth()
   const [pickerOpen, setPickerOpen] = useState(false)
 
@@ -32,7 +34,7 @@ function ReactionBar({
           <button
             key={reaction.emoji}
             onClick={() => onToggle(reaction.emoji)}
-            title={mine ? 'Remove reaction' : 'React'}
+            title={mine ? t('comments.removeReaction', 'Remove reaction') : t('comments.react', 'React')}
             className={cn(
               'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs transition-colors',
               mine
@@ -48,7 +50,7 @@ function ReactionBar({
       <div className="relative">
         <button
           onClick={() => setPickerOpen((value) => !value)}
-          title="Add reaction"
+          title={t('comments.addReaction', 'Add reaction')}
           className="rounded-full border border-transparent p-1 text-slate-400 hover:bg-white hover:text-slate-600"
         >
           <SmilePlus className="h-3.5 w-3.5" />
@@ -75,6 +77,7 @@ function ReactionBar({
 }
 
 export function CommentsSection({ taskId }: { taskId: string }) {
+  const { t } = useI18n()
   const { user } = useAuth()
   const { role } = useOrg()
   const toast = useToast()
@@ -101,7 +104,7 @@ export function CommentsSection({ taskId }: { taskId: string }) {
       setBody('')
       invalidate()
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not post comment'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('comments.postError', 'Could not post comment')),
   })
 
   const reply = useMutation({
@@ -112,7 +115,7 @@ export function CommentsSection({ taskId }: { taskId: string }) {
       setReplyTo(null)
       invalidate()
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not post reply'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('comments.replyError', 'Could not post reply')),
   })
 
   const update = useMutation({
@@ -121,13 +124,13 @@ export function CommentsSection({ taskId }: { taskId: string }) {
       setEditingId(null)
       invalidate()
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not update comment'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('comments.updateError', 'Could not update comment')),
   })
 
   const remove = useMutation({
     mutationFn: commentsApi.remove,
     onSuccess: invalidate,
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not delete comment'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('comments.deleteError', 'Could not delete comment')),
   })
 
   const toggleReaction = useMutation({
@@ -142,7 +145,7 @@ export function CommentsSection({ taskId }: { taskId: string }) {
       }
     },
     onSuccess: invalidate,
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not react'),
+    onError: (err) => toast.error(err instanceof ApiError ? err.message : t('comments.reactError', 'Could not react')),
   })
 
   const { roots, repliesByRoot } = useMemo(() => {
@@ -184,7 +187,7 @@ export function CommentsSection({ taskId }: { taskId: string }) {
         <div className="min-w-0 flex-1 rounded-lg bg-slate-50 px-3 py-2">
           <div className="flex items-center justify-between gap-2">
             <p className="truncate text-xs font-medium text-slate-700">
-              {comment.author?.full_name || comment.author?.email || 'Deleted user'}
+              {comment.author?.full_name || comment.author?.email || t('comments.deletedUser', 'Deleted user')}
               <span className="ml-2 font-normal text-slate-400">
                 {relativeTime(comment.created_at)}
               </span>
@@ -194,7 +197,7 @@ export function CommentsSection({ taskId }: { taskId: string }) {
                 className="flex items-center gap-0.5 text-xs font-medium text-slate-500 hover:text-slate-700"
                 onClick={() => openReply(comment)}
               >
-                <CornerDownRight className="h-3 w-3" /> Reply
+                <CornerDownRight className="h-3 w-3" /> {t('comments.reply', 'Reply')}
               </button>
               {canEdit(comment.author?.id) && editingId !== comment.id && (
                 <>
@@ -205,12 +208,12 @@ export function CommentsSection({ taskId }: { taskId: string }) {
                       setDraft(comment.body)
                     }}
                   >
-                    Edit
+                    {t('common.edit', 'Edit')}
                   </button>
                   <button
                     className="rounded p-1 text-slate-400 hover:bg-white hover:text-red-600"
                     onClick={() => remove.mutate(comment.id)}
-                    title="Delete comment"
+                    title={t('comments.deleteComment', 'Delete comment')}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -230,7 +233,7 @@ export function CommentsSection({ taskId }: { taskId: string }) {
               />
               <div className="flex justify-end gap-2">
                 <Button size="sm" variant="secondary" onClick={() => setEditingId(null)}>
-                  Cancel
+                  {t('common.cancel', 'Cancel')}
                 </Button>
                 <Button
                   size="sm"
@@ -238,7 +241,7 @@ export function CommentsSection({ taskId }: { taskId: string }) {
                   disabled={draft.trim().length === 0}
                   loading={update.isPending}
                 >
-                  Save
+                  {t('common.save', 'Save')}
                 </Button>
               </div>
             </div>
@@ -258,11 +261,16 @@ export function CommentsSection({ taskId }: { taskId: string }) {
                 onChange={setReplyBody}
                 minRows={2}
                 maxLength={20_000}
-                placeholder={`Reply to ${comment.author?.full_name || comment.author?.email || 'comment'}…`}
+                placeholder={t('comments.replyToPlaceholder', 'Reply to {name}…', {
+                  name:
+                    comment.author?.full_name ||
+                    comment.author?.email ||
+                    t('comments.anonymousAuthor', 'comment'),
+                })}
               />
               <div className="flex justify-end gap-2">
                 <Button size="sm" variant="secondary" onClick={() => setReplyTo(null)}>
-                  Cancel
+                  {t('common.cancel', 'Cancel')}
                 </Button>
                 <Button
                   size="sm"
@@ -270,7 +278,7 @@ export function CommentsSection({ taskId }: { taskId: string }) {
                   disabled={replyBody.trim().length === 0}
                   loading={reply.isPending}
                 >
-                  <Send className="h-3.5 w-3.5" /> Reply
+                  <Send className="h-3.5 w-3.5" /> {t('comments.reply', 'Reply')}
                 </Button>
               </div>
             </div>
@@ -283,7 +291,11 @@ export function CommentsSection({ taskId }: { taskId: string }) {
   return (
     <section className="space-y-3">
       <h3 className="text-sm font-semibold text-slate-800">
-        Comments{comments.data ? ` (${comments.data.length})` : ''}
+        {comments.data
+          ? t('comments.titleWithCount', 'Comments ({count})', {
+              count: comments.data.length,
+            })
+          : t('comments.title', 'Comments')}
       </h3>
 
       <div className="space-y-2">
@@ -292,7 +304,7 @@ export function CommentsSection({ taskId }: { taskId: string }) {
           onChange={setBody}
           minRows={3}
           maxLength={20_000}
-          placeholder="Write a comment… (Markdown supported)"
+          placeholder={t('comments.placeholder', 'Write a comment… (Markdown supported)')}
         />
         <div className="flex justify-end">
           <Button
@@ -301,7 +313,7 @@ export function CommentsSection({ taskId }: { taskId: string }) {
             disabled={body.trim().length === 0}
             loading={create.isPending}
           >
-            <Send className="h-3.5 w-3.5" /> Comment
+            <Send className="h-3.5 w-3.5" /> {t('comments.submit', 'Comment')}
           </Button>
         </div>
       </div>
@@ -319,7 +331,7 @@ export function CommentsSection({ taskId }: { taskId: string }) {
           </div>
         ))}
         {comments.data?.length === 0 && (
-          <p className="text-xs text-slate-400">No comments yet.</p>
+          <p className="text-xs text-slate-400">{t('comments.empty', 'No comments yet.')}</p>
         )}
       </div>
     </section>

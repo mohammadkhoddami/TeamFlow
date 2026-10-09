@@ -15,7 +15,8 @@ import {
 import { useToast } from '../contexts/toast'
 import { ApiError, capacityApi, reportsApi } from '../lib/api'
 import { useProjects, useSprints } from '../lib/hooks'
-import type { CapacityMemberRead } from '../lib/types'
+import { useI18n } from '../lib/i18n'
+import { STATUS_LABELS, type CapacityMemberRead, type TaskStatus } from '../lib/types'
 import { cn } from '../lib/utils'
 
 const TABS = [
@@ -31,6 +32,7 @@ type TabKey = (typeof TABS)[number]['key']
 
 export function ReportsPage() {
   const { org } = useOrg()
+  const { t } = useI18n()
   const projects = useProjects(org.slug)
   const [projectId, setProjectId] = useState('')
   const [tab, setTab] = useState<TabKey>('velocity')
@@ -46,9 +48,9 @@ export function ReportsPage() {
     <div className="space-y-5 p-4 md:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Reports</h1>
+          <h1 className="text-lg font-semibold text-slate-900">{t('reports.title', 'Reports')}</h1>
           <p className="text-sm text-slate-500">
-            Burndown, velocity, flow and cycle time per project.
+            {t('reports.subtitle', 'Burndown, velocity, flow and cycle time per project.')}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -72,10 +74,13 @@ export function ReportsPage() {
               value={activeSprint}
               onChange={(event) => setSprintId(event.target.value)}
             >
-              <option value="">Select sprint…</option>
+              <option value="">{t('reports.selectSprint', 'Select sprint…')}</option>
               {sprintOptions.map((sprint) => (
                 <option key={sprint.id} value={sprint.id}>
-                  {sprint.name} ({sprint.state})
+                  {t('reports.sprintOption', '{name} ({state})', {
+                    name: sprint.name,
+                    state: t(`sprintState.${sprint.state}`, sprint.state),
+                  })}
                 </option>
               ))}
             </Select>
@@ -96,12 +101,17 @@ export function ReportsPage() {
                 : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300',
             )}
           >
-            {entry.label}
+            {t(`reports.tab.${entry.key}`, entry.label)}
           </button>
         ))}
       </div>
 
-      {!activeProject && <EmptyState title="No project" description="Create a project first." />}
+      {!activeProject && (
+        <EmptyState
+          title={t('reports.noProject', 'No project')}
+          description={t('reports.noProjectHint', 'Create a project first.')}
+        />
+      )}
       {activeProject && tab === 'velocity' && <VelocityPanel projectId={activeProject} />}
       {activeProject && tab === 'burndown' && (
         <BurndownPanel projectId={activeProject} sprintId={activeSprint} />
@@ -119,6 +129,7 @@ export function ReportsPage() {
 }
 
 function VelocityPanel({ projectId }: { projectId: string }) {
+  const { t } = useI18n()
   const report = useQuery({
     queryKey: ['reports', projectId, 'velocity'],
     queryFn: () => reportsApi.velocity(projectId),
@@ -135,20 +146,34 @@ function VelocityPanel({ projectId }: { projectId: string }) {
   return (
     <Card>
       <CardHeader
-        title="Velocity"
-        description={`Average completed points per sprint: ${report.data.average_completed_points}`}
+        title={t('reports.velocity', 'Velocity')}
+        description={t(
+          'reports.avgCompleted',
+          'Average completed points per sprint: {points}',
+          { points: report.data.average_completed_points },
+        )}
       />
       <div className="space-y-3 p-5">
         {report.data.sprints.length === 0 && (
-          <p className="text-xs text-slate-400">No started or completed sprints yet.</p>
+          <p className="text-xs text-slate-400">
+            {t('reports.noSprints', 'No started or completed sprints yet.')}
+          </p>
         )}
         {report.data.sprints.map((sprint) => (
           <div key={sprint.sprint_id} className="space-y-1">
             <div className="flex items-center justify-between text-xs text-slate-500">
               <span className="font-medium text-slate-700">{sprint.sprint_name}</span>
               <span>
-                {sprint.completed_points} / {sprint.committed_points} pts ·{' '}
-                {sprint.completed_tasks}/{sprint.committed_tasks} tasks
+                {t(
+                  'reports.ptsTasks',
+                  '{completedPoints} / {committedPoints} pts · {completedTasks}/{committedTasks} tasks',
+                  {
+                    completedPoints: sprint.completed_points,
+                    committedPoints: sprint.committed_points,
+                    completedTasks: sprint.completed_tasks,
+                    committedTasks: sprint.committed_tasks,
+                  },
+                )}
               </span>
             </div>
             <div className="h-3 overflow-hidden rounded-full bg-slate-100">
@@ -166,7 +191,7 @@ function VelocityPanel({ projectId }: { projectId: string }) {
           </div>
         ))}
         <p className="text-[11px] text-slate-400">
-          Grey = committed points, green = completed points.
+          {t('reports.velocityLegend', 'Grey = committed points, green = completed points.')}
         </p>
       </div>
     </Card>
@@ -228,12 +253,15 @@ function LineChart({
 }
 
 function BurndownPanel({ projectId, sprintId }: { projectId: string; sprintId: string }) {
+  const { t } = useI18n()
   const report = useQuery({
     queryKey: ['reports', projectId, 'burndown', sprintId],
     queryFn: () => reportsApi.burndown(projectId, sprintId),
     enabled: Boolean(sprintId),
   })
-  if (!sprintId) return <p className="text-xs text-slate-400">Select a sprint.</p>
+  if (!sprintId) {
+    return <p className="text-xs text-slate-400">{t('reports.selectSprintPrompt', 'Select a sprint.')}</p>
+  }
   if (report.isLoading) return <PageSpinner />
   if (!report.data) return null
   const max = Math.max(
@@ -244,20 +272,25 @@ function BurndownPanel({ projectId, sprintId }: { projectId: string; sprintId: s
   return (
     <Card>
       <CardHeader
-        title={`Burndown — ${report.data.sprint_name}`}
-        description={`${report.data.total_points} points across ${report.data.total_tasks} tasks`}
+        title={t('reports.burndownTitle', 'Burndown — {name}', {
+          name: report.data.sprint_name,
+        })}
+        description={t('reports.burndownHint', '{points} points across {tasks} tasks', {
+          points: report.data.total_points,
+          tasks: report.data.total_tasks,
+        })}
       />
       <div className="p-5">
         <LineChart
           max={max}
           series={[
             {
-              label: 'Remaining points',
+              label: t('reports.remainingPoints', 'Remaining points'),
               color: '#4f46e5',
               points: report.data.points.map((point) => point.remaining_points),
             },
             {
-              label: 'Ideal',
+              label: t('reports.ideal', 'Ideal'),
               color: '#94a3b8',
               points: report.data.points.map((point) => point.ideal_points ?? 0),
             },
@@ -269,6 +302,7 @@ function BurndownPanel({ projectId, sprintId }: { projectId: string; sprintId: s
 }
 
 function FlowPanel({ projectId }: { projectId: string }) {
+  const { t } = useI18n()
   const [days, setDays] = useState(30)
   const report = useQuery({
     queryKey: ['reports', projectId, 'cfd', days],
@@ -291,11 +325,14 @@ function FlowPanel({ projectId }: { projectId: string }) {
   return (
     <Card>
       <CardHeader
-        title="Cumulative flow"
-        description="Tasks by workflow category per day (history-aware after M2)"
+        title={t('reports.cumulativeFlow', 'Cumulative flow')}
+        description={t(
+          'reports.cumulativeFlowHint',
+          'Tasks by workflow category per day (history-aware after M2)',
+        )}
       />
       <div className="space-y-3 p-5">
-        <Field label="Window (days)">
+        <Field label={t('reports.windowDays', 'Window (days)')}>
           <Input
             type="number"
             min={7}
@@ -309,7 +346,17 @@ function FlowPanel({ projectId }: { projectId: string }) {
             <div
               key={point.day}
               className="flex min-w-[6px] flex-1 flex-col justify-end"
-              title={`${point.day}: ${point.todo} todo, ${point.in_progress} in progress, ${point.in_review} review, ${point.done} done`}
+              title={t(
+                'reports.flowBarTitle',
+                '{day}: {todo} todo, {inProgress} in progress, {inReview} review, {done} done',
+                {
+                  day: point.day,
+                  todo: point.todo,
+                  inProgress: point.in_progress,
+                  inReview: point.in_review,
+                  done: point.done,
+                },
+              )}
             >
               {(['done', 'in_review', 'in_progress', 'todo'] as const).map((category) => (
                 <div
@@ -327,7 +374,7 @@ function FlowPanel({ projectId }: { projectId: string }) {
           {Object.entries(colors).map(([category, color]) => (
             <span key={category} className="inline-flex items-center gap-1">
               <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-              {category}
+              {t(`status.${category}`, STATUS_LABELS[category as TaskStatus])}
             </span>
           ))}
         </div>
@@ -337,6 +384,7 @@ function FlowPanel({ projectId }: { projectId: string }) {
 }
 
 function CyclePanel({ projectId }: { projectId: string }) {
+  const { t } = useI18n()
   const [days, setDays] = useState(30)
   const report = useQuery({
     queryKey: ['reports', projectId, 'cycle', days],
@@ -348,11 +396,14 @@ function CyclePanel({ projectId }: { projectId: string }) {
   return (
     <Card>
       <CardHeader
-        title="Cycle & lead time"
-        description={`${data.count} tasks completed in the last ${data.days} days`}
+        title={t('reports.cycleLead', 'Cycle & lead time')}
+        description={t('reports.cycleHint', '{count} tasks completed in the last {days} days', {
+          count: data.count,
+          days: data.days,
+        })}
       />
       <div className="space-y-4 p-5">
-        <Field label="Window (days)">
+        <Field label={t('reports.windowDays', 'Window (days)')}>
           <Input
             type="number"
             min={7}
@@ -363,17 +414,19 @@ function CyclePanel({ projectId }: { projectId: string }) {
         </Field>
         <div className="grid gap-3 sm:grid-cols-3">
           {[
-            { label: 'Avg lead', value: data.avg_lead_time_days },
-            { label: 'P50 lead', value: data.p50_lead_time_days },
-            { label: 'P85 lead', value: data.p85_lead_time_days },
-            { label: 'Avg cycle', value: data.avg_cycle_time_days },
-            { label: 'P50 cycle', value: data.p50_cycle_time_days },
-            { label: 'P85 cycle', value: data.p85_cycle_time_days },
+            { label: t('reports.avgLead', 'Avg lead'), value: data.avg_lead_time_days },
+            { label: t('reports.p50Lead', 'P50 lead'), value: data.p50_lead_time_days },
+            { label: t('reports.p85Lead', 'P85 lead'), value: data.p85_lead_time_days },
+            { label: t('reports.avgCycle', 'Avg cycle'), value: data.avg_cycle_time_days },
+            { label: t('reports.p50Cycle', 'P50 cycle'), value: data.p50_cycle_time_days },
+            { label: t('reports.p85Cycle', 'P85 cycle'), value: data.p85_cycle_time_days },
           ].map((entry) => (
             <div key={entry.label} className="rounded-lg border border-slate-200 px-3 py-2">
               <p className="text-[11px] uppercase tracking-wide text-slate-400">{entry.label}</p>
               <p className="text-lg font-semibold text-slate-800">
-                {entry.value == null ? '—' : `${entry.value}d`}
+                {entry.value == null
+                  ? '—'
+                  : t('reports.daysValue', '{value}d', { value: entry.value })}
               </p>
             </div>
           ))}
@@ -382,9 +435,11 @@ function CyclePanel({ projectId }: { projectId: string }) {
           <table className="w-full min-w-[520px] text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-3 py-2 font-medium">Task</th>
-                <th className="px-3 py-2 font-medium">Lead (d)</th>
-                <th className="px-3 py-2 font-medium">Cycle (d)</th>
+                <th className="px-3 py-2 font-medium">{t('reports.task', 'Task')}</th>
+                <th className="px-3 py-2 font-medium">{t('reports.leadDaysColumn', 'Lead (d)')}</th>
+                <th className="px-3 py-2 font-medium">
+                  {t('reports.cycleDaysColumn', 'Cycle (d)')}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -407,27 +462,52 @@ function CyclePanel({ projectId }: { projectId: string }) {
 }
 
 function SprintReportPanel({ sprintId }: { sprintId: string }) {
+  const { t } = useI18n()
   const report = useQuery({
     queryKey: ['reports', 'sprint', sprintId],
     queryFn: () => reportsApi.sprintReport(sprintId),
     enabled: Boolean(sprintId),
   })
-  if (!sprintId) return <p className="text-xs text-slate-400">Select a sprint.</p>
+  if (!sprintId) {
+    return <p className="text-xs text-slate-400">{t('reports.selectSprintPrompt', 'Select a sprint.')}</p>
+  }
   if (report.isLoading) return <PageSpinner />
   if (!report.data) return null
   const data = report.data
   return (
     <Card>
-      <CardHeader title={`Sprint report — ${data.sprint_name}`} description={`State: ${data.state}`} />
+      <CardHeader
+        title={t('reports.sprintReportTitle', 'Sprint report — {name}', {
+          name: data.sprint_name,
+        })}
+        description={t('reports.sprintStateLabel', 'State: {state}', {
+          state: t(`sprintState.${data.state}`, data.state),
+        })}
+      />
       <div className="space-y-4 p-5">
         <div className="grid gap-3 sm:grid-cols-3">
           {[
-            { label: 'Committed', value: `${data.committed_tasks} tasks / ${data.committed_points} pts` },
-            { label: 'Completed', value: `${data.completed_tasks} tasks / ${data.completed_points} pts` },
-            { label: 'Carried over', value: String(data.carried_over) },
-            { label: 'Added during sprint', value: String(data.added_during_sprint) },
-            { label: 'Scope change', value: `${data.scope_change_pct}%` },
-            { label: 'Members', value: String(data.members.length) },
+            {
+              label: t('reports.committed', 'Committed'),
+              value: t('reports.committedValue', '{tasks} tasks / {points} pts', {
+                tasks: data.committed_tasks,
+                points: data.committed_points,
+              }),
+            },
+            {
+              label: t('reports.completed', 'Completed'),
+              value: t('reports.committedValue', '{tasks} tasks / {points} pts', {
+                tasks: data.completed_tasks,
+                points: data.completed_points,
+              }),
+            },
+            { label: t('reports.carriedOver', 'Carried over'), value: String(data.carried_over) },
+            {
+              label: t('reports.addedDuringSprint', 'Added during sprint'),
+              value: String(data.added_during_sprint),
+            },
+            { label: t('reports.scopeChange', 'Scope change'), value: `${data.scope_change_pct}%` },
+            { label: t('reports.members', 'Members'), value: String(data.members.length) },
           ].map((entry) => (
             <div key={entry.label} className="rounded-lg border border-slate-200 px-3 py-2">
               <p className="text-[11px] uppercase tracking-wide text-slate-400">{entry.label}</p>
@@ -438,16 +518,16 @@ function SprintReportPanel({ sprintId }: { sprintId: string }) {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-3 py-2 font-medium">Member</th>
-              <th className="px-3 py-2 font-medium">Assigned</th>
-              <th className="px-3 py-2 font-medium">Completed</th>
-              <th className="px-3 py-2 font-medium">Points</th>
+              <th className="px-3 py-2 font-medium">{t('reports.member', 'Member')}</th>
+              <th className="px-3 py-2 font-medium">{t('reports.assigned', 'Assigned')}</th>
+              <th className="px-3 py-2 font-medium">{t('reports.completed', 'Completed')}</th>
+              <th className="px-3 py-2 font-medium">{t('reports.points', 'Points')}</th>
             </tr>
           </thead>
           <tbody>
             {data.members.map((member) => (
               <tr key={member.user_id ?? 'unassigned'} className="border-t border-slate-100">
-                <td className="px-3 py-2">{member.name || 'Unassigned'}</td>
+                <td className="px-3 py-2">{member.name || t('common.unassigned', 'Unassigned')}</td>
                 <td className="px-3 py-2 text-slate-500">{member.assigned_tasks}</td>
                 <td className="px-3 py-2 text-slate-500">{member.completed_tasks}</td>
                 <td className="px-3 py-2 text-slate-500">{member.completed_points}</td>
@@ -461,6 +541,7 @@ function SprintReportPanel({ sprintId }: { sprintId: string }) {
 }
 
 function CapacityPanel({ sprintId }: { sprintId: string }) {
+  const { t } = useI18n()
   const toast = useToast()
   const [draft, setDraft] = useState<Record<string, string>>({})
   const capacity = useQuery({
@@ -487,18 +568,26 @@ function CapacityPanel({ sprintId }: { sprintId: string }) {
     onSuccess: () => {
       void capacity.refetch()
       setDraft({})
-      toast.success('Capacity saved')
+      toast.success(t('reports.capacitySaved', 'Capacity saved'))
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Could not save capacity'),
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : t('reports.capacitySaveError', 'Could not save capacity'),
+      ),
   })
 
-  if (!sprintId) return <p className="text-xs text-slate-400">Select a sprint.</p>
+  if (!sprintId) {
+    return <p className="text-xs text-slate-400">{t('reports.selectSprintPrompt', 'Select a sprint.')}</p>
+  }
   if (capacity.isLoading) return <PageSpinner />
   return (
     <Card>
       <CardHeader
-        title="Capacity planning"
-        description="Set each member's points budget; overloaded rows are highlighted."
+        title={t('reports.capacity', 'Capacity planning')}
+        description={t(
+          'reports.capacityHint',
+          "Set each member's points budget; overloaded rows are highlighted.",
+        )}
       />
       <div className="space-y-3 p-5">
         {(capacity.data ?? []).map((member) => {
@@ -520,8 +609,15 @@ function CapacityPanel({ sprintId }: { sprintId: string }) {
                 {member.name}
               </span>
               <span className="text-xs text-slate-500">
-                {member.assigned_tasks} tasks · {member.assigned_points} pts assigned ·{' '}
-                {member.completed_points} pts done
+                {t(
+                  'reports.capacityStats',
+                  '{tasks} tasks · {assigned} pts assigned · {done} pts done',
+                  {
+                    tasks: member.assigned_tasks,
+                    assigned: member.assigned_points,
+                    done: member.completed_points,
+                  },
+                )}
               </span>
               <div className="flex items-center gap-2">
                 <Input
@@ -535,17 +631,19 @@ function CapacityPanel({ sprintId }: { sprintId: string }) {
                   }
                 />
                 {member.overloaded && (
-                  <span className="text-[11px] font-medium text-red-600">overloaded</span>
+                  <span className="text-[11px] font-medium text-red-600">
+                    {t('reports.overloaded', 'overloaded')}
+                  </span>
                 )}
               </div>
             </div>
           )
         })}
         {(capacity.data ?? []).length === 0 && (
-          <p className="text-xs text-slate-400">No active members.</p>
+          <p className="text-xs text-slate-400">{t('reports.noActiveMembers', 'No active members.')}</p>
         )}
         <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!capacity.data?.length}>
-          Save capacity
+          {t('reports.saveCapacity', 'Save capacity')}
         </Button>
       </div>
     </Card>

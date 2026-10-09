@@ -1,4 +1,5 @@
 import type { LabelRead } from '../../lib/types'
+import { useI18n } from '../../lib/i18n'
 import { cn } from '../../lib/utils'
 
 export function LabelPicker({
@@ -10,10 +11,14 @@ export function LabelPicker({
   selectedIds: string[]
   onChange: (ids: string[]) => void
 }) {
+  const { t } = useI18n()
   if (labels.length === 0) {
     return (
       <p className="text-xs text-slate-500">
-        No labels yet. Create them from the Labels page of this workspace.
+        {t(
+          'labelPicker.empty',
+          'No labels yet. Create them from the Labels page of this workspace.',
+        )}
       </p>
     )
   }

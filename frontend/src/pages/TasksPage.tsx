@@ -36,6 +36,7 @@ import { useToast } from '../contexts/toast'
 import { ApiError, savedFiltersApi, tasksApi } from '../lib/api'
 import type { TaskFilters } from '../lib/api'
 import { useInvalidateTasks, useProjects, useSavedFilters, useTasks } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import {
   PRIORITIES,
   PRIORITY_BADGE,
@@ -54,16 +55,17 @@ import {
 import { cn, formatDate, isOverdue } from '../lib/utils'
 
 const SORTS = [
-  { value: '-created_at', label: 'Newest first' },
-  { value: 'created_at', label: 'Oldest first' },
-  { value: '-due_date', label: 'Due date (latest)' },
-  { value: 'due_date', label: 'Due date (soonest)' },
-  { value: '-priority', label: 'Priority (high to low)' },
-  { value: 'title', label: 'Title (A–Z)' },
+  { value: '-created_at', key: 'tasks.sortNewest', label: 'Newest first' },
+  { value: 'created_at', key: 'tasks.sortOldest', label: 'Oldest first' },
+  { value: '-due_date', key: 'tasks.sortDueLatest', label: 'Due date (latest)' },
+  { value: 'due_date', key: 'tasks.sortDueSoonest', label: 'Due date (soonest)' },
+  { value: '-priority', key: 'tasks.sortPriority', label: 'Priority (high to low)' },
+  { value: 'title', key: 'tasks.sortTitle', label: 'Title (A–Z)' },
 ]
 
 export function TasksPage() {
   const { org, members } = useOrg()
+  const { t } = useI18n()
   const projects = useProjects(org.slug)
   const invalidate = useInvalidateTasks()
   const toast = useToast()
@@ -182,7 +184,9 @@ export function TasksPage() {
       setCursorItems((current) => (current.length > 0 ? [...current, ...page.items] : [...baseItems, ...page.items]))
       setCursorNext(page.next_cursor)
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Could not load more tasks')
+      toast.error(
+        err instanceof ApiError ? err.message : t('tasks.couldNotLoadMore', 'Could not load more tasks'),
+      )
     } finally {
       setCursorLoading(false)
     }
@@ -194,12 +198,31 @@ export function TasksPage() {
       invalidate(org.slug)
       setSelectedIds(new Set())
       const failed = result.failures.length
-      toast.success(
-        `Updated ${result.updated} of ${result.requested} task${result.requested === 1 ? '' : 's'}` +
-          (failed ? ` — ${failed} skipped` : ''),
-      )
+      const vars = { updated: result.updated, requested: result.requested, failed }
+      if (result.requested === 1) {
+        toast.success(
+          failed
+            ? t(
+                'tasks.bulkUpdatedSkippedOne',
+                'Updated {updated} of {requested} task — {failed} skipped',
+                vars,
+              )
+            : t('tasks.bulkUpdatedOne', 'Updated {updated} of {requested} task', vars),
+        )
+      } else {
+        toast.success(
+          failed
+            ? t(
+                'tasks.bulkUpdatedSkipped',
+                'Updated {updated} of {requested} tasks — {failed} skipped',
+                vars,
+              )
+            : t('tasks.bulkUpdated', 'Updated {updated} of {requested} tasks', vars),
+        )
+      }
     },
-    onError: (err) => toast.error(err instanceof ApiError ? err.message : 'Bulk action failed'),
+    onError: (err) =>
+      toast.error(err instanceof ApiError ? err.message : t('tasks.bulkFailed', 'Bulk action failed')),
   })
 
   const toggleStatus = (status: TaskStatus) => {
@@ -250,9 +273,11 @@ export function TasksPage() {
       await queryClient.invalidateQueries({ queryKey: ['orgs', org.slug, 'saved-filters'] })
       setSavingFilter(false)
       setSaveName('')
-      toast.success(`Saved filter “${name}”`)
+      toast.success(t('tasks.savedFilter', 'Saved filter “{name}”', { name }))
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Could not save the filter')
+      toast.error(
+        err instanceof ApiError ? err.message : t('tasks.couldNotSaveFilter', 'Could not save the filter'),
+      )
     }
   }
 
@@ -261,7 +286,11 @@ export function TasksPage() {
       await savedFiltersApi.remove(org.slug, id)
       await queryClient.invalidateQueries({ queryKey: ['orgs', org.slug, 'saved-filters'] })
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Could not delete the filter')
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : t('tasks.couldNotDeleteFilter', 'Could not delete the filter'),
+      )
     }
   }
 
@@ -269,13 +298,17 @@ export function TasksPage() {
     <div className="space-y-5 p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-slate-900">Tasks</h1>
+          <h1 className="text-lg font-semibold text-slate-900">{t('tasks.title', 'Tasks')}</h1>
           <p className="text-sm text-slate-500">
-            {tasks.isLoading ? 'Loading…' : `${total} tasks match your query.`}
+            {tasks.isLoading
+              ? t('common.loading', 'Loading…')
+              : total === 1
+                ? t('tasks.matchCountOne', '{count} task matches your query.', { count: total })
+                : t('tasks.matchCount', '{count} tasks match your query.', { count: total })}
           </p>
         </div>
         <Button onClick={() => setCreating(true)} disabled={!projects.data?.length}>
-          <Plus className="h-4 w-4" /> New task
+          <Plus className="h-4 w-4" /> {t('tasks.newTask', 'New task')}
         </Button>
       </div>
 
@@ -292,7 +325,7 @@ export function TasksPage() {
                   : 'text-slate-500 hover:text-slate-700',
               )}
             >
-              <ListFilter className="h-3.5 w-3.5" /> Filters
+              <ListFilter className="h-3.5 w-3.5" /> {t('common.filters', 'Filters')}
             </button>
             <button
               type="button"
@@ -304,7 +337,7 @@ export function TasksPage() {
                   : 'text-slate-500 hover:text-slate-700',
               )}
             >
-              <Sparkles className="h-3.5 w-3.5" /> TeamQL
+              <Sparkles className="h-3.5 w-3.5" /> {t('tasks.teamql', 'TeamQL')}
             </button>
           </div>
 
@@ -327,7 +360,9 @@ export function TasksPage() {
                     type="button"
                     onClick={() => void removeSavedFilter(saved.id)}
                     className="text-slate-300 hover:text-red-500"
-                    aria-label={`Delete saved filter ${saved.name}`}
+                    aria-label={t('tasks.deleteSavedFilter', 'Delete saved filter {name}', {
+                      name: saved.name,
+                    })}
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -344,7 +379,7 @@ export function TasksPage() {
                 <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                 <Input
                   className="pl-9"
-                  placeholder="Search titles and descriptions…"
+                  placeholder={t('tasks.searchPlaceholder', 'Search titles and descriptions…')}
                   value={searchInput}
                   onChange={(event) => setSearchInput(event.target.value)}
                 />
@@ -356,7 +391,7 @@ export function TasksPage() {
                   setOffset(0)
                 }}
               >
-                <option value="">All projects</option>
+                <option value="">{t('tasks.allProjects', 'All projects')}</option>
                 {projects.data?.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
@@ -370,10 +405,10 @@ export function TasksPage() {
                   setOffset(0)
                 }}
               >
-                <option value="">Any type</option>
+                <option value="">{t('tasks.anyType', 'Any type')}</option>
                 {TASK_TYPES.map((value) => (
                   <option key={value} value={value}>
-                    {TYPE_LABELS[value]}
+                    {t(`type.${value}`, TYPE_LABELS[value])}
                   </option>
                 ))}
               </Select>
@@ -384,10 +419,10 @@ export function TasksPage() {
                   setOffset(0)
                 }}
               >
-                <option value="">Any priority</option>
+                <option value="">{t('tasks.anyPriority', 'Any priority')}</option>
                 {PRIORITIES.map((value) => (
                   <option key={value} value={value}>
-                    {PRIORITY_LABELS[value]}
+                    {t(`priority.${value}`, PRIORITY_LABELS[value])}
                   </option>
                 ))}
               </Select>
@@ -405,7 +440,7 @@ export function TasksPage() {
                       : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300',
                   )}
                 >
-                  {STATUS_LABELS[status]}
+                  {t(`status.${status}`, STATUS_LABELS[status])}
                 </button>
               ))}
               <div className="mx-1 h-5 w-px bg-slate-200" />
@@ -417,7 +452,7 @@ export function TasksPage() {
                   setOffset(0)
                 }}
               >
-                <option value="">Anyone</option>
+                <option value="">{t('tasks.anyone', 'Anyone')}</option>
                 {members.map((membership) => (
                   <option key={membership.user_id} value={membership.user_id}>
                     {membership.user?.full_name || membership.user?.email || membership.user_id}
@@ -425,7 +460,7 @@ export function TasksPage() {
                 ))}
               </Select>
               <Checkbox
-                label="Overdue only"
+                label={t('tasks.overdueOnly', 'Overdue only')}
                 checked={overdue}
                 onChange={(event) => {
                   setOverdue(event.target.checked)
@@ -433,7 +468,7 @@ export function TasksPage() {
                 }}
               />
               <Checkbox
-                label="Top level only"
+                label={t('tasks.topLevelOnly', 'Top level only')}
                 checked={rootsOnly}
                 onChange={(event) => {
                   setRootsOnly(event.target.checked)
@@ -451,7 +486,7 @@ export function TasksPage() {
                 >
                   {SORTS.map((entry) => (
                     <option key={entry.value} value={entry.value}>
-                      {entry.label}
+                      {t(entry.key, entry.label)}
                     </option>
                   ))}
                 </Select>
@@ -463,7 +498,10 @@ export function TasksPage() {
             <div className="flex flex-wrap items-center gap-2">
               <Input
                 className="min-w-64 flex-1 font-mono text-xs"
-                placeholder='status = todo AND priority = high AND assignee = me ORDER BY due'
+                placeholder={t(
+                  'tasks.teamqlPlaceholder',
+                  'status = todo AND priority = high AND assignee = me ORDER BY due',
+                )}
                 value={teamqlInput}
                 onChange={(event) => setTeamqlInput(event.target.value)}
                 onKeyDown={(event) => {
@@ -471,7 +509,7 @@ export function TasksPage() {
                 }}
               />
               <Button size="sm" onClick={runTeamql} disabled={!teamqlInput.trim()}>
-                Run query
+                {t('tasks.runQuery', 'Run query')}
               </Button>
               <Button
                 size="sm"
@@ -479,14 +517,14 @@ export function TasksPage() {
                 onClick={() => setSavingFilter((value) => !value)}
                 disabled={!teamqlInput.trim()}
               >
-                <Save className="h-3.5 w-3.5" /> Save
+                <Save className="h-3.5 w-3.5" /> {t('common.save', 'Save')}
               </Button>
             </div>
             {savingFilter && (
               <div className="flex flex-wrap items-center gap-2">
                 <Input
                   className="max-w-xs"
-                  placeholder="Filter name"
+                  placeholder={t('tasks.filterName', 'Filter name')}
                   value={saveName}
                   onChange={(event) => setSaveName(event.target.value)}
                   onKeyDown={(event) => {
@@ -494,17 +532,18 @@ export function TasksPage() {
                   }}
                 />
                 <Button size="sm" onClick={() => void saveCurrentFilter()} disabled={!saveName.trim()}>
-                  Save filter
+                  {t('tasks.saveFilter', 'Save filter')}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setSavingFilter(false)}>
-                  Cancel
+                  {t('common.cancel', 'Cancel')}
                 </Button>
               </div>
             )}
             <p className="text-[11px] text-slate-400">
-              Fields: project, status, priority, type, assignee, label, sprint, text, key,
-              estimate, due, created, updated, archived, parent, roots. Operators: =, !=,
-              &gt;, &gt;=, &lt;, &lt;=, ~, in, not in, is empty.
+              {t(
+                'tasks.teamqlHelp',
+                'Fields: project, status, priority, type, assignee, label, sprint, text, key, estimate, due, created, updated, archived, parent, roots. Operators: =, !=, >, >=, <, <=, ~, in, not in, is empty.',
+              )}
             </p>
           </div>
         )}
@@ -513,7 +552,7 @@ export function TasksPage() {
       {selectedIds.size > 0 && (
         <Card className="flex flex-wrap items-center gap-2 border-brand-200 bg-brand-50 px-3 py-2">
           <span className="text-xs font-medium text-brand-800">
-            {selectedIds.size} selected
+            {t('tasks.selectedCount', '{count} selected', { count: selectedIds.size })}
           </span>
           <Select
             className="w-auto"
@@ -528,10 +567,10 @@ export function TasksPage() {
               }
             }}
           >
-            <option value="">Move to…</option>
+            <option value="">{t('tasks.moveTo', 'Move to…')}</option>
             {TASK_STATUSES.map((status) => (
               <option key={status} value={status}>
-                {STATUS_LABELS[status]}
+                {t(`status.${status}`, STATUS_LABELS[status])}
               </option>
             ))}
           </Select>
@@ -548,10 +587,10 @@ export function TasksPage() {
               }
             }}
           >
-            <option value="">Set priority…</option>
+            <option value="">{t('tasks.setPriority', 'Set priority…')}</option>
             {PRIORITIES.map((value) => (
               <option key={value} value={value}>
-                {PRIORITY_LABELS[value]}
+                {t(`priority.${value}`, PRIORITY_LABELS[value])}
               </option>
             ))}
           </Select>
@@ -561,7 +600,7 @@ export function TasksPage() {
             onClick={() => bulk.mutate({ task_ids: selectedArray, action: 'clone' })}
             loading={bulk.isPending}
           >
-            <Copy className="h-3.5 w-3.5" /> Clone
+            <Copy className="h-3.5 w-3.5" /> {t('tasks.clone', 'Clone')}
           </Button>
           <Button
             size="sm"
@@ -569,7 +608,7 @@ export function TasksPage() {
             onClick={() => bulk.mutate({ task_ids: selectedArray, action: 'archive' })}
             loading={bulk.isPending}
           >
-            <Archive className="h-3.5 w-3.5" /> Archive
+            <Archive className="h-3.5 w-3.5" /> {t('tasks.archive', 'Archive')}
           </Button>
           <Button
             size="sm"
@@ -577,13 +616,13 @@ export function TasksPage() {
             onClick={() => bulk.mutate({ task_ids: selectedArray, action: 'restore' })}
             loading={bulk.isPending}
           >
-            <ArchiveRestore className="h-3.5 w-3.5" /> Restore
+            <ArchiveRestore className="h-3.5 w-3.5" /> {t('tasks.restore', 'Restore')}
           </Button>
           <Button size="sm" variant="danger" onClick={() => setConfirmBulkDelete(true)}>
-            <Trash2 className="h-3.5 w-3.5" /> Delete
+            <Trash2 className="h-3.5 w-3.5" /> {t('common.delete', 'Delete')}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
-            Clear
+            {t('common.clear', 'Clear')}
           </Button>
         </Card>
       )}
@@ -593,8 +632,8 @@ export function TasksPage() {
         <ErrorState
           message={
             mode === 'teamql'
-              ? 'The query could not be parsed or executed.'
-              : 'Could not load tasks.'
+              ? t('tasks.queryError', 'The query could not be parsed or executed.')
+              : t('tasks.loadError', 'Could not load tasks.')
           }
           onRetry={() => void tasks.refetch()}
         />
@@ -603,8 +642,8 @@ export function TasksPage() {
       {tasks.data && items.length === 0 && (
         <EmptyState
           icon={<Eye className="h-8 w-8" />}
-          title="No tasks match"
-          description="Try relaxing the filters or create a new task."
+          title={t('tasks.noMatch', 'No tasks match')}
+          description={t('tasks.noMatchHint', 'Try relaxing the filters or create a new task.')}
         />
       )}
 
@@ -617,7 +656,7 @@ export function TasksPage() {
                   <th className="w-10 px-3 py-2.5">
                     <input
                       type="checkbox"
-                      aria-label="Select all tasks on this page"
+                      aria-label={t('tasks.selectAllOnPage', 'Select all tasks on this page')}
                       checked={allSelected}
                       onChange={(event) =>
                         setSelectedIds(
@@ -627,18 +666,21 @@ export function TasksPage() {
                       className="h-3.5 w-3.5 rounded border-slate-300"
                     />
                   </th>
-                  <th className="px-4 py-2.5 font-medium">Task</th>
-                  <th className="px-4 py-2.5 font-medium">Project</th>
-                  <th className="px-4 py-2.5 font-medium">Status</th>
-                  <th className="px-4 py-2.5 font-medium">Priority</th>
-                  <th className="px-4 py-2.5 font-medium">Assignee</th>
-                  <th className="px-4 py-2.5 font-medium">Due</th>
+                  <th className="px-4 py-2.5 font-medium">{t('tasks.columnTask', 'Task')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('common.project', 'Project')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('common.status', 'Status')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('common.priority', 'Priority')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('common.assignee', 'Assignee')}</th>
+                  <th className="px-4 py-2.5 font-medium">{t('tasks.due', 'Due')}</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((task) => {
                   const due = task.due_date
                   const late = isOverdue(task.due_date, task.status)
+                  const standardStatus = (
+                    STATUS_LABELS as Record<string, string | undefined>
+                  )[task.status]
                   return (
                     <tr
                       key={task.id}
@@ -652,7 +694,7 @@ export function TasksPage() {
                       <td className="px-3 py-2.5" onClick={(event) => event.stopPropagation()}>
                         <input
                           type="checkbox"
-                          aria-label={`Select ${task.title}`}
+                          aria-label={t('tasks.selectTask', 'Select {title}', { title: task.title })}
                           checked={selectedIds.has(task.id)}
                           onChange={() => toggleSelected(task.id)}
                           className="h-3.5 w-3.5 rounded border-slate-300"
@@ -665,7 +707,9 @@ export function TasksPage() {
                               {task.key}
                             </span>
                           )}
-                          <Badge className={TYPE_BADGE[task.type]}>{TYPE_LABELS[task.type]}</Badge>
+                          <Badge className={TYPE_BADGE[task.type]}>
+                            {t(`type.${task.type}`, TYPE_LABELS[task.type])}
+                          </Badge>
                           <p className="truncate font-medium text-slate-800">{task.title}</p>
                           {task.estimate != null && (
                             <span className="shrink-0 rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-500">
@@ -674,7 +718,7 @@ export function TasksPage() {
                           )}
                           {task.archived_at && (
                             <span className="shrink-0 rounded-full bg-slate-200 px-1.5 text-[10px] text-slate-500">
-                              archived
+                              {t('tasks.archived', 'archived')}
                             </span>
                           )}
                           {task.child_count > 0 && (
@@ -687,7 +731,10 @@ export function TasksPage() {
                           <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-slate-400">
                             <CornerDownRight className="h-3 w-3 shrink-0" />
                             <span className="truncate">
-                              {TYPE_LABELS[task.parent.type]} · {task.parent.title}
+                              {t('tasks.parentRef', '{type} · {title}', {
+                                type: t(`type.${task.parent.type}`, TYPE_LABELS[task.parent.type]),
+                                title: task.parent.title,
+                              })}
                             </span>
                           </p>
                         )}
@@ -711,12 +758,12 @@ export function TasksPage() {
                       </td>
                       <td className="px-4 py-2.5">
                         <Badge className={CATEGORY_BADGE[task.status_category]}>
-                          {task.status}
+                          {standardStatus ? t(`status.${task.status}`, standardStatus) : task.status}
                         </Badge>
                       </td>
                       <td className="px-4 py-2.5">
                         <Badge className={PRIORITY_BADGE[task.priority]}>
-                          {PRIORITY_LABELS[task.priority]}
+                          {t(`priority.${task.priority}`, PRIORITY_LABELS[task.priority])}
                         </Badge>
                       </td>
                       <td className="px-4 py-2.5">
@@ -732,7 +779,7 @@ export function TasksPage() {
                             </span>
                           </div>
                         ) : (
-                          <span className="text-slate-400">Unassigned</span>
+                          <span className="text-slate-400">{t('common.unassigned', 'Unassigned')}</span>
                         )}
                       </td>
                       <td className={cn('px-4 py-2.5', late ? 'font-medium text-red-600' : 'text-slate-500')}>
@@ -747,8 +794,18 @@ export function TasksPage() {
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
             <span>
               {cursorItems.length > 0
-                ? `Loaded ${cursorItems.length} tasks (cursor mode)`
-                : `Showing ${Math.min(offset + 1, total)}–${Math.min(offset + perPage, total)} of ${total}`}
+                ? cursorItems.length === 1
+                  ? t('tasks.loadedCountOne', 'Loaded {count} task (cursor mode)', {
+                      count: cursorItems.length,
+                    })
+                  : t('tasks.loadedCount', 'Loaded {count} tasks (cursor mode)', {
+                      count: cursorItems.length,
+                    })
+                : t('tasks.showingRange', 'Showing {from}–{to} of {total}', {
+                    from: Math.min(offset + 1, total),
+                    to: Math.min(offset + perPage, total),
+                    total,
+                  })}
             </span>
             <div className="flex gap-2">
               {mode === 'filters' && (
@@ -759,9 +816,12 @@ export function TasksPage() {
                     onClick={() => void loadMore()}
                     loading={cursorLoading}
                     disabled={cursorNext === null && cursorItems.length > 0}
-                    title="Keyset pagination: stable and fast on large boards"
+                    title={t(
+                      'tasks.loadMoreTitle',
+                      'Keyset pagination: stable and fast on large boards',
+                    )}
                   >
-                    Load more (fast)
+                    {t('tasks.loadMore', 'Load more (fast)')}
                   </Button>
                   {cursorItems.length > 0 && (
                     <Button
@@ -772,7 +832,7 @@ export function TasksPage() {
                         setCursorNext(null)
                       }}
                     >
-                      Reset
+                      {t('common.reset', 'Reset')}
                     </Button>
                   )}
                 </>
@@ -783,7 +843,7 @@ export function TasksPage() {
                 disabled={offset === 0}
                 onClick={() => setOffset((value) => Math.max(0, value - perPage))}
               >
-                Previous
+                {t('common.previous', 'Previous')}
               </Button>
               <Button
                 size="sm"
@@ -791,7 +851,7 @@ export function TasksPage() {
                 disabled={offset + perPage >= total}
                 onClick={() => setOffset((value) => value + perPage)}
               >
-                Next
+                {t('common.next', 'Next')}
               </Button>
             </div>
           </div>
@@ -812,8 +872,20 @@ export function TasksPage() {
 
       <ConfirmDialog
         open={confirmBulkDelete}
-        title="Delete selected tasks"
-        message={`Delete ${selectedIds.size} task${selectedIds.size === 1 ? '' : 's'}? This cannot be undone.`}
+        title={t('tasks.deleteSelectedTitle', 'Delete selected tasks')}
+        message={
+          selectedIds.size === 1
+            ? t(
+                'tasks.deleteSelectedMessageOne',
+                'Delete {count} task? This cannot be undone.',
+                { count: selectedIds.size },
+              )
+            : t(
+                'tasks.deleteSelectedMessage',
+                'Delete {count} tasks? This cannot be undone.',
+                { count: selectedIds.size },
+              )
+        }
         busy={bulk.isPending}
         onClose={() => setConfirmBulkDelete(false)}
         onConfirm={() => {

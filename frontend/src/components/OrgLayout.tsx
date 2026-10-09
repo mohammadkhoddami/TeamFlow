@@ -3,6 +3,7 @@ import { Navigate, Outlet, useParams } from 'react-router-dom'
 
 import { applyAccent } from '../lib/accent'
 import { useOrgMembers, useOrganizations } from '../lib/hooks'
+import { useI18n } from '../lib/i18n'
 import type { MembershipRead, MembershipRole, OrganizationRead } from '../lib/types'
 import { ErrorState, PageSpinner } from './ui'
 
@@ -30,6 +31,7 @@ export function OrgLayout() {
   const { slug } = useParams<{ slug: string }>()
   const organizations = useOrganizations()
   const members = useOrgMembers(slug)
+  const { t } = useI18n()
 
   const match = organizations.data?.find((entry) => entry.organization.slug === slug)
 
@@ -40,11 +42,16 @@ export function OrgLayout() {
     return () => applyAccent(null)
   }, [match])
 
-  if (organizations.isLoading) return <PageSpinner label="Loading workspace…" />
+  if (organizations.isLoading) {
+    return <PageSpinner label={t('layout.loadingWorkspace', 'Loading workspace…')} />
+  }
   if (organizations.isError) {
     return (
       <div className="mx-auto max-w-lg p-6">
-        <ErrorState message="Could not load your workspaces." onRetry={() => void organizations.refetch()} />
+        <ErrorState
+          message={t('layout.loadWorkspacesError', 'Could not load your workspaces.')}
+          onRetry={() => void organizations.refetch()}
+        />
       </div>
     )
   }
