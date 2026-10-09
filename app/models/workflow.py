@@ -121,6 +121,8 @@ class Board(UUIDMixin, TimeStampedMixin, SQLModel, table=True):
     )
     # Subset/order of workflow status keys; NULL = all statuses.
     columns: list[str] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
+    # Issue types shown on the board (epic/story/task); NULL = all types.
+    issue_types: list[str] | None = Field(default=None, sa_column=Column(JSON, nullable=True))
     created_by_id: uuid.UUID | None = Field(
         default=None,
         sa_column=Column(

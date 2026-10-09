@@ -916,6 +916,7 @@ export const workflowsApi = {
       swimlane_by?: string
       filter_query?: string | null
       columns?: string[] | null
+      issue_types?: TaskType[] | null
       is_default?: boolean
     },
   ) => request<BoardRead>(`/projects/${projectId}/boards`, { method: 'POST', body: data }),
@@ -928,6 +929,7 @@ export const workflowsApi = {
       swimlane_by?: string
       filter_query?: string | null
       columns?: string[] | null
+      issue_types?: TaskType[] | null
       is_default?: boolean
     },
   ) =>

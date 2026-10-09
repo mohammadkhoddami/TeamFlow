@@ -1,0 +1,1 @@
+add m6 which allow to add person by project not workspace log for workspace and a part for taking context or details (of a project or a work which describe it by the user and using ai and create milestones or tasks or epics or everything which means it create tasks or etc. just by a simple description) (use mcp and upload it onto our board)

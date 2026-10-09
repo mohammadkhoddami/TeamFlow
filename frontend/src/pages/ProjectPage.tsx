@@ -49,6 +49,7 @@ import {
 } from '../components/ui'
 import { useToast } from '../contexts/toast'
 import { ApiError, dataApi, tasksApi, projectsApi, templatesApi } from '../lib/api'
+import { boardVisibleStatuses, buildBoardQuery } from '../lib/boardQuery'
 import {
   useBoards,
   useInvalidateTasks,
@@ -82,7 +83,13 @@ export function ProjectPage() {
   const selectedBoard =
     boards.data?.find((board) => board.id === boardId) ??
     boards.data?.find((board) => board.is_default)
-  const boardFilter = selectedBoard?.filter_query?.trim() || ''
+  const boardQuery = useMemo(
+    () =>
+      projectId && selectedBoard
+        ? buildBoardQuery({ projectId, board: selectedBoard, sprintFilter })
+        : '',
+    [projectId, selectedBoard, sprintFilter],
+  )
   const taskFilters = useMemo(
     () => ({
       project_id: projectId,
@@ -94,11 +101,15 @@ export function ProjectPage() {
   )
   const plainTasks = useTasks(org.slug, taskFilters)
   const filteredTasks = useQuery({
-    queryKey: ['orgs', org.slug, 'tasks', 'board-filter', boardFilter],
-    queryFn: () => tasksApi.query(org.slug, boardFilter, { limit: 100 }),
-    enabled: Boolean(boardFilter),
+    queryKey: ['orgs', org.slug, 'tasks', 'board-filter', boardQuery],
+    queryFn: () => tasksApi.query(org.slug, boardQuery, { limit: 100 }),
+    enabled: Boolean(boardQuery),
   })
-  const tasks = boardFilter ? filteredTasks : plainTasks
+  const tasks = selectedBoard ? filteredTasks : plainTasks
+  const visibleStatuses = useMemo(
+    () => boardVisibleStatuses(workflow.data ?? [], selectedBoard),
+    [workflow.data, selectedBoard],
+  )
   const tree = useTaskTree(projectId)
 
   const [socketStatus, setSocketStatus] = useState<SocketStatus>('connecting')
@@ -129,12 +140,18 @@ export function ProjectPage() {
   const [estimationUnit, setEstimationUnit] = useState<'none' | 'points' | 'hours'>('points')
   const [visibility, setVisibility] = useState<'workspace' | 'private'>('workspace')
 
-  const boardTasks = tasks.data
-    ? showSubtasks
+  const boardTasks = useMemo(() => {
+    if (!tasks.data) return []
+    const items = showSubtasks
       ? tasks.data.items
       : tasks.data.items.filter((task) => !task.parent_id)
-    : []
-  const openBoardTasks = boardTasks.filter((task) => task.status !== 'done').length
+    if (!selectedBoard) return items
+    const known = new Set(visibleStatuses.map((status) => status.key))
+    return known.size > 0 ? items.filter((task) => known.has(task.status)) : items
+  }, [tasks.data, showSubtasks, selectedBoard, visibleStatuses])
+  const openBoardTasks = boardTasks.filter(
+    (task) => task.status_category !== 'done',
+  ).length
 
   useEffect(() => {
     if (project.data && editing) {
@@ -514,7 +531,7 @@ export function ProjectPage() {
           {tasks.data && (
             <TaskBoard
               tasks={boardTasks}
-              statuses={workflow.data ?? []}
+              statuses={visibleStatuses}
               swimlaneBy={selectedBoard?.swimlane_by ?? 'none'}
               wipEnforced={project.data.wip_enforced}
               onOpen={setSelectedTask}

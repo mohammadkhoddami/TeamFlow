@@ -351,13 +351,13 @@ ENTRYPOINT ["teamflow-mcp"]
 | `whoami` | Account, roles, and the defaults this server uses. Call it first. |
 | `list_organizations` | Organizations you belong to, with roles. |
 | `list_projects` | Projects in an organization. |
-| `get_board` | **Kanban board**: each column with accurate counts and top cards. |
-| `list_tasks` | Filter by status, priority, type, parent, assignee, label, due dates, overdue, free text. |
+| `get_board` | **Kanban board**: workflow columns (custom statuses included) with allowed transitions, accurate counts and top cards. Pass `board` to render a saved view (its visible columns, hidden issue types and TeamQL filter). |
+| `list_tasks` | Filter by status (custom keys allowed), priority, type, parent, assignee, label, due dates, overdue, free text. |
 | `get_task` | One task in full, with its direct children and comment thread. |
 | `get_task_tree` | The project's epic > story > task hierarchy as a nested tree. |
-| `create_task` | Create a task/epic/story on a project (starts in `todo`). |
+| `create_task` | Create a task/epic/story on a project (starts in the initial workflow status, `todo` by default). |
 | `update_task` | Change title, description, priority, due date, assignee, labels, type, parent, status. |
-| `move_task` | Move a card between columns, optionally with an explanatory comment. |
+| `move_task` | Move a card between columns following the project workflow, optionally with an explanatory comment. |
 | `delete_task` | Permanently delete a task. |
 | `my_work` | Everything assigned to you, grouped by column — ideal for standups. |
 | `add_comment` / `list_comments` | Task discussion. |
@@ -384,8 +384,14 @@ Prompts: `daily_standup`, `board_triage`.
 - `project` accepts a **name or UUID**; `assignee` accepts `me`, an **email**,
   or a UUID; `labels` accept names or UUIDs. The server resolves them to IDs
   and returns helpful errors listing valid options.
-- Column moves are **step-wise**: `todo ⇄ in_progress ⇄ in_review ⇄ done`.
-  A task cannot jump from `todo` to `done`; call `move_task` twice.
+- Column moves follow the **project workflow**: each project can define custom
+  statuses and which moves are allowed between them. `get_board` reports every
+  column's `transitions`; `move_task` rejects moves the workflow does not allow.
+  The default flow is `todo ⇄ in_progress ⇄ in_review ⇄ done`, where a task
+  cannot jump from `todo` to `done` (call `move_task` twice).
+- Saved boards can hide issue types, hide status columns and add a TeamQL
+  filter; `get_board` uses the project's default board unless you pass
+  `board="all"` or a specific board name/UUID.
 - `update_task` only changes the fields you pass. Clear an assignee with
   `assignee="unassigned"` and a due date with `clear_due_date=true`.
 - Passing `labels=[...]` to `update_task` **replaces** the whole label set;

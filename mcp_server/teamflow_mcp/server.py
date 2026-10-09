@@ -32,16 +32,43 @@ from .formatting import (
     task_record,
 )
 
-Status = Literal["todo", "in_progress", "in_review", "done"]
 Priority = Literal["low", "medium", "high", "urgent"]
 TaskType = Literal["epic", "story", "task"]
 
-TRANSITIONS = {
-    "todo": "in_progress",
-    "in_progress": "todo | in_review",
-    "in_review": "in_progress | done",
-    "done": "in_progress",
-}
+DEFAULT_WORKFLOW: list[dict[str, Any]] = [
+    {
+        "key": "todo",
+        "name": "To do",
+        "category": "todo",
+        "position": 0,
+        "wip_limit": None,
+        "transitions": ["in_progress"],
+    },
+    {
+        "key": "in_progress",
+        "name": "In progress",
+        "category": "in_progress",
+        "position": 1,
+        "wip_limit": None,
+        "transitions": ["todo", "in_review"],
+    },
+    {
+        "key": "in_review",
+        "name": "In review",
+        "category": "in_review",
+        "position": 2,
+        "wip_limit": None,
+        "transitions": ["in_progress", "done"],
+    },
+    {
+        "key": "done",
+        "name": "Done",
+        "category": "done",
+        "position": 3,
+        "wip_limit": None,
+        "transitions": ["in_progress"],
+    },
+]
 
 ROADMAP_EPIC_LIMIT = 30
 ROADMAP_CHILD_LIMIT = 5
@@ -50,11 +77,14 @@ GOAL_TASK_LIMIT = 25
 mcp = MCPServer(
     "teamflow",
     instructions=(
-        "TeamFlow is a multi-tenant project management board with kanban columns "
-        "'todo', 'in_progress', 'in_review', 'done'.\n\n"
+        "TeamFlow is a multi-tenant project management board. Each project defines "
+        "its own workflow of statuses; the default is 'todo', 'in_progress', "
+        "'in_review', 'done' but managers can add custom statuses and decide which "
+        "moves are allowed between them.\n\n"
         "Typical flow: call whoami() to confirm the account and defaults, then "
-        "get_board() to see the current board, then list_tasks()/get_task() to "
-        "drill in and create_task()/update_task()/move_task() to make changes.\n\n"
+        "get_board() to see the current board (columns, allowed transitions and a "
+        "saved board's filters), then list_tasks()/get_task() to drill in and "
+        "create_task()/update_task()/move_task() to make changes.\n\n"
         "Argument conventions:\n"
         "- `project` accepts a project name or UUID (default: TEAMFLOW_PROJECT).\n"
         "- `org_slug` defaults to TEAMFLOW_ORG, or your only organization.\n"
@@ -63,8 +93,9 @@ mcp = MCPServer(
         "Work items form an epic > story > task hierarchy: create_task() takes\n"
         "`type` and `parent_id`, and get_task_tree() renders the whole project\n"
         "tree. A parent must be a higher level in the same project.\n\n"
-        "Status moves are step-wise only: todo <-> in_progress <-> in_review <-> done "
-        "(a task cannot jump from todo straight to done)."
+        "Status moves follow the project workflow: call get_board() first to see "
+        "each column's allowed transitions, and move_task() rejects moves that "
+        "are not allowed."
     ),
 )
 
@@ -74,6 +105,48 @@ def _client():
         return get_client()
     except Exception as exc:  # pragma: no cover - configuration guard
         raise TeamFlowError(f"TeamFlow MCP is not configured: {exc}") from exc
+
+
+async def _fetch_workflow(client, project_id: str) -> list[dict[str, Any]]:
+    """The project's workflow statuses (defaults are synthesized by the API)."""
+    workflow = await client.get(f"/projects/{project_id}/workflow")
+    return list(workflow or [])
+
+
+def _workflow_entry(
+    workflow: list[dict[str, Any]], status_key: str | None
+) -> dict[str, Any] | None:
+    for entry in workflow:
+        if entry.get("key") == status_key:
+            return entry
+    return None
+
+
+def _workflow_transitions(
+    workflow: list[dict[str, Any]], status_key: str | None
+) -> list[str]:
+    entry = _workflow_entry(workflow, status_key)
+    if entry is None:
+        return []
+    return list(entry.get("transitions") or [])
+
+
+def _allowed_next(workflow: list[dict[str, Any]], status_key: str | None) -> str:
+    return " | ".join(_workflow_transitions(workflow, status_key))
+
+
+async def _resolve_board(client, project_id: str, board: str) -> dict[str, Any]:
+    boards = await client.get(f"/projects/{project_id}/boards") or []
+    needle = board.strip().lower()
+    for entry in boards:
+        if entry.get("id") == board or (entry.get("name") or "").lower() == needle:
+            return entry
+    names = ", ".join(entry.get("name", "") for entry in boards) or "none"
+    raise TeamFlowError(f"Board '{board}' not found. Available boards: {names}.")
+
+
+def _ordered_statuses(workflow: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(workflow, key=lambda entry: entry.get("position", 0))
 
 
 def _release_item(release: dict[str, Any]) -> dict[str, Any]:
@@ -192,45 +265,87 @@ async def list_projects(
 async def get_board(
     project: str | None = None,
     org_slug: str | None = None,
+    board: str | None = None,
     per_column: int = 25,
     assignee: str | None = None,
     label: str | None = None,
 ) -> str:
     """Show the kanban board for a project: every column with its real task count and top cards.
 
-    This is the best first call when you need the state of a project. Cards are
-    ordered with overdue first, then by priority, then most recently updated.
+    This is the best first call when you need the state of a project. Columns
+    follow the project workflow (custom statuses included) and each column
+    reports its allowed next statuses. Cards are ordered with overdue first,
+    then by priority, then most recently updated.
 
     Args:
         project: Project name or UUID. Defaults to TEAMFLOW_PROJECT.
         org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
+        board: Optional saved board name or UUID. Defaults to the project's
+            default board when one exists; pass "all" to ignore saved boards.
+            A saved board can hide issue types, hide status columns and apply
+            its own TeamQL filter.
         per_column: How many cards to return per column (1-100). Counts stay accurate.
         assignee: Only cards assigned to this user ('me', email, or UUID).
         label: Only cards carrying this label name.
     """
     client = _client()
     slug, project_data = await client.resolve_project(project, org_slug)
+    project_id = project_data["id"]
+    workflow = await _fetch_workflow(client, project_id) or list(DEFAULT_WORKFLOW)
+    ordered = _ordered_statuses(workflow)
+
+    selected_board: dict[str, Any] | None = None
+    if board and board.strip().lower() not in ("all", "none"):
+        selected_board = await _resolve_board(client, project_id, board)
+    elif not board:
+        boards = await client.get(f"/projects/{project_id}/boards") or []
+        selected_board = next(
+            (entry for entry in boards if entry.get("is_default")), None
+        )
+
+    visible_keys = [entry["key"] for entry in ordered]
+    issue_types: list[str] | None = None
+    board_filter = ""
+    if selected_board:
+        if selected_board.get("columns"):
+            allowed = set(selected_board["columns"])
+            visible_keys = [key for key in visible_keys if key in allowed]
+        issue_types = selected_board.get("issue_types") or None
+        board_filter = (selected_board.get("filter_query") or "").strip()
+
     assignee_id = await client.resolve_user_id(assignee, slug)
     label_id = (await client.resolve_labels([label], slug) or [None])[0] if label else None
     depth = max(1, min(int(per_column), 100))
 
-    shared: dict[str, Any] = {
-        "project_id": project_data["id"],
-        "assignee_id": assignee_id,
-        "label_id": label_id,
-        "limit": depth,
-        "sort": "-updated_at",
-    }
+    def build_query(status_key: str) -> str:
+        conditions = [f"status = {status_key}", f"project = {project_id}"]
+        if issue_types:
+            conditions.append(f"type in ({', '.join(issue_types)})")
+        if assignee_id:
+            conditions.append(f"assignee = {assignee_id}")
+        if label_id:
+            conditions.append(f"label = {label_id}")
+        if board_filter:
+            conditions.append(board_filter)
+        return " AND ".join(conditions)
 
-    async def column(status: str) -> dict[str, Any]:
+    async def column(status_key: str) -> dict[str, Any]:
         page = (
-            await client.get(f"/organizations/{slug}/tasks", status=status, **shared)
+            await client.get(
+                f"/organizations/{slug}/tasks/query",
+                q=build_query(status_key),
+                limit=depth,
+            )
         ) or {}
         cards = sort_cards([task_card(t) for t in page.get("items") or []])
         total = int(page.get("total") or 0)
+        entry = _workflow_entry(workflow, status_key) or {}
         column_payload: dict[str, Any] = {
-            "status": status,
-            "column": STATUS_LABELS[status],
+            "status": status_key,
+            "column": entry.get("name") or status_key,
+            "category": entry.get("category"),
+            "wip_limit": entry.get("wip_limit"),
+            "transitions": list(entry.get("transitions") or []),
             "count": total,
             "cards": cards,
         }
@@ -238,29 +353,43 @@ async def get_board(
             column_payload["truncated"] = f"{total - len(cards)} more not shown"
         return column_payload
 
-    columns = list(await asyncio.gather(*(column(s) for s in STATUS_ORDER)))
-    open_tasks = sum(c["count"] for c in columns if c["status"] != "done")
-
-    return json_text(
-        {
-            "organization": slug,
-            "project": {
-                "id": project_data["id"],
-                "name": project_data["name"],
-                "status": project_data["status"],
-            },
-            "filters": {"assignee": assignee, "label": label, "per_column": depth},
-            "open_tasks": open_tasks,
-            "columns": columns,
-        }
+    columns = list(await asyncio.gather(*(column(key) for key in visible_keys)))
+    open_tasks = sum(
+        c["count"] for c in columns if c.get("category") != "done"
     )
+
+    payload: dict[str, Any] = {
+        "organization": slug,
+        "project": {
+            "id": project_id,
+            "name": project_data["name"],
+            "status": project_data["status"],
+        },
+        "filters": {"assignee": assignee, "label": label, "per_column": depth},
+        "open_tasks": open_tasks,
+        "columns": columns,
+    }
+    if selected_board:
+        payload["board"] = {
+            "name": selected_board.get("name"),
+            "issue_types": issue_types or "all",
+            "filter_query": board_filter or None,
+            "hidden_columns": [
+                entry["key"]
+                for entry in ordered
+                if entry["key"] not in set(visible_keys)
+            ],
+        }
+    else:
+        payload["board"] = None
+    return json_text(payload)
 
 
 @mcp.tool()
 async def list_tasks(
     project: str | None = None,
     org_slug: str | None = None,
-    status: list[Status] | None = None,
+    status: list[str] | None = None,
     priority: list[Priority] | None = None,
     type: list[TaskType] | None = None,
     parent_id: str | None = None,
@@ -281,7 +410,7 @@ async def list_tasks(
     Args:
         project: Project name or UUID. Omit to search the whole organization.
         org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
-        status: One or more of todo, in_progress, in_review, done.
+        status: One or more workflow status keys (custom project statuses allowed).
         priority: One or more of low, medium, high, urgent.
         type: One or more of epic, story, task.
         parent_id: Only direct children of this task UUID.
@@ -357,7 +486,8 @@ async def get_task(task_id: str, include_comments: bool = True) -> str:
     if include_comments:
         comments = await client.get(f"/tasks/{task_id}/comments", limit=100) or []
         payload["comments"] = [comment_item(c) for c in comments]
-    payload["allowed_next_status"] = TRANSITIONS.get(task.get("status"), "")
+    workflow = await _fetch_workflow(client, task["project_id"])
+    payload["allowed_next_status"] = _allowed_next(workflow, task.get("status"))
     return json_text(payload)
 
 
@@ -419,7 +549,8 @@ async def create_task(
     assignee: str | None = None,
     labels: list[str] | None = None,
 ) -> str:
-    """Create a task on a project board. New tasks start in the 'todo' column.
+    """Create a task on a project board. New tasks start in the project's initial
+    workflow status ('todo' by default).
 
     Args:
         title: Short task title (required, max 255 chars).
@@ -458,7 +589,11 @@ async def create_task(
         {
             "created": task_record(task),
             "board": {"organization": slug, "project": project_data["name"]},
-            "hint": "New tasks sit in 'todo'. Use move_task to advance them one step.",
+            "hint": (
+                "New tasks start in the project's initial workflow status "
+                "('todo' by default). Use get_board to see columns and "
+                "move_task to advance them."
+            ),
         }
     )
 
@@ -476,7 +611,7 @@ async def update_task(
     clear_due_date: bool = False,
     assignee: str | None = None,
     labels: list[str] | None = None,
-    status: Status | None = None,
+    status: str | None = None,
 ) -> str:
     """Update fields on an existing task. Only the arguments you pass are changed.
 
@@ -493,8 +628,8 @@ async def update_task(
         assignee: 'me', a member email, a user UUID, or 'unassigned' to clear it.
         labels: Replace the task's labels with this set (names or UUIDs). Pass an
             empty list to remove all labels.
-        status: Move to this status. Step-wise only: todo <-> in_progress <->
-            in_review <-> done. Prefer move_task for pure status changes.
+        status: Move to this workflow status key. Moves follow the project
+            workflow; prefer move_task for pure status changes.
     """
     client = _client()
     current = await client.get(f"/tasks/{task_id}")
@@ -534,7 +669,16 @@ async def update_task(
             slug = await client.org_slug_for_id(current["organization_id"])
             body["label_ids"] = await client.resolve_labels(labels, slug)
 
+    workflow = await _fetch_workflow(client, current["project_id"])
     if status is not None:
+        keys = {entry.get("key") for entry in workflow}
+        if current.get("status") in keys and status != current.get("status"):
+            allowed = _workflow_transitions(workflow, current.get("status"))
+            if status not in allowed:
+                raise TeamFlowError(
+                    f"Cannot move task from '{current.get('status')}' to "
+                    f"'{status}'. Allowed: {', '.join(allowed) or 'none'}."
+                )
         body["status"] = status
 
     if not body:
@@ -545,28 +689,39 @@ async def update_task(
         {
             "updated": task_record(task),
             "changed": sorted(body),
-            "allowed_next_status": TRANSITIONS.get(task.get("status"), ""),
+            "allowed_next_status": _allowed_next(workflow, task.get("status")),
         }
     )
 
 
 @mcp.tool()
-async def move_task(task_id: str, status: Status, note: str | None = None) -> str:
+async def move_task(task_id: str, status: str, note: str | None = None) -> str:
     """Move a task to a new column, optionally logging a comment explaining why.
 
-    Transitions are step-wise and cannot be skipped:
-    todo -> in_progress -> in_review -> done (and one step back).
+    Moves follow the project workflow; get_board reports each column's allowed
+    next statuses. Moves that are not allowed are rejected.
 
     Args:
         task_id: Task UUID.
-        status: Target status: todo, in_progress, in_review, or done.
+        status: Target workflow status key (e.g. todo, in_progress, in_review,
+            done, or a custom project status).
         note: Optional comment posted on the task after the move.
     """
     client = _client()
-    task = await client.post(f"/tasks/{task_id}/move", {"status": status})
+    task = await client.get(f"/tasks/{task_id}")
+    workflow = await _fetch_workflow(client, task["project_id"])
+    current = task.get("status")
+    if _workflow_entry(workflow, current) is not None and status != current:
+        allowed = _workflow_transitions(workflow, current)
+        if status not in allowed:
+            raise TeamFlowError(
+                f"Cannot move task from '{current}' to '{status}'. "
+                f"Allowed: {', '.join(allowed) or 'none'}."
+            )
+    moved = await client.post(f"/tasks/{task_id}/move", {"status": status})
     payload: dict[str, Any] = {
-        "moved": task_record(task),
-        "allowed_next_status": TRANSITIONS.get(task.get("status"), ""),
+        "moved": task_record(moved),
+        "allowed_next_status": _allowed_next(workflow, moved.get("status")),
     }
     if note:
         comment = await client.post(f"/tasks/{task_id}/comments", {"body": note})
@@ -590,14 +745,14 @@ async def delete_task(task_id: str) -> str:
 @mcp.tool()
 async def my_work(
     org_slug: str | None = None,
-    status: list[Status] | None = None,
+    status: list[str] | None = None,
     limit: int = 50,
 ) -> str:
     """Everything assigned to me, grouped by column - use this for standups and reminders.
 
     Args:
         org_slug: Organization slug. Defaults to TEAMFLOW_ORG, or your only org.
-        status: Restrict to these statuses.
+        status: Restrict to these workflow status keys (custom statuses allowed).
         limit: Max tasks to fetch across the organization (1-100).
     """
     client = _client()
@@ -613,10 +768,14 @@ async def my_work(
         )
     ) or {}
 
-    grouped: dict[str, list[dict[str, Any]]] = {s: [] for s in STATUS_ORDER}
+    grouped: dict[str, list[dict[str, Any]]] = {}
     for task in page.get("items") or []:
         grouped.setdefault(task["status"], []).append(task_card(task))
 
+    # Default columns first, then any custom statuses that showed up.
+    ordered = [s for s in STATUS_ORDER if s in grouped] + [
+        s for s in grouped if s not in STATUS_ORDER
+    ]
     return json_text(
         {
             "user": me["email"],
@@ -625,11 +784,11 @@ async def my_work(
             "columns": [
                 {
                     "status": s,
-                    "column": STATUS_LABELS[s],
+                    "column": STATUS_LABELS.get(s, s),
                     "count": len(grouped.get(s) or []),
                     "cards": sort_cards(grouped.get(s) or []),
                 }
-                for s in STATUS_ORDER
+                for s in ordered
             ],
         }
     )

@@ -118,12 +118,14 @@ async def test_boards_crud(client, board):
     r = await client.post(
         f"/api/v1/projects/{project['id']}/boards",
         json={"name": "Scrum board", "swimlane_by": "assignee",
-              "filter_query": "status = todo", "is_default": True},
+              "filter_query": "status = todo", "is_default": True,
+              "issue_types": ["story", "task"]},
         headers=H,
     )
     assert r.status_code == 201, r.text
     created = r.json()
     assert created["swimlane_by"] == "assignee"
+    assert created["issue_types"] == ["story", "task"]
 
     r = await client.get(f"/api/v1/projects/{project['id']}/boards", headers=H)
     assert [entry["name"] for entry in r.json()] == ["Scrum board"]
@@ -133,6 +135,11 @@ async def test_boards_crud(client, board):
     )
     assert r.status_code == 200 and r.json()["swimlane_by"] == "label"
 
+    r = await client.patch(
+        f"/api/v1/organizations/{SLUG}/boards/{created['id']}", json={"issue_types": ["epic"]}, headers=H
+    )
+    assert r.status_code == 200 and r.json()["issue_types"] == ["epic"]
+
     r = await client.post(
         f"/api/v1/projects/{project['id']}/boards",
         json={"name": "Broken", "columns": ["nope"]},
@@ -140,8 +147,107 @@ async def test_boards_crud(client, board):
     )
     assert r.status_code == 422
 
+    r = await client.post(
+        f"/api/v1/projects/{project['id']}/boards",
+        json={"name": "Bad types", "issue_types": ["bug"]},
+        headers=H,
+    )
+    assert r.status_code == 422
+
+    r = await client.post(
+        f"/api/v1/projects/{project['id']}/boards",
+        json={"name": "Duplicated", "issue_types": ["epic", "epic"]},
+        headers=H,
+    )
+    assert r.status_code == 422
+
+    # Selecting every issue type is the same as "no filter" (NULL).
+    r = await client.post(
+        f"/api/v1/projects/{project['id']}/boards",
+        json={"name": "Everything", "issue_types": ["epic", "story", "task"]},
+        headers=H,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["issue_types"] is None
+
+    r = await client.patch(
+        f"/api/v1/organizations/{SLUG}/boards/{created['id']}",
+        json={"issue_types": []},
+        headers=H,
+    )
+    assert r.status_code == 200 and r.json()["issue_types"] is None
+
     r = await client.delete(f"/api/v1/organizations/{SLUG}/boards/{created['id']}", headers=H)
     assert r.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_custom_status_listing_and_board_column_pruning(client, board):
+    alice, project = board["alice"], board["project"]
+    H = await auth_headers(alice)
+    workflow = {
+        "statuses": [
+            {"key": "new", "name": "New", "category": "todo", "transitions": ["doing"]},
+            {"key": "doing", "name": "Doing", "category": "in_progress",
+             "transitions": ["new", "done"]},
+            {"key": "done", "name": "Done", "category": "done", "transitions": ["doing"]},
+        ]
+    }
+    r = await client.put(
+        f"/api/v1/projects/{project['id']}/workflow", json=workflow, headers=H
+    )
+    assert r.status_code == 200, r.text
+
+    task = await make_task(client, alice, project["id"], title="Custom status task")
+    r = await client.post(
+        f"/api/v1/tasks/{task['id']}/move", json={"status": "doing"}, headers=H
+    )
+    assert r.status_code == 200, r.text
+
+    # The list and cursor endpoints accept custom workflow status keys.
+    r = await client.get(
+        f"/api/v1/organizations/{SLUG}/tasks",
+        params={"project_id": project["id"], "status": "doing"},
+        headers=H,
+    )
+    assert r.status_code == 200, r.text
+    assert [entry["id"] for entry in r.json()["items"]] == [task["id"]]
+
+    r = await client.get(
+        f"/api/v1/organizations/{SLUG}/tasks/cursor",
+        params={"project_id": project["id"], "status": "doing"},
+        headers=H,
+    )
+    assert r.status_code == 200, r.text
+    assert [entry["id"] for entry in r.json()["items"]] == [task["id"]]
+
+    # A board can hide issue types and statuses.
+    r = await client.post(
+        f"/api/v1/projects/{project['id']}/boards",
+        json={"name": "Trimmed", "columns": ["new", "doing", "done"],
+              "issue_types": ["task"]},
+        headers=H,
+    )
+    assert r.status_code == 201, r.text
+    board_id = r.json()["id"]
+
+    # Removing a workflow status prunes it from saved board columns.
+    r = await client.put(
+        f"/api/v1/projects/{project['id']}/workflow",
+        json={
+            "statuses": [
+                {"key": "new", "name": "New", "category": "todo", "transitions": ["doing"]},
+                {"key": "doing", "name": "Doing", "category": "in_progress",
+                 "transitions": ["new"]},
+            ]
+        },
+        headers=H,
+    )
+    assert r.status_code == 200, r.text
+    r = await client.get(f"/api/v1/projects/{project['id']}/boards", headers=H)
+    trimmed = next(entry for entry in r.json() if entry["id"] == board_id)
+    assert trimmed["columns"] == ["new", "doing"]
+    assert trimmed["issue_types"] == ["task"]
 
 
 @pytest.mark.asyncio

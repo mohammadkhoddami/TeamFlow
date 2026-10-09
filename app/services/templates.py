@@ -221,6 +221,7 @@ async def _apply_config(
             swimlane_by=board_config.get("swimlane_by", "none"),
             filter_query=board_config.get("filter_query"),
             columns=board_config.get("columns"),
+            issue_types=board_config.get("issue_types"),
             created_by_id=actor.id,
         )
         db.add(board)
@@ -340,6 +341,7 @@ async def save_project_as_template(
             "swimlane_by": board.swimlane_by,
             "filter_query": board.filter_query,
             "columns": board.columns,
+            "issue_types": board.issue_types,
         }
         for board in await BoardRepository(db).list_for_project(org.id, project.id)
     ]

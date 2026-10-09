@@ -81,6 +81,7 @@ const tasks: Dictionary = {
   'tasks.wipLimit': 'WIP limit {limit}',
   'tasks.addTaskTo': 'Add task to {status}',
   'tasks.dropTasksHere': 'Drop tasks here',
+  'tasks.transitionNotAllowed': 'Not allowed from the current status',
   'tasks.laneTaskCount': '{count} tasks',
   'tasks.laneTaskCountOne': '{count} task',
 

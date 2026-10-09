@@ -590,6 +590,7 @@ async def export_workspace(
                 "swimlane_by": row.swimlane_by,
                 "filter_query": row.filter_query,
                 "columns": row.columns,
+                "issue_types": row.issue_types,
             }
             for row in boards
         ],

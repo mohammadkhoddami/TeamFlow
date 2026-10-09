@@ -62,6 +62,23 @@ export function TaskBoard({
     [statuses],
   )
 
+  const statusMap = useMemo(
+    () => new Map(columns.map((status) => [status.key, status])),
+    [columns],
+  )
+  // While dragging, only the current status and its allowed next statuses are
+  // drop targets - the project workflow is enforced in the UI, not just by the
+  // server response after a drop.
+  const draggingTask = draggingId
+    ? tasks.find((task) => task.id === draggingId)
+    : undefined
+  const allowedTargets = useMemo(() => {
+    if (!draggingTask) return null
+    const current = statusMap.get(draggingTask.status)
+    if (!current) return null
+    return new Set(current.transitions)
+  }, [draggingTask, statusMap])
+
   const lanes = useMemo(() => {
     if (swimlaneBy === 'none') return [{ key: '', label: '', tasks }]
     const grouped = new Map<string, TaskRead[]>()
@@ -82,6 +99,11 @@ export function TaskBoard({
     const columnTasks = laneTasks.filter((task) => task.status === status.key)
     const overLimit =
       status.wip_limit != null && columnTasks.length > status.wip_limit
+    const canDrop =
+      !draggingTask ||
+      allowedTargets === null ||
+      draggingTask.status === status.key ||
+      allowedTargets.has(status.key)
     return (
       <section
         key={status.key}
@@ -89,8 +111,15 @@ export function TaskBoard({
           'flex min-h-40 flex-col rounded-xl border border-slate-200 bg-slate-100/60 p-2',
           overStatus === status.key && 'border-brand-400 bg-brand-50',
           overLimit && wipEnforced && 'border-red-300',
+          !canDrop && 'opacity-50',
         )}
+        title={
+          !canDrop
+            ? t('tasks.transitionNotAllowed', 'Not allowed from the current status')
+            : undefined
+        }
         onDragOver={(event) => {
+          if (!canDrop) return
           event.preventDefault()
           setOverStatus(status.key)
         }}

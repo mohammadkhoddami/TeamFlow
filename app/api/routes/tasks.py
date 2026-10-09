@@ -74,7 +74,9 @@ async def list_tasks(
     assignee_id: uuid.UUID | None = None,
     unassigned: bool = False,
     label_id: uuid.UUID | None = None,
-    status: list[StatusLiteral] | None = Query(default=None),
+    status: list[str] | None = Query(
+        default=None, description="Workflow status key(s); custom project statuses allowed"
+    ),
     priority: list[PriorityLiteral] | None = Query(default=None),
     type: list[TaskTypeLiteral] | None = Query(default=None),
     parent_id: uuid.UUID | None = Query(default=None, description="Direct children of this task"),
@@ -138,7 +140,9 @@ async def list_tasks_cursor(
     membership: OrgMembership,
     db: DB,
     project_id: uuid.UUID | None = None,
-    status: list[StatusLiteral] | None = Query(default=None),
+    status: list[str] | None = Query(
+        default=None, description="Workflow status key(s); custom project statuses allowed"
+    ),
     priority: list[PriorityLiteral] | None = Query(default=None),
     type: list[TaskTypeLiteral] | None = Query(default=None),
     include_archived: bool = Query(default=False),

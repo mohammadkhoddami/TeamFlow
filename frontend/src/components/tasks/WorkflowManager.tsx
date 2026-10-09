@@ -189,6 +189,41 @@ export function WorkflowManager({
                     ))}
                 </div>
               </div>
+              <div className="mt-2">
+                <p className="text-[11px] font-medium text-slate-500">
+                  {t('workflow.changeFrom', 'Can move here from')}
+                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  {statuses.some(
+                    (candidate) =>
+                      candidate.key !== entry.key &&
+                      candidate.transitions.includes(entry.key),
+                  ) ? (
+                    statuses
+                      .filter(
+                        (candidate) =>
+                          candidate.key !== entry.key &&
+                          candidate.transitions.includes(entry.key),
+                      )
+                      .map((candidate) => (
+                        <span
+                          key={candidate.key}
+                          className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500"
+                        >
+                          {candidate.name}
+                        </span>
+                      ))
+                  ) : index === 0 ? (
+                    <span className="rounded-full border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] text-brand-700">
+                      {t('workflow.initialStatus', 'Initial status')}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-amber-600">
+                      {t('workflow.unreachable', 'No status moves into this one yet')}
+                    </span>
+                  )}
+                </div>
+              </div>
               <div className="mt-2 flex justify-end">
                 <button
                   type="button"

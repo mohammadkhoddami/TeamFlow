@@ -81,6 +81,7 @@ const tasks: Dictionary = {
   'tasks.wipLimit': 'محدودیت WIP: {limit}',
   'tasks.addTaskTo': 'افزودن کار به {status}',
   'tasks.dropTasksHere': 'کارها را اینجا رها کنید',
+  'tasks.transitionNotAllowed': 'از وضعیت فعلی مجاز نیست',
   'tasks.laneTaskCount': '{count} کار',
   'tasks.laneTaskCountOne': '{count} کار',
 

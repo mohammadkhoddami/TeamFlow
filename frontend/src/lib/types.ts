@@ -107,6 +107,7 @@ export interface BoardRead {
   swimlane_by: SwimlaneBy
   filter_query: string | null
   columns: string[] | null
+  issue_types: TaskType[] | null
 }
 
 export type CustomFieldType =

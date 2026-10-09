@@ -216,9 +216,12 @@ Phase 1 of the competitive plan is implemented on top of the existing board:
 Phase 2 adds Jira-class planning while keeping the simple default:
 
 - **Custom workflows & boards** — per-project statuses with categories,
-  transition rules, WIP limits (optional enforcement) and multiple saved boards
-  with TeamQL filters and swimlanes (assignee/priority/label). The classic
-  four-column flow stays the default until a project saves its own workflow.
+  transition rules (which statuses may move to/from which), WIP limits
+  (optional enforcement) and multiple saved boards with TeamQL filters,
+  hidden issue types/status columns and swimlanes (assignee/priority/label).
+  The classic four-column flow stays the default until a project saves its own
+  workflow; board views can hide epics/stories or statuses like Done without
+  touching the underlying tasks.
   `GET/PUT /projects/{id}/workflow`, `/projects/{id}/boards`, `/organizations/{slug}/boards/{id}`.
 - **Custom fields** — typed fields (text/number/date/select/multi-select/user/
   checkbox) per project, stored as JSON values; filterable through TeamQL

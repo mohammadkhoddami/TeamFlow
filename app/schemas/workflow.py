@@ -8,6 +8,7 @@ from sqlmodel import SQLModel
 
 CategoryLiteral = Literal["todo", "in_progress", "in_review", "done"]
 SwimlaneLiteral = Literal["none", "assignee", "priority", "label"]
+IssueTypeLiteral = Literal["epic", "story", "task"]
 
 
 class WorkflowStatusCreate(SQLModel):
@@ -42,16 +43,42 @@ class BoardCreate(SQLModel):
     name: str = Field(min_length=1, max_length=128)
     swimlane_by: SwimlaneLiteral = "none"
     filter_query: str | None = Field(default=None, max_length=2000)
+    # Empty list clears the subset (NULL = all columns/issue types).
     columns: list[str] | None = Field(default=None, max_length=20)
+    issue_types: list[IssueTypeLiteral] | None = Field(
+        default=None, max_length=3
+    )
     is_default: bool = False
+
+    @field_validator("issue_types")
+    @classmethod
+    def unique_issue_types(
+        cls, value: list[IssueTypeLiteral] | None
+    ) -> list[IssueTypeLiteral] | None:
+        if value is not None and len(value) != len(set(value)):
+            raise ValueError("Issue types must be unique")
+        return value
 
 
 class BoardUpdate(SQLModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     swimlane_by: SwimlaneLiteral | None = None
     filter_query: str | None = Field(default=None, max_length=2000)
+    # Empty list clears the subset (NULL = all columns/issue types).
     columns: list[str] | None = Field(default=None, max_length=20)
+    issue_types: list[IssueTypeLiteral] | None = Field(
+        default=None, max_length=3
+    )
     is_default: bool | None = None
+
+    @field_validator("issue_types")
+    @classmethod
+    def unique_issue_types(
+        cls, value: list[IssueTypeLiteral] | None
+    ) -> list[IssueTypeLiteral] | None:
+        if value is not None and len(value) != len(set(value)):
+            raise ValueError("Issue types must be unique")
+        return value
 
 
 class BoardRead(SQLModel):
@@ -63,5 +90,6 @@ class BoardRead(SQLModel):
     swimlane_by: str
     filter_query: str | None
     columns: list[str] | None
+    issue_types: list[str] | None
     created_at: object | None = None
     updated_at: object | None = None

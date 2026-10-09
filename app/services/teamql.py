@@ -20,7 +20,7 @@ import uuid
 from datetime import UTC, datetime, time, timedelta
 
 from app.core.exceptions import ValidationFailedError
-from app.models import TaskPriority, TaskStatus, TaskType
+from app.models import TaskPriority, TaskType
 from app.repositories import TaskFilters
 
 SORTABLE = {
@@ -154,6 +154,19 @@ def _validate_choice(values: list[str], allowed: tuple[str, ...], field: str) ->
     return lowered
 
 
+_STATUS_KEY_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _validate_status_keys(values: list[str]) -> list[str]:
+    """Status keys are per-project workflow keys, so accept any key-shaped
+    value instead of validating against the four default statuses."""
+    lowered = [value.strip().lower() for value in values]
+    invalid = [value for value in lowered if not _STATUS_KEY_RE.match(value)]
+    if invalid:
+        raise ValidationFailedError(f"Invalid status key(s): {', '.join(invalid)}")
+    return lowered
+
+
 def parse_teamql(
     text: str,
     *,
@@ -207,7 +220,7 @@ def parse_teamql(
 
         if field in ("status",):
             key = "exclude_status" if negative else "status"
-            kwargs[key] = _validate_choice(values, TaskStatus.ALL, field)
+            kwargs[key] = _validate_status_keys(values)
         elif field == "priority":
             key = "exclude_priority" if negative else "priority"
             kwargs[key] = _validate_choice(values, TaskPriority.ALL, field)

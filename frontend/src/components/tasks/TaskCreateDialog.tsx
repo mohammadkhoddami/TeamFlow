@@ -146,7 +146,9 @@ export function TaskCreateDialog({
         label_ids: labelIds,
         estimate: estimate.trim() === '' ? null : Number(estimate),
       })
-      if (defaultStatus !== 'todo') {
+      // New tasks start in the project's initial workflow status; only move
+      // when the requested column differs (works with custom workflows too).
+      if (task.status !== defaultStatus) {
         await tasksApi.move(task.id, defaultStatus)
       }
       return task

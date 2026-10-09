@@ -26,6 +26,7 @@ from app.models import (
     SwimlaneBy,
     Task,
     TaskStatus,
+    TaskType,
     User,
     WorkflowStatus,
 )
@@ -71,6 +72,16 @@ DEFAULT_WORKFLOW: list[dict] = [
 def _require_manage(membership: Membership) -> None:
     if membership.role == MembershipRole.MEMBER:
         raise PermissionDeniedError("Only managers and above can manage workflows")
+
+
+def _normalize_issue_types(issue_types: list[str] | None) -> list[str] | None:
+    """None / empty / all three types = show every issue type on the board."""
+    if not issue_types:
+        return None
+    unique = list(dict.fromkeys(issue_types))
+    if len(unique) == len(TaskType.ALL):
+        return None
+    return unique
 
 
 def default_workflow() -> list[WorkflowStatus]:
@@ -212,6 +223,17 @@ async def save_workflow(
         await db.delete(existing[key])
     await db.flush()
 
+    # Keep saved board column subsets in sync with the new workflow.
+    if removed:
+        board_repo = BoardRepository(db)
+        incoming_keys = set(incoming)
+        for board in await board_repo.list_for_project(org.id, project.id):
+            if board.columns:
+                pruned = [key for key in board.columns if key in incoming_keys]
+                if len(pruned) != len(board.columns):
+                    board.columns = pruned or None
+                    await board_repo.update(board)
+
     if data.wip_enforced is not None:
         project.wip_enforced = data.wip_enforced
         db.add(project)
@@ -276,6 +298,7 @@ async def create_board(
             swimlane_by=data.swimlane_by,
             filter_query=data.filter_query,
             columns=list(data.columns) if data.columns else None,
+            issue_types=_normalize_issue_types(data.issue_types),
             created_by_id=actor.id,
         )
     )
@@ -314,6 +337,8 @@ async def update_board(
         if unknown:
             raise ValidationFailedError(f"Unknown workflow columns: {', '.join(unknown)}")
         board.columns = list(data.columns) or None
+    if data.issue_types is not None:
+        board.issue_types = _normalize_issue_types(data.issue_types)
     if data.is_default is not None and data.is_default and not board.is_default:
         for entry in await repo.list_for_project(org.id, project.id):
             entry.is_default = False

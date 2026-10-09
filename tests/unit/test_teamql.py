@@ -45,6 +45,13 @@ def test_negative_operators_map_to_exclusions():
     assert filters.exclude_priority == ["low"]
 
 
+def test_custom_status_keys_are_accepted():
+    filters, _ = parse_teamql("status in (new, doing_review)", **LOOKUPS)
+    assert filters.status == ["new", "doing_review"]
+    filters, _ = parse_teamql("status != verified", **LOOKUPS)
+    assert filters.exclude_status == ["verified"]
+
+
 def test_assignee_variants():
     filters, _ = parse_teamql("assignee = me", **LOOKUPS)
     assert filters.assignee_id == ME
@@ -113,7 +120,7 @@ def test_errors_are_human_readable():
     with pytest.raises(ValidationFailedError):
         parse_teamql("banana = 1", **LOOKUPS)
     with pytest.raises(ValidationFailedError):
-        parse_teamql("status = nonsense", **LOOKUPS)
+        parse_teamql("status = not a status!", **LOOKUPS)
     with pytest.raises(ValidationFailedError):
         parse_teamql("this is not a condition", **LOOKUPS)
     with pytest.raises(ValidationFailedError):
