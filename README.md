@@ -425,7 +425,43 @@ Tools include `get_board` (kanban columns with accurate counts), `list_tasks`,
 `get_dashboard`. See `mcp_server/README.md` for the full list, argument
 conventions and troubleshooting.
 
-### Add it to opencode
+### Remote server on the VPS (recommended)
+
+The deployed stack runs the MCP server as an always-on container
+(`mcp` in `docker-compose.server.yml`) and exposes it at
+`https://arsene.ir/flow/mcp` through the host nginx. Agents connect to that URL
+instead of spawning a local process, which removes the startup handshake that
+shows up as "MCP not connected" on the first call and keeps one stable endpoint
+for the whole team.
+
+Each caller sends their own TeamFlow personal access token (create one under
+**API access** in the UI):
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "teamflow": {
+      "type": "remote",
+      "url": "https://arsene.ir/flow/mcp",
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {env:TEAMFLOW_TOKEN}"
+      },
+      "enabled": true
+    }
+  }
+}
+```
+
+Export `TEAMFLOW_TOKEN` before starting opencode. The token is forwarded to the
+API per request, so attribution, roles and audit logs stay per-user; set
+`TEAMFLOW_TOKEN` in the container instead only for a deliberate single-identity
+deployment. Stateless JSON mode, a Docker health check and
+`restart: unless-stopped` keep the endpoint available across agent restarts and
+deploys.
+
+### Add a local stdio server (alternative)
 
 Install the package once (Python 3.10+):
 

@@ -18,6 +18,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from mcp.server.mcpserver import MCPServer
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from .client import TeamFlowError, get_client
 from .config import describe_sources, get_settings
@@ -98,6 +100,12 @@ mcp = MCPServer(
         "are not allowed."
     ),
 )
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health(_: Request) -> JSONResponse:
+    """Liveness probe for the HTTP deployment (also used by Docker)."""
+    return JSONResponse({"status": "ok"})
 
 
 def _client():
@@ -1301,6 +1309,22 @@ async def _check() -> None:
     print("OK: credentials work, the MCP server can log in.")
 
 
+def _streamable_http_app():
+    """The streamable HTTP app with per-caller bearer-token authentication."""
+    from .http_transport import BearerTokenMiddleware
+
+    settings = get_settings()
+    app = mcp.streamable_http_app(
+        streamable_http_path=settings.mcp_path,
+        json_response=settings.mcp_json_response,
+        stateless_http=settings.mcp_stateless,
+        host=settings.mcp_host,
+    )
+    return BearerTokenMiddleware(
+        app, allow_without_token=settings.credentials_configured
+    )
+
+
 def main() -> None:
     if "--check" in sys.argv[1:]:
         try:
@@ -1309,7 +1333,24 @@ def main() -> None:
             print(f"FAILED: {exc}", file=sys.stderr)
             raise SystemExit(1) from None
         return
-    mcp.run()
+
+    settings = get_settings()
+    if settings.mcp_transport == "stdio":
+        mcp.run()
+        return
+
+    if settings.mcp_transport == "streamable-http":
+        import uvicorn
+
+        uvicorn.run(
+            _streamable_http_app(),
+            host=settings.mcp_host,
+            port=settings.mcp_port,
+            log_level="info",
+        )
+        return
+
+    mcp.run(transport="sse", host=settings.mcp_host, port=settings.mcp_port)
 
 
 if __name__ == "__main__":

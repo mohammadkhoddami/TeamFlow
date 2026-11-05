@@ -13,6 +13,7 @@
 # Layout:
 #   api   127.0.0.1:8020  FastAPI (also serves /flow/admin via the host nginx)
 #   web   127.0.0.1:8030  SPA container; host nginx proxies /flow/ here
+#   mcp   127.0.0.1:8040  remote MCP (streamable HTTP); nginx proxies /flow/mcp
 #   minio 127.0.0.1:9010  attachments; host nginx proxies /teamflow-attachments
 name: teamflow
 
@@ -175,6 +176,37 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  # Remote MCP endpoint for coding agents. The server is a pure API client, so
+  # it talks to the API over the compose network. Each caller authenticates
+  # with their own TeamFlow personal access token sent as
+  # `Authorization: Bearer tf_...`; the optional MCP_TOKEN/MCP_EMAIL/MCP_PASSWORD
+  # values are only a single-identity fallback for clients that cannot send it.
+  mcp:
+    image: ghcr.io/arsene-ir/teamflow-mcp:${IMAGE_TAG:-latest}
+    environment:
+      TEAMFLOW_API_URL: http://api:8000
+      TEAMFLOW_MCP_TRANSPORT: streamable-http
+      TEAMFLOW_MCP_HOST: 0.0.0.0
+      TEAMFLOW_MCP_PORT: "8765"
+      TEAMFLOW_MCP_PATH: /mcp
+      TEAMFLOW_TRUST_ENV: "false"
+      TEAMFLOW_TOKEN: ${MCP_TOKEN:-}
+      TEAMFLOW_EMAIL: ${MCP_EMAIL:-}
+      TEAMFLOW_PASSWORD: ${MCP_PASSWORD:-}
+    ports:
+      - "127.0.0.1:8040:8765"
+    depends_on:
+      - api
+    healthcheck:
+      test:
+        ["CMD", "python", "-c",
+         "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
 networks:

@@ -28,6 +28,7 @@ import httpx
 from mcp.server.mcpserver.exceptions import ToolError
 
 from .config import Settings, get_settings, project_env_file, shared_env_file
+from .http_transport import current_request_token
 
 HttpMethod = Literal["GET", "POST", "PATCH", "DELETE"]
 _FALSY_PARAMS = (None, "", False, [], {})
@@ -203,6 +204,12 @@ class TeamFlowClient:
         return True
 
     async def _ensure_token(self) -> str:
+        # Remote deployment: the MCP client sent its own personal access token
+        # with this request. Never cache it - concurrent requests may belong to
+        # different users.
+        request_token = current_request_token()
+        if request_token:
+            return request_token
         # Static API token (M3 #24): no login, no refresh, no rate limits on
         # /auth/login. The token carries its own scopes and expiry.
         if self._settings.token:

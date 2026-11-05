@@ -18,6 +18,7 @@ ENV_FILE=/tmp/teamflow.deploy.env
 NGINX_SRC=/tmp/teamflow-nginx-flow.conf
 API_HEALTH=http://127.0.0.1:8020/api/v1/health/ready
 WEB_HEALTH=http://127.0.0.1:8030/healthz
+MCP_HEALTH=http://127.0.0.1:8040/health
 
 cleanup() { rm -f "$ENV_FILE" "$NGINX_SRC" /tmp/teamflow-deploy.sh; }
 trap cleanup EXIT
@@ -71,6 +72,7 @@ wait_for() {
 echo "==> Waiting for services"
 wait_for "$API_HEALTH" "API" 30
 wait_for "$WEB_HEALTH" "web" 15
+wait_for "$MCP_HEALTH" "MCP" 30
 
 echo "==> Installing nginx snippet"
 if ! cmp -s "$NGINX_SRC" "$SNIPPET"; then

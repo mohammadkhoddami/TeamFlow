@@ -455,10 +455,12 @@ is bootstrapped by a script).
 
 ## 19. Agent integration (MCP)
 
-`mcp_server/` is a standalone MCP stdio server that is a **pure REST API
-client** (no database access), so it works against localhost or the deployed
-instance. It logs in as a normal user; all authorization and tenancy rules above
-apply unchanged. Tools: `whoami`, `list_organizations`, `list_projects`,
+`mcp_server/` is a standalone MCP server that is a **pure REST API client** (no
+database access), so it works against localhost or the deployed instance. It
+runs over stdio (agent-spawned) or streamable HTTP (the always-on `mcp` container
+in the VPS stack, exposed at `/flow/mcp`). In HTTP mode each caller sends their
+own personal access token, which is forwarded to the API per request; the API
+still enforces every authorization and tenancy rule above. Tools: `whoami`, `list_organizations`, `list_projects`,
 `get_board`, `list_tasks`, `get_task`, `get_task_tree`, `create_task`,
 `update_task`, `move_task`, `delete_task`, `my_work`, `add_comment`,
 `list_comments`, `list_members`, `list_labels`, `create_label`, `get_dashboard`;

@@ -13,6 +13,15 @@ agent can point this server at any TeamFlow deployment without code changes:
     TEAMFLOW_VERIFY_SSL true
     TEAMFLOW_TRUST_ENV  true                      # set false to bypass a system proxy
 
+Remote deployments serve streamable HTTP instead of stdio:
+
+    TEAMFLOW_MCP_TRANSPORT streamable-http        # stdio (default) | streamable-http | sse
+    TEAMFLOW_MCP_HOST      0.0.0.0                # bind address
+    TEAMFLOW_MCP_PORT      8765
+    TEAMFLOW_MCP_PATH      /mcp
+    TEAMFLOW_MCP_STATELESS true                   # no session affinity / SSE state
+    TEAMFLOW_MCP_JSON_RESPONSE true               # plain JSON instead of SSE frames
+
 When ``TEAMFLOW_TOKEN`` is set, the server authenticates with the token and
 never logs in with a password — create one under *API access* in the web UI
 (or ``POST /api/v1/organizations/{slug}/api-tokens``).
@@ -37,6 +46,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -136,6 +146,17 @@ class Settings(BaseSettings):
     # cannot reach the API (typical for a TeamFlow instance on localhost on a
     # machine with a system proxy). Mirrors the API's webhook_httpx_trust_env.
     trust_env: bool = True
+    # Remote deployment: serve MCP over streamable HTTP instead of stdio.
+    # Each request must carry the caller's own TeamFlow token in the
+    # Authorization header (see http_transport.py).
+    mcp_transport: Literal["stdio", "streamable-http", "sse"] = "stdio"
+    mcp_host: str = "127.0.0.1"
+    mcp_port: int = 8765
+    mcp_path: str = "/mcp"
+    # Stateless + JSON responses avoid sticky sessions and long-lived SSE
+    # streams, which is what makes the shared deployment stable behind a CDN.
+    mcp_stateless: bool = True
+    mcp_json_response: bool = True
 
     @property
     def base_url(self) -> str:

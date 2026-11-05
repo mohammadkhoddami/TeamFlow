@@ -2,8 +2,9 @@
 
 An [MCP](https://modelcontextprotocol.io) server that turns a TeamFlow
 installation into a project management board your coding agents can use.
-It speaks stdio, so any MCP-capable client (opencode, Claude Desktop, Cursor,
-VS Code, ...) can spawn it and get TeamFlow tools.
+Any MCP-capable client (opencode, Claude Desktop, Cursor, VS Code, ...) can
+either spawn it over stdio or connect to a shared instance over streamable
+HTTP.
 
 The server is a **pure API client**: it logs into the TeamFlow REST API with a
 normal user account and never touches the database. That means you can point it
@@ -11,8 +12,14 @@ at `http://localhost:8000` for local work or a shared deployment from any other
 repository.
 
 ```
-agent  ──stdio──▶  teamflow-mcp  ──HTTPS/JSON──▶  TeamFlow API  ──▶  Postgres
+agent  ──stdio──────────────────────▶  teamflow-mcp  ──HTTPS/JSON──▶  TeamFlow API  ──▶  Postgres
+       └─streamable HTTP (VPS)──────▶
 ```
+
+For teams, run one server on the VPS (see
+[Run it on a VPS](#run-it-on-a-vps-shared-always-on)). Each agent then connects
+to `https://<host>/flow/mcp` with its own personal access token, so nothing has
+to start locally and every caller keeps a separate identity.
 
 ## Install
 
@@ -215,6 +222,92 @@ Any client that supports stdio MCP servers uses the same shape
 }
 ```
 
+## Run it on a VPS (shared, always-on)
+
+A local stdio server starts when the agent starts, so a slow first launch shows
+up as "MCP not connected" until the handshake finishes, and every agent keeps
+its own process. A shared HTTP server is started once by the deployment and is
+always ready, which is more reliable for teams and for agents that open and
+close sessions frequently.
+
+```bash
+# local test: serve on http://127.0.0.1:8765/mcp
+TEAMFLOW_MCP_TRANSPORT=streamable-http \
+TEAMFLOW_MCP_HOST=0.0.0.0 \
+TEAMFLOW_MCP_PORT=8765 \
+TEAMFLOW_API_URL=http://localhost:8000 \
+uv run teamflow-mcp
+
+curl -s http://127.0.0.1:8765/health   # {"status":"ok"}
+```
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TEAMFLOW_MCP_TRANSPORT` | `stdio` | `streamable-http` for the shared server, `stdio` for agent-spawned. |
+| `TEAMFLOW_MCP_HOST` | `127.0.0.1` | Bind address. Use `0.0.0.0` inside a container. |
+| `TEAMFLOW_MCP_PORT` | `8765` | Listen port. |
+| `TEAMFLOW_MCP_PATH` | `/mcp` | MCP endpoint path. |
+| `TEAMFLOW_MCP_STATELESS` | `true` | No session tracking, so restarts and load balancing cannot strand a session. |
+| `TEAMFLOW_MCP_JSON_RESPONSE` | `true` | Plain JSON responses instead of SSE frames (safer through CDNs/proxies). |
+
+`GET /health` is unauthenticated and is used by the Docker health check.
+
+### Authentication on a shared server
+
+One process serves every caller, so it must not own a single account. Each MCP
+request carries the caller's TeamFlow personal access token:
+
+```http
+Authorization: Bearer tf_...
+```
+
+The server forwards it to the API for that request only and never caches it.
+Create a token under **API access** in the UI (or
+`POST /api/v1/organizations/{slug}/api-tokens`). Requests without a token get
+`401` and never reach the API. Setting `TEAMFLOW_TOKEN` (or email/password) in
+the container environment enables a single-identity fallback; leave it unset
+for the per-user model.
+
+### opencode (remote)
+
+```jsonc
+{
+  "mcp": {
+    "teamflow": {
+      "type": "remote",
+      "url": "https://arsene.ir/flow/mcp",
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {env:TEAMFLOW_TOKEN}"
+      },
+      "enabled": true
+    }
+  }
+}
+```
+
+Export `TEAMFLOW_TOKEN` in the shell that starts OpenCode (or paste the token
+directly into the config - never commit it). `oauth: false` is required so the
+client sends the header instead of starting an OAuth discovery flow after a
+`401`.
+
+### Container
+
+```bash
+docker build -t teamflow-mcp .
+docker run --rm -p 8765:8765 \
+  -e TEAMFLOW_API_URL=https://arsene.ir/flow \
+  teamflow-mcp
+```
+
+This repository deploys it as the `mcp` service in
+`docker-compose.server.yml`: the container talks to the API over the compose
+network, the host nginx exposes `https://<host>/flow/mcp`, and
+`deploy/deploy-vps.sh` waits for `/health` before reloading nginx. The image is
+built and pushed by CI (`ghcr.io/arsene-ir/teamflow-mcp`). Stateless JSON mode
+plus `restart: unless-stopped` is what keeps the endpoint available when an
+agent reconnects.
+
 ## Share it with your team
 
 The API is already deployed, so a teammate only needs the MCP server package
@@ -413,6 +506,9 @@ Prompts: `daily_standup`, `board_triage`.
 | `No project named '...'` | The tool lists available projects in the error. Names are matched case-insensitively. |
 | `Rate limited - retry in a moment` | TeamFlow limits login attempts per IP. Wait ~60s. |
 | Tools do not appear in the agent | Run `teamflow-mcp --check` manually to confirm the server starts, and check the client's MCP logs. |
+| Remote MCP returns `401` | Send `Authorization: Bearer tf_...` on every request and set `"oauth": false` in the client config. |
+| Remote MCP returns `502` | The `mcp` container is down or nginx points at the wrong port. `curl https://<host>/flow/mcp` should reach the server, and `curl 127.0.0.1:8040/health` on the VPS must return `{"status":"ok"}`. |
+| Remote MCP connects but every tool says `TeamFlow API 401` | The token is expired/revoked, or it belongs to a different organization than the one requested. |
 
 ## Development
 
