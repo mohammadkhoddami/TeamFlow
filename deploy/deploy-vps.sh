@@ -18,7 +18,7 @@ ENV_FILE=/tmp/teamflow.deploy.env
 NGINX_SRC=/tmp/teamflow-nginx-flow.conf
 API_HEALTH=http://127.0.0.1:8020/api/v1/health/ready
 WEB_HEALTH=http://127.0.0.1:8030/healthz
-MCP_HEALTH=http://127.0.0.1:8040/health
+MCP_HEALTH=http://127.0.0.1:18040/health
 
 cleanup() { rm -f "$ENV_FILE" "$NGINX_SRC" /tmp/teamflow-deploy.sh; }
 trap cleanup EXIT

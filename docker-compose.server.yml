@@ -13,7 +13,7 @@
 # Layout:
 #   api   127.0.0.1:8020  FastAPI (also serves /flow/admin via the host nginx)
 #   web   127.0.0.1:8030  SPA container; host nginx proxies /flow/ here
-#   mcp   127.0.0.1:8040  remote MCP (streamable HTTP); nginx proxies /flow/mcp
+#   mcp   127.0.0.1:18040  remote MCP (streamable HTTP); nginx proxies /flow/mcp
 #   minio 127.0.0.1:9010  attachments; host nginx proxies /teamflow-attachments
 name: teamflow
 
@@ -196,7 +196,7 @@ services:
       TEAMFLOW_EMAIL: ${MCP_EMAIL:-}
       TEAMFLOW_PASSWORD: ${MCP_PASSWORD:-}
     ports:
-      - "127.0.0.1:8040:8765"
+      - "127.0.0.1:18040:8765"
     depends_on:
       - api
     healthcheck:

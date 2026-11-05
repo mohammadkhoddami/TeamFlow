@@ -507,7 +507,7 @@ Prompts: `daily_standup`, `board_triage`.
 | `Rate limited - retry in a moment` | TeamFlow limits login attempts per IP. Wait ~60s. |
 | Tools do not appear in the agent | Run `teamflow-mcp --check` manually to confirm the server starts, and check the client's MCP logs. |
 | Remote MCP returns `401` | Send `Authorization: Bearer tf_...` on every request and set `"oauth": false` in the client config. |
-| Remote MCP returns `502` | The `mcp` container is down or nginx points at the wrong port. `curl https://<host>/flow/mcp` should reach the server, and `curl 127.0.0.1:8040/health` on the VPS must return `{"status":"ok"}`. |
+| Remote MCP returns `502` | The `mcp` container is down or nginx points at the wrong port. `curl https://<host>/flow/mcp` should reach the server, and `curl 127.0.0.1:18040/health` on the VPS must return `{"status":"ok"}`. |
 | Remote MCP connects but every tool says `TeamFlow API 401` | The token is expired/revoked, or it belongs to a different organization than the one requested. |
 
 ## Development
