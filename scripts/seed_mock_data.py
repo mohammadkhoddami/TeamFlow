@@ -440,11 +440,19 @@ class Seeder:
             for project_id, project_created_iso in projects_by_org[index]:
                 created = datetime.fromisoformat(project_created_iso)
                 sprint_ids = []
-                for seq in range(rng.randint(2, 4)):
+                sprint_count = rng.randint(2, 4)
+                # The `uq_sprints_one_active` partial unique index allows at most
+                # one active sprint per project, so pick the active slot up front
+                # instead of drawing each sprint's state independently.
+                active_slot = rng.randrange(sprint_count)
+                for seq in range(sprint_count):
                     sprint_id = new_uuid(rng)
                     start = rand_between(rng, max(created, org_created), self.now)
                     end = min(start + timedelta(days=14), self.now + timedelta(days=21))
-                    state = rng.choices(["planned", "active", "completed"], weights=[0.45, 0.2, 0.35], k=1)[0]
+                    if seq == active_slot:
+                        state = "active"
+                    else:
+                        state = rng.choices(["planned", "completed"], weights=[0.55, 0.45], k=1)[0]
                     completed_at = end if state == "completed" else None
                     sprint_rows.append(
                         (
@@ -626,7 +634,7 @@ class Seeder:
                 if isinstance(created, str):
                     created = datetime.fromisoformat(created)
                 members = member_lists[org_index_by_id[org_id]]
-                thread_root: tuple[str, datetime] | None = None
+                thread_root: str | None = None
                 for _ in range(rng.randint(1, 5)):
                     comment_id = new_uuid(rng)
                     comment_created = rand_between(rng, created, self.now)
@@ -637,9 +645,12 @@ class Seeder:
                     author = rng.choice(members)
                     parent_id = root_id = None
                     if thread_root is not None and rng.random() < 0.5:
-                        parent_id, root_id = thread_root
+                        # `thread_root` holds the thread's top-level comment id;
+                        # both parent_id and root_id point at it (the seeder only
+                        # creates one reply level).
+                        parent_id = root_id = thread_root
                     else:
-                        thread_root = (str(comment_id), comment_created)
+                        thread_root = str(comment_id)
                     if len(reaction_candidates) < 50_000 and rng.random() < 0.25:
                         reaction_candidates.append((org_id, str(comment_id), author, comment_created))
                     yield (
